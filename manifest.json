@@ -1,0 +1,60 @@
+{
+  "name": "Gmail Job Tracker",
+  "description": "Tracks job application statuses directly from Gmail.",
+  "version": "1.0",
+  "manifest_version": 3,
+  "permissions": [
+    "identity",
+    "storage",
+    "activeTab",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://gmail.googleapis.com/*",
+    "https://www.googleapis.com/*",
+    "https://gmail-tracker-backend-215378038667.us-central1.run.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "oauth2": {
+    "client_id": "215378038667-81tek0h8fuddaur27bl5mm35ejvu0aq3.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/gmail.send",
+      "openid"
+
+    ]
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "popup/*",
+        "utils/*",
+        "stripe_loader.js",
+        "oauth2/*",
+        "tailwind.css"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}
