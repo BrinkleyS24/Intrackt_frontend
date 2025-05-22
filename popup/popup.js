@@ -84,21 +84,37 @@ function toggleMisclassModal(show) {
 }
 
 function toggleUI(isLoggedIn) {
-  elements.filterSection.style.display = isLoggedIn ? "block" : "none";
-  elements.jobList.style.display = isLoggedIn ? "block" : "none";
-  elements.loginBtn.style.display = isLoggedIn ? "none" : "inline-block";
-  elements.signoutBtn.style.display = isLoggedIn ? "inline-block" : "none";
+  const show = el => el?.classList.remove("hidden");
+  const hide = el => el?.classList.add("hidden");
 
-  if (elements.viewInsightsBtn) {
-    elements.viewInsightsBtn.style.display =
-      (isLoggedIn && state.userPlan === "premium") ? "inline-block" : "none";
+  if (isLoggedIn) {
+    show(elements.filterSection);
+    show(elements.jobList);
+    show(elements.signoutBtn);
+    hide(elements.loginBtn);
+    show(getElement("followup-section"));
+    show(getElement("tabs"));
+    
+    if (elements.viewInsightsBtn)
+      elements.viewInsightsBtn.classList.remove("hidden");
+
+    if (elements.followupBtn)
+      elements.followupBtn.classList.remove("hidden");
+
+  } else {
+    hide(elements.filterSection);
+    hide(elements.jobList);
+    hide(elements.signoutBtn);
+    show(elements.loginBtn);
+    hide(getElement("followup-section"));
+    hide(getElement("tabs"));
+
+    if (elements.viewInsightsBtn)
+      elements.viewInsightsBtn.classList.add("hidden");
+
+    if (elements.followupBtn)
+      elements.followupBtn.classList.add("hidden");
   }
-
-  if (elements.followupBtn) {
-    elements.followupBtn.style.display =
-      (isLoggedIn && state.userPlan === "premium") ? "inline-block" : "none";
-  }
-
 }
 
 function showNotification(msg, type = "info") {
@@ -130,12 +146,10 @@ const elements = {
   prevButton: getElement("prev-button"),
   nextButton: getElement("next-button"),
   premiumBtn: getElement("premium-btn"),
-  followupBtn: getElement("follow-up-reminders"),
   premiumModal: getElement("premium-modal"),
   closePremiumModal: getElement("close-premium-modal"),
   modalBackdrop: getElement("modal-backdrop"),
   quotaNotification: getElement("quota-notification"),
-  viewInsightsBtn: getElement("view-insights"),
   emailModal: document.getElementById("email-modal"),
   modalSubject: document.getElementById("modal-subject"),
   modalFrom: document.getElementById("modal-from"),
@@ -182,6 +196,9 @@ const CONFIG = {
   }
 };
 
+// Initially hide follow-up section in HTML:
+document.getElementById("followup-section").classList.add("hidden");
+
 // Immediately try to load the name from storage
 chrome.storage.local.get(["userName"], (data) => {
   if (data.userName) {
@@ -207,8 +224,20 @@ document.addEventListener("DOMContentLoaded", () => {
     elements.closeEmailModal?.addEventListener("click", () => toggleModal(elements.emailModal, false));
     elements.closePremiumModal?.addEventListener("click", () => toggleModal(elements.premiumModal, false));
 
-    getElement("refresh-btn")?.addEventListener("click", () => {
-      fetchNewEmails(state.token, state.userEmail);
+    getElement("refresh-btn")?.addEventListener("click", async () => {
+      console.log("Refresh button clicked");
+      // Fetch new emails from backend and merge them into state
+      await fetchNewEmails(state.token, state.userEmail);
+
+      // Optionally, re-read from storage to ensure state is fresh
+      await fetchStoredEmails();
+
+      // If you rely on filtering, disable it so the current category is refreshed
+      state.isFilteredView = false;
+
+      // Finally, re-render emails and update tabs
+      updatePage(1);
+      updateCategoryCounts();
     });
 
   }
@@ -289,6 +318,7 @@ document.addEventListener("DOMContentLoaded", () => {
       toggleUI(true);
       updatePremiumButton(true);
       await fetchUserPlan();
+      await loadFollowUpSuggestions();
       await fetchStoredEmails();
       await fetchNewEmails(state.token, state.userEmail);
       const profile = await getUserInfo(state.token);
@@ -304,16 +334,57 @@ document.addEventListener("DOMContentLoaded", () => {
     resetAppState();
     toggleUI(false);
     updatePremiumButton(false);
+    updateWelcomeHeader(null);
+    clearStoredUserData();
     showNotification("Successfully logged out", "success");
   }
+
+  // Clear chrome storage keys on logout
+  function clearStoredUserData() {
+    chrome.storage.local.remove([
+      'userEmail',
+      'gmail_token',
+      'currentPage',
+      'currentCategory',
+      'userName'
+    ]);
+  }
+
 
   function resetAppState() {
     state.userEmail = null;
     state.categorizedEmails = {};
     state.currentCategory = "Applied";
     state.currentPage = 1;
+
     if (elements.jobsContainer) elements.jobsContainer.innerHTML = "<p>Fetching emails...</p>";
     if (elements.quotaNotification) elements.quotaNotification.style.display = "none";
+
+    const followupSection = getElement("followup-section");
+    if (followupSection) {
+      followupSection.classList.add("hidden");
+      followupSection.innerHTML = "";
+    }
+
+    const toast = document.getElementById("undo-toast");
+    if (toast) toast.style.display = "none";
+    clearTimeout(undoTimeoutId);
+    clearInterval(undoIntervalId);
+
+    const modalBackdrop = getElement("modal-backdrop");
+    if (modalBackdrop) {
+      modalBackdrop.style.display = "none";
+      modalBackdrop.classList.remove("show");
+    }
+
+    const modals = ["email-modal", "premium-modal", "misclass-modal"];
+    modals.forEach(id => {
+      const modal = document.getElementById(id);
+      if (modal) {
+        modal.classList.remove("show");
+        modal.style.display = "none";
+      }
+    });
   }
 
   function getAuthToken() {
@@ -547,20 +618,67 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  function getFilteredCounts() {
+    const counts = {};
+    const searchQuery = elements.searchBar.value.toLowerCase();
+    const timeRange = elements.timeRangeFilter.value;
+    let thresholdDate = null;
+
+    if (timeRange === "week") {
+      thresholdDate = new Date();
+      thresholdDate.setDate(thresholdDate.getDate() - 7);
+    } else if (timeRange === "month") {
+      thresholdDate = new Date();
+      thresholdDate.setMonth(thresholdDate.getMonth() - 1);
+    } else if (timeRange === "year") {
+      thresholdDate = new Date();
+      thresholdDate.setFullYear(thresholdDate.getFullYear() - 1);
+    }
+
+    Object.keys(state.categorizedEmails).forEach(category => {
+      const filtered = state.categorizedEmails[category].filter(email => {
+        // Combine searchable fields
+        const text = `${email.subject || ""} ${email.from || ""} ${email.body || ""} ${email.snippet || ""}`.toLowerCase();
+        const matchesQuery = !searchQuery || text.includes(searchQuery);
+        const matchesTime = !thresholdDate || new Date(email.date) >= thresholdDate;
+        return matchesQuery && matchesTime;
+      });
+      counts[category] = filtered.length;
+    });
+
+    return counts;
+  }
+
   function updateCategoryCounts() {
+    // If filters are applied, calculate filtered counts per category.
+    let counts = {};
+    if (state.isFilteredView) {
+      counts = getFilteredCounts();
+    }
+
     elements.jobTabs.forEach((tab) => {
       const category = tab.dataset.category;
-      const totalCount = state.categorizedEmails[category]?.length || 0;
-      const newCount = state.newEmailsCounts[category] || 0;
+      // Use the filtered count if filtering is active; otherwise, use the full count.
+      const totalCount = state.isFilteredView
+        ? (counts[category] || 0)
+        : (state.categorizedEmails[category]?.length || 0);
 
-      let label = `${category}`;
-      if (newCount > 0) label += ` (+${newCount})`;
-      label += ` [${totalCount}]`;
+      // Only show new email counts when not filtering.
+      const newCount =
+        !state.isFilteredView && state.newEmailsCounts[category]
+          ? state.newEmailsCounts[category]
+          : 0;
 
+      // Compose the label.
+      let label = category;
+      if (newCount > 0) {
+        label += ` (+${newCount}/${totalCount})`;
+      } else {
+        label += ` (${totalCount})`;
+      }
       tab.textContent = label;
     });
   }
-
 
   function handleQuotaNotification(quota) {
     if (state.userPlan === "premium" || !elements.quotaNotification) {
@@ -572,9 +690,9 @@ document.addEventListener("DOMContentLoaded", () => {
       elements.quotaNotification.style.display = "block";
       elements.quotaNotification.innerHTML = `
         <strong>You've reached your quota limit!</strong><br>
-        <a href="#" id="upgrade-link" style="color: blue; text-decoration: underline;">Upgrade to Premium Plan</a>
+        <a href="#" id="upgrade-link" class="text-blue-600 hover:underline" text-decoration: underline;">Upgrade to Premium Plan</a>
         for unlimited access, or
-        <a href="#" id="purchase-quota-link" style="color: blue; text-decoration: underline;">Purchase 25 more emails for $2</a>.
+        <a href="#" id="purchase-quota-link" class="text-blue-600 hover:underline" text-decoration: underline;">Purchase 25 more emails for $2</a>.
       `;
       getElement("upgrade-link")?.addEventListener("click", () => {
         alert("Redirecting to Premium Plan payment page...");
@@ -653,7 +771,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function createEmailHTML(email) {
     return `
-    <li class="email-item w-full bg-white border border-gray-200 rounded-lg p-4 pr-6 shadow-sm hover:shadow-md cursor-pointer"
+    <li class="email-item w-full bg-white border border-gray-200 rounded-lg p-5 shadow-sm hover:shadow-md cursor-pointer"
         data-email-id="${email.emailId}" data-thread-id="${email.threadId}">
       <div class="flex justify-between items-start space-x-4">
         <!-- Left Content: Sender, Snippet, Subject -->
@@ -668,14 +786,14 @@ document.addEventListener("DOMContentLoaded", () => {
             ${new Date(email.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · 
             ${new Date(email.date).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
           </div>
-          <button
-            class="correction-btn bg-white border border-gray-300 text-sm text-red-600 hover:text-red-800 focus:outline-none p-1 rounded-md"
-            data-email-id="${email.emailId}"
-            data-category="${email.category}"
-            aria-label="Report incorrect classification"
-          >
-            ⚠
-          </button>
+            <button
+              class="correction-btn px-2 py-1 border border-red-300 text-red-500 hover:bg-red-50 rounded focus:outline-none"
+              data-email-id="${email.emailId}"
+              data-category="${email.category}"
+              aria-label="Report incorrect classification"
+            >
+              ⚠
+            </button>
         </div>
       </div>
     </li>
@@ -686,12 +804,11 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyFilters() {
     const searchQuery = elements.searchBar.value.toLowerCase();
     const timeRange = elements.timeRangeFilter.value;
-    // For free plan, only block "Last Year" (beyond 30 days)
     if (state.userPlan === "free" && timeRange === "year") {
       alert("Free plan allows filtering only within the last 30 days.");
       return;
     }
-    const now = new Date();  // 🛠️ Define current time for threshold calculations
+    const now = new Date();
     let thresholdDate = null;
     if (timeRange === "week") {
       thresholdDate = new Date(now);
@@ -725,6 +842,7 @@ document.addEventListener("DOMContentLoaded", () => {
     state.filteredEmails = filteredEmails;
     state.currentPage = 1;
     updatePage(1);
+    updateCategoryCounts();
   }
 
   function restoreTabHighlighting() {
@@ -899,33 +1017,22 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   elements.jobTabs.forEach(tab => {
     tab.addEventListener("click", () => {
-      // Clear the new email count for this category:
-      state.newEmailsCounts[tab.dataset.category] = 0;
+      const category = tab.dataset.category;
+      state.newEmailsCounts[category] = 0;
       updateCategoryCounts();
+      elements.jobTabs.forEach(t => t.classList.remove("active-tab"));
+      tab.classList.add("active-tab");
 
-      state.currentCategory = tab.dataset.category;
-      chrome.storage.local.set({ currentCategory: state.currentCategory });
-
-      // Remove active styles from all tabs and add for the clicked tab…
-      elements.jobTabs.forEach(btn => {
-        btn.classList.remove("active-tab", "text-blue-600", "border-b-2", "border-blue-600", "-mb-px");
-        btn.classList.add("text-gray-600");
-      });
-      tab.classList.add("active-tab", "text-blue-600", "border-b-2", "border-blue-600", "-mb-px");
-
-      // Update state and refresh pagination using updatePage
-      state.currentCategory = tab.dataset.category;
+      state.currentCategory = category;
       state.currentPage = 1;
+      chrome.storage.local.set({ currentCategory: state.currentCategory });
       if (state.isFilteredView) {
         applyFilters();
       } else {
         updatePage(1);
-        updateCategoryCounts();
       }
     });
   });
-
-
 
   function reportMisclassification(emailData) {
     currentReportEmail = emailData;
@@ -1078,20 +1185,17 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({ email: state.userEmail })
       });
       const data = await resp.json();
-      if (data.error === "Premium plan required") {
-        document.getElementById("followup-section").innerHTML = `
-    <div class="text-center text-sm text-gray-600 p-4 border rounded bg-gray-50">
-      🔒 Follow-up suggestions are a <strong>premium feature</strong>.
-      <a href="#" class="text-blue-600 underline ml-1">Upgrade now</a>
-    </div>
-  `;
+      if (!data.success) {
+        // Optionally show an empty state message
+        document.getElementById("followup-section").innerHTML = `<p class="text-sm text-gray-600">No follow-up suggestions found.</p>`;
+        document.getElementById("followup-section").classList.remove("hidden");
         return;
       }
-      if (!data.success) throw new Error("Failed to load follow-up suggestions");
-
       renderFollowUpSuggestions(data.suggestions);
+      // Show the follow-up section now that it has content
+      document.getElementById("followup-section").classList.remove("hidden");
     } catch (err) {
-      console.error("❌ Error loading follow-ups:", err);
+      console.error("Error loading follow-ups:", err);
     }
   }
 
@@ -1104,29 +1208,48 @@ document.addEventListener("DOMContentLoaded", () => {
     const visible = list.slice(0, displayLimit);
 
     const renderCard = item => `
-    <li class="border rounded-lg px-4 py-3 bg-white shadow-sm">
-      <div class="flex justify-between items-center">
-        <div>
-          <div class="font-medium text-sm text-gray-900">${item.subject}</div>
-          <div class="text-xs text-gray-500 mt-0.5">Sent ${item.daysSince} days ago</div>
+      <li class="followup-card border rounded-lg px-4 py-3 bg-white shadow-sm hover:bg-gray-50 transition duration-150 group">
+        <div class="flex justify-between items-center">
+          <div class="flex items-start gap-2">
+            <div class="pt-0.5 text-xs text-yellow-500 followup-dot">🟠</div> <!-- The dot -->
+            <div>
+              <div class="font-medium text-sm text-gray-800 mb-1">${item.subject}</div>
+              <div class="text-xs text-gray-500">Sent ${item.daysSince} days ago • ${item.company}</div>
+            </div>
+          </div>
+          <a href="https://mail.google.com/mail/u/0/#inbox/${item.threadId}"
+            target="_blank"
+            class="view-followup text-xs text-blue-500 group-hover:opacity-100 opacity-0 transition-opacity duration-150 ml-2">
+            View →
+          </a>
         </div>
-        <a href="https://mail.google.com/mail/u/0/#inbox/${item.threadId}"
-           target="_blank"
-           class="text-blue-600 text-xs font-medium hover:underline">View →</a>
-      </div>
-    </li>
-  `;
+      </li>
+    `;
 
     container.innerHTML = `
-    <h3 class="text-sm font-semibold mb-2 text-gray-800">🔔 Suggested Follow-Ups:</h3>
-    <ul class="list-none space-y-3" id="followup-list">
-      ${visible.map(renderCard).join("")}
-    </ul>
-    ${hidden.length > 0
-        ? `<button id="show-more-followups" class="mt-3 text-xs text-blue-600 hover:underline">Show ${hidden.length} more</button>`
-        : ""
-      }
-  `;
+      <h3 class="text-sm font-semibold mb-2 text-gray-800">🔔 Suggested Follow-Ups</h3>
+      <ul class="space-y-3 list-none" id="followup-list">
+        ${visible.map(renderCard).join("")}
+      </ul>
+      ${hidden.length > 0
+          ? `<button id="show-more-followups" class="mt-3 text-xs text-blue-600 hover:underline">Show ${hidden.length} more</button>`
+          : ""
+        }
+    `;
+
+    document.querySelectorAll("#followup-list .view-followup").forEach(link => {
+      link.addEventListener("click", (event) => {
+        // Prevent default here if needed, or allow the link to work normally
+        // Find the parent followup-card and remove the dot element
+        const card = event.target.closest(".followup-card");
+        if (card) {
+          const dot = card.querySelector(".followup-dot");
+          if (dot) {
+            dot.remove(); // Remove the dot from the DOM
+          }
+        }
+      });
+    });
 
     if (hidden.length > 0) {
       document.getElementById("show-more-followups").addEventListener("click", () => {

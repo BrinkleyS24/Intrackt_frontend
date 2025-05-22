@@ -6,23 +6,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Gmail Job Tracker</title>
   <!-- Prebuilt Tailwind CSS -->
-  <link rel="stylesheet" href="tailwind.css" />
+  <link rel="stylesheet" href="output.css" />
   <script defer src="popup.js" type="module"></script>
 </head>
 
 <body class="bg-gray-100 font-sans p-4 w-96">
 
   <!-- Onboarding / Login -->
-  <div id="onboarding" class="bg-white p-6 rounded-lg shadow-lg mb-6">
+  <div id="onboarding" class="card-section">
     <h1 id="welcome-header" class="text-2xl font-semibold text-gray-800 mb-2">
       Welcome to <span class="text-blue-600">Gmail Job Tracker Premium</span>!
     </h1>
     <p class="text-gray-700 mb-4">Your smart assistant for advanced job application insights.</p>
-    <button id="login-btn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 focus:outline-none">
+    <button id="login-btn" class="btn-primary">
       Sign in with Gmail
     </button>
     <button id="signout-btn"
-      class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 focus:outline-none hidden">
+      class="btn-secondary hidden">
       Sign Out
     </button>
     <p class="text-xs text-gray-500 mt-4">
@@ -39,7 +39,7 @@
   </div>
 
   <!-- Filter Section -->
-  <div id="filter-section" class="hidden bg-white p-4 rounded-lg shadow-md mb-6">
+  <div id="filter-section" class="card-section hidden">
     <h2 class="text-lg font-medium text-gray-800 mb-2">Filter Emails</h2>
     <div class="flex flex-wrap gap-2 mb-2">
       <input type="text" id="search-bar"
@@ -54,47 +54,36 @@
     </div>
     <div class="flex gap-2">
       <button id="apply-filters"
-        class="bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700 focus:outline-none text-sm">
+        class="btn-primary">
         Apply Filters
       </button>
       <button id="clear-filters"
-        class="border border-blue-600 text-blue-600 px-3 py-2 rounded hover:bg-blue-50 focus:outline-none text-sm">
+        class="btn-secondary">
         Clear Filters
       </button>
     </div>
   </div>
 
-  <section id="followup-section" class="list-none mt-6 p-3 bg-yellow-50 rounded-md border border-yellow-300 shadow-sm">
+  <section id="followup-section" class="card-section hidden">
     <!-- follow-up suggestions will go here -->
   </section>
 
-
-  <!-- Follow-Up Reminders -->
-  <div id="follow-up-reminders" class="hidden bg-white p-4 rounded-lg shadow-md mb-6">
-    <h3 class="text-lg font-medium text-gray-800 mb-2">⏳ Follow-Up Reminders</h3>
-    <button id="set-follow-up-reminders"
-      class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 focus:outline-none mb-2">
-      Set Reminders
-    </button>
-    <ul id="follow-up-list" class="list-disc list-inside text-gray-700"></ul>
-  </div>
-
   <!-- Job List & Tabs -->
   <div id="job-list" class="hidden">
-    <div id="tabs" class="flex space-x-2 border-b mb-4" role="tablist">
-      <button class="tab-btn px-4 py-2 text-sm font-medium text-gray-600 hover:text-blue-600 min-w-[120px]" role="tab"
+    <div id="tabs" class="flex space-x-2 border-b mb-6 hidden" role="tablist">
+      <button class="tab-btn active-tab" role="tab"
         aria-selected="true" data-category="Applied">
-        Applied
+        Applied (0)
       </button>
-      <button class="tab-btn px-4 py-2 text-sm font-medium text-gray-600 hover:text-blue-600" role="tab"
+      <button class="tab-btn active-tab" role="tab"
         aria-selected="false" data-category="Interviewed">
         Interviewed
       </button>
-      <button class="tab-btn px-4 py-2 text-sm font-medium text-gray-600 hover:text-blue-600" role="tab"
+      <button class="tab-btn active-tab" role="tab"
         aria-selected="false" data-category="Offers">
         Offers
       </button>
-      <button class="tab-btn px-4 py-2 text-sm font-medium text-gray-600 hover:text-blue-600" role="tab"
+      <button class="tab-btn active-tab" role="tab"
         aria-selected="false" data-category="Rejected">
         Rejected
       </button>
@@ -108,7 +97,7 @@
 
 
     <!-- Email list -->
-    <ul id="jobs" class="list-none p-0 m-0 space-y-2" style="padding-right: 1.5rem;">
+    <ul id="jobs" class="list-none px-5">
       <!-- JS injects <li> items here using createEmailHTML() -->
     </ul>
 
@@ -150,11 +139,11 @@
         </fieldset>
         <div class="mt-4 flex justify-end space-x-2">
           <button type="submit" id="misclass-submit"
-            class="primary-btn bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 focus:outline-none">
+            class="btn-primary">
             Submit Correction
           </button>
           <button type="button" id="misclass-cancel"
-            class="secondary-btn border border-gray-400 text-gray-700 px-4 py-2 rounded hover:bg-gray-100 focus:outline-none">
+            class="btn-secondary">
             Cancel
           </button>
         </div>
@@ -176,7 +165,7 @@
         <li>Unlimited email processing & priority support</li>
       </ul>
       <button id="subscribe-premium"
-        class="primary-btn bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 focus:outline-none">
+        class="btn-primary">
         Subscribe Now
       </button>
     </div>
@@ -214,7 +203,7 @@
             class="border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-200 w-full"></textarea>
           <div class="mt-2 flex justify-between">
             <button id="send-reply"
-              class="primary-btn bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 focus:outline-none">
+              class="btn-primary">
               Send
             </button>
             <a id="open-in-gmail"

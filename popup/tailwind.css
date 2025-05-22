@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* Layout and Flex */
 .flex { display: flex; }
 .inline-flex { display: inline-flex; }
@@ -314,4 +318,167 @@
   cursor: pointer;
   z-index: 2;
   transform: translateY(1px);
+}
+
+/* New styles */
+:root {
+  --primary-color: #1A73E8;
+  /* Gmail blue */
+  --primary-hover: #1565C0;
+  --secondary-color: #f1f3f4;
+  /* Light neutral for backgrounds */
+  --accent-color: #34A853;
+  /* Example green */
+}
+
+/* Example override for buttons */
+.primary-btn {
+  background-color: var(--primary-color);
+  color: #fff;
+}
+
+.primary-btn:hover {
+  background-color: var(--primary-hover);
+}
+
+/* Example style for active tabs */
+.tab-btn.active-tab {
+  color: var(--primary-color);
+  border-bottom: 2px solid var(--primary-color);
+  font-weight: bold;
+}
+
+.tab-btn[data-active="true"] {
+  color: #2563eb;
+  border-bottom: 2px solid #2563eb;
+  font-weight: 600;
+}
+
+.card {
+  background-color: #ffffff;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+
+  .card-header {
+    font-weight: 500;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    color: #1f2937;
+    margin-bottom: 0.25rem;
+  }
+
+  .card-meta {
+    font-size: 0.75rem;
+    line-height: 1rem;
+    color: #6b7280;
+  }
+
+  .cta-link {
+    color: #2563eb;
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
+  .cta-link:hover {
+    text-decoration: underline;
+  }
+
+  .tab-btn {
+    padding-left: 1rem;
+    padding-right: 1rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    font-weight: 500;
+    color: #4b5563;
+    border-bottom-width: 2px;
+    border-bottom-color: transparent;
+    transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 150ms;
+  }
+
+  .tab-btn:hover {
+    color: #2563eb;
+  }
+
+  .tab-btn[data-active="true"] {
+    color: #2563eb;
+    border-bottom-color: #2563eb;
+    font-weight: 600;
+  }
+
+  color: #2563eb;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.cta-link:hover {
+  text-decoration: underline;
+}
+
+.tab-btn {
+  padding-left: 1rem;
+  padding-right: 1rem;
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  color: #4b5563;
+  border-bottom-width: 2px;
+  border-bottom-color: transparent;
+  transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.tab-btn:hover {
+  color: #2563eb;
+}
+
+.tab-btn[data-active="true"] {
+  color: #2563eb;
+  border-bottom-color: #2563eb;
+}
+
+#followup-section {
+  background-color: #ffffff;    /* Use white to match filter/job sections */
+  border: 1px solid #d1d5db;    /* A neutral gray (same as other borders) */
+  border-radius: 0.5rem;        /* Rounded corners for a card-like appearance */
+  padding: 1rem;                /* Adequate padding for internal spacing */
+  margin-top: 1.5rem;           /* Top margin if you want some separation from above */
+  margin-bottom: 1.5rem;        /* Space below to separate from the tabs */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); /* Subtle shadow for depth */
+}
+
+#followup-section h3 {
+  color: #374151;
+  /* darker text for clear heading */
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+/* tailwind.css */
+.btn-primary {
+  @apply bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 focus:outline-none;
+}
+
+.btn-secondary {
+  @apply border border-gray-400 text-gray-700 px-4 py-2 rounded hover:bg-gray-100 focus:outline-none;
+}
+
+.tab-btn {
+  @apply px-4 py-2 text-sm font-medium text-gray-600 border-b-2 border-transparent hover:text-blue-600;
+}
+
+.tab-btn.active-tab {
+  @apply text-blue-600 font-semibold border-blue-600 bg-blue-50;
+}
+.modal-content {
+  @apply bg-white p-6 rounded-lg shadow-xl max-w-lg w-full mx-auto;
+}
+.card-section {
+  @apply bg-white p-5 rounded-lg shadow-md mb-6;
 }
