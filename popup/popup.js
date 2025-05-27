@@ -1,6 +1,4 @@
-import { fetchData, setupInsightsButton } from "../premium/premiumFeatures.js";
-
-// TODO: Make sure misclassified Irrelevant emails are not counted in the quota
+import { fetchData } from "./api.js";
 
 /**
  * Utility: Get an element by ID and log an error if missing.
@@ -18,6 +16,7 @@ function getElement(id) {
  * If the element is missing, log an error instead of throwing.
  * @param {string|null} userName
  */
+
 function updateWelcomeHeader(userName) {
   const welcomeHeader = getElement("welcome-header");
   if (welcomeHeader) {
@@ -32,6 +31,7 @@ function updateWelcomeHeader(userName) {
  * @param {HTMLElement} modal - The modal element.
  * @param {boolean} show - Whether to show or hide.
  */
+
 function toggleModal(modal, show) {
   const modalBackdrop = getElement("modal-backdrop");
   if (!modal || !modalBackdrop) return;
@@ -59,15 +59,14 @@ function toggleModal(modal, show) {
  */
 function toggleEmailModal(show) {
   const modal = elements.emailModal;
-  if (!modal) return;          // safety check
+  if (!modal) return;
   toggleModal(modal, show);
 }
 
-
 function toggleMisclassModal(show) {
-  const modalBackdrop = getElement("modal-backdrop"); // Get shared backdrop
+  const modalBackdrop = getElement("modal-backdrop");
   if (show) {
-    elements.misclassModal.style.display = "flex"; // Changed to flex
+    elements.misclassModal.style.display = "flex";
     modalBackdrop.style.display = "block";
     requestAnimationFrame(() => {
       elements.misclassModal.classList.add("show");
@@ -94,7 +93,7 @@ function toggleUI(isLoggedIn) {
     hide(elements.loginBtn);
     show(getElement("followup-section"));
     show(getElement("tabs"));
-    
+
     if (elements.viewInsightsBtn)
       elements.viewInsightsBtn.classList.remove("hidden");
 
@@ -181,14 +180,15 @@ let currentReportEmail = null;
 let undoTimeoutId = null;
 let undoIntervalId = null;
 
-// Add at top of file
 const CONFIG = {
   API_BASE: "http://localhost:3000/api",
   ENDPOINTS: {
     STORED_EMAILS: "/emails/stored-emails",
     REPORT_MISCLASS: "/emails/report-misclassification",
     USER: "/user",
-    EMAILS: "/emails"
+    EMAILS: "/emails",
+    FOLLOWUP_NEEDED: "/emails/followup-needed",
+
   },
   PAGINATION: {
     PAGE_SIZE: 10,
@@ -196,10 +196,8 @@ const CONFIG = {
   }
 };
 
-// Initially hide follow-up section in HTML:
 document.getElementById("followup-section").classList.add("hidden");
 
-// Immediately try to load the name from storage
 chrome.storage.local.get(["userName"], (data) => {
   if (data.userName) {
     updateWelcomeHeader(data.userName);
@@ -226,16 +224,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     getElement("refresh-btn")?.addEventListener("click", async () => {
       console.log("Refresh button clicked");
-      // Fetch new emails from backend and merge them into state
       await fetchNewEmails(state.token, state.userEmail);
-
-      // Optionally, re-read from storage to ensure state is fresh
       await fetchStoredEmails();
-
-      // If you rely on filtering, disable it so the current category is refreshed
       state.isFilteredView = false;
-
-      // Finally, re-render emails and update tabs
       updatePage(1);
       updateCategoryCounts();
     });
@@ -243,58 +234,67 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function initializeApp() {
-    chrome.storage.local.get(
-      ['gmail_token', 'userEmail', 'lastSyncTimestamp', 'currentCategory', 'currentPage'],
-      async (data) => {
-        state.token = data.gmail_token;
-        state.userEmail = data.userEmail;
-
-        // Restore last-viewed tab and page
-        if (data.currentCategory) state.currentCategory = data.currentCategory;
-        if (data.currentPage) state.currentPage = data.currentPage;
-
-        if (state.token && state.userEmail) {
-          toggleUI(true);
-          await fetchUserPlan(); // Ensure userPlan is fetched and state is updated
-          console.log("👤 Current user plan:", state.userPlan);
-          updatePremiumButton(true);
-          loadFollowUpSuggestions()
-
-          // Adjust time-range filter options based on plan
-          const timeRangeFilter = document.getElementById("time-range-filter");
-          if (timeRangeFilter) {
-            const yearOptionExists = Array.from(timeRangeFilter.options).some(
-              (option) => option.value === "year"
-            );
-
-            if (state.userPlan === "premium" && !yearOptionExists) {
-              const yearOption = new Option("Past Year", "year");
-              timeRangeFilter.add(yearOption);
-            } else if (state.userPlan === "free" && yearOptionExists) {
-              for (let i = 0; i < timeRangeFilter.options.length; i++) {
-                if (timeRangeFilter.options[i].value === "year") {
-                  timeRangeFilter.remove(i);
-                  break;
-                }
-              }
-            }
-          }
-
-          // Load emails and user info
-          await fetchStoredEmails();
-          await fetchNewEmails(state.token, state.userEmail);
-          await getUserInfo(state.token);
-
-          // 📦 Start polling every 60 seconds
-          setInterval(() => {
-            if (state.token && state.userEmail) {
-              fetchNewEmails(state.token, state.userEmail);
-            }
-          }, 60000);
-        }
-      }
+    const {
+      gmail_token,
+      userEmail,
+      categorizedEmails = {},
+      followedUpThreadIds = [],
+      currentCategory = "Applied",
+      currentPage = 1
+    } = await new Promise(resolve =>
+      chrome.storage.local.get(
+        ["gmail_token", "userEmail", "categorizedEmails", "followedUpThreadIds", "currentCategory", "currentPage"],
+        resolve
+      )
     );
+
+    state.token = gmail_token;
+    state.userEmail = userEmail;
+    state.categorizedEmails = categorizedEmails;
+    state.currentCategory = currentCategory;
+    state.currentPage = currentPage;
+
+    if (state.token && state.userEmail) {
+      toggleUI(true);
+      updatePremiumButton(true);
+
+      renderEmails(state.categorizedEmails[state.currentCategory] || [], state.currentPage);
+      state.followUpSuggestions = (await new Promise(r =>
+        chrome.storage.local.get({ followedUpThreadIds: [] }, r)
+      )).followedUpThreadIds
+        .map(id => state.categorizedEmails[state.currentCategory]
+          .find(email => email.threadId === id))
+        .filter(Boolean)
+        .map(email => ({
+          threadId: email.threadId,
+          subject: email.subject,
+          company: extractCompanyName(email.subject),
+          daysSince: differenceInDays(new Date(), new Date(email.date)),
+          followedUp: true
+        }));
+
+      console.log("Follow-up suggestions:", state.followUpSuggestions);
+      renderFollowUpSuggestions(state.followUpSuggestions);
+    } else {
+      toggleUI(false);
+    }
+
+    if (state.token && state.userEmail) {
+      fetchUserPlan().then(() => {
+        updatePremiumButton(true);
+        adjustTimeRangeOptions();
+      });
+
+      loadFollowUpSuggestions();
+      fetchStoredEmails();
+      fetchNewEmails(state.token, state.userEmail);
+      getUserInfo(state.token).catch(console.error);
+      setInterval(() => {
+        if (state.token && state.userEmail) fetchNewEmails(state.token, state.userEmail);
+      }, 60_000);
+    }
   }
+
 
 
   // ======================
@@ -308,7 +308,6 @@ document.addEventListener("DOMContentLoaded", () => {
       state.userEmail = response.email;
       state.token = response.token;
 
-      // store under the same key
       await chrome.storage.local.set({
         gmail_token: response.token,
         userEmail: response.email
@@ -339,7 +338,6 @@ document.addEventListener("DOMContentLoaded", () => {
     showNotification("Successfully logged out", "success");
   }
 
-  // Clear chrome storage keys on logout
   function clearStoredUserData() {
     chrome.storage.local.remove([
       'userEmail',
@@ -398,6 +396,13 @@ document.addEventListener("DOMContentLoaded", () => {
         resolve(token);
       });
     });
+  }
+
+  function clearFollowupSkeleton() {
+    const list = document.getElementById("followup-list");
+    if (!list) return;
+    list.querySelectorAll(".skeleton-followup").forEach(el => el.remove());
+    document.getElementById("show-more-followups")?.classList.add("hidden");
   }
 
   async function fetchStoredEmails() {
@@ -498,7 +503,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const normalizedNew = newEmails.map(email => ({
           ...email,
           emailId: email.emailId || email.email_id,
-          threadId: email.threadId || email.thread_id,
+          threadId: email.ThreadId || email.thread_id,
         }));
 
         if (!updatedEmails[category]) {
@@ -522,12 +527,10 @@ document.addEventListener("DOMContentLoaded", () => {
         console.log("✅ New emails merged successfully.");
         state.categorizedEmails = updatedEmails;
 
-        // Show notification if any new email was found
         if (newEmailFound) {
           showNotification("📥 New job emails received!", "success");
         }
 
-        // Refresh UI
         state.currentPage = 1;
         if (state.isFilteredView) {
           applyFilters();
@@ -595,11 +598,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     renderEmails(emails, newPage);
 
-    // Toggle prev/next buttons
     elements.prevButton.style.display = (newPage > 1 ? "inline-block" : "none");
     elements.nextButton.style.display = (newPage < totalPages ? "inline-block" : "none");
 
-    // Update pagination info: showing current range out of total emails.
     updatePaginationInfo(totalEmails, newPage);
     chrome.storage.local.set({ currentPage: state.currentPage });
   }
@@ -615,6 +616,27 @@ document.addEventListener("DOMContentLoaded", () => {
         const end = Math.min(page * pageSize, totalEmails);
         paginationInfo.textContent = `${start}-${end} out of ${totalEmails}`;
       }
+    }
+  }
+
+  function adjustTimeRangeOptions() {
+    const timeRangeFilter = document.getElementById("time-range-filter");
+    if (!timeRangeFilter) return;
+
+    const optionValue = "90";
+    const yearOptionExists = Array.from(timeRangeFilter.options)
+      .some(opt => opt.value === optionValue);
+
+    if (state.userPlan === "premium" && !yearOptionExists) {
+      const opt = new Option("Last 90 days", optionValue);
+      timeRangeFilter.add(opt);
+    } else if (state.userPlan === "free" && yearOptionExists) {
+      // remove it
+      Array.from(timeRangeFilter.options).forEach((opt, idx) => {
+        if (opt.value === optionValue) {
+          timeRangeFilter.remove(idx);
+        }
+      });
     }
   }
 
@@ -637,7 +659,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     Object.keys(state.categorizedEmails).forEach(category => {
       const filtered = state.categorizedEmails[category].filter(email => {
-        // Combine searchable fields
         const text = `${email.subject || ""} ${email.from || ""} ${email.body || ""} ${email.snippet || ""}`.toLowerCase();
         const matchesQuery = !searchQuery || text.includes(searchQuery);
         const matchesTime = !thresholdDate || new Date(email.date) >= thresholdDate;
@@ -650,7 +671,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function updateCategoryCounts() {
-    // If filters are applied, calculate filtered counts per category.
     let counts = {};
     if (state.isFilteredView) {
       counts = getFilteredCounts();
@@ -658,18 +678,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
     elements.jobTabs.forEach((tab) => {
       const category = tab.dataset.category;
-      // Use the filtered count if filtering is active; otherwise, use the full count.
       const totalCount = state.isFilteredView
         ? (counts[category] || 0)
         : (state.categorizedEmails[category]?.length || 0);
 
-      // Only show new email counts when not filtering.
       const newCount =
         !state.isFilteredView && state.newEmailsCounts[category]
           ? state.newEmailsCounts[category]
           : 0;
 
-      // Compose the label.
       let label = category;
       if (newCount > 0) {
         label += ` (+${newCount}/${totalCount})`;
@@ -804,7 +821,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyFilters() {
     const searchQuery = elements.searchBar.value.toLowerCase();
     const timeRange = elements.timeRangeFilter.value;
-    if (state.userPlan === "free" && timeRange === "year") {
+    if (state.userPlan === "free" && timeRange === "90") {
       alert("Free plan allows filtering only within the last 30 days.");
       return;
     }
@@ -816,28 +833,24 @@ document.addEventListener("DOMContentLoaded", () => {
     } else if (timeRange === "month") {
       thresholdDate = new Date(now);
       thresholdDate.setMonth(thresholdDate.getMonth() - 1);
-    } else if (timeRange === "year") {
+    } else if (timeRange === "90") {
       thresholdDate = new Date(now);
-      thresholdDate.setFullYear(thresholdDate.getFullYear() - 1);
+      thresholdDate.setDate(thresholdDate.getDate() - 90);
     }
 
-    // Filter only within the currently selected tab (category)
     const category = state.currentCategory;
     const emailsInCategory = state.categorizedEmails[category] || [];
     const filteredEmails = emailsInCategory
       .filter(email => {
-        // Include subject, sender, body (and snippet) in the search text
         const text = `${email.subject || ""} ${email.from || ""} ${email.body || ""} ${email.snippet || ""}`.toLowerCase();
         const matchesSearchQuery = !searchQuery || text.includes(searchQuery);
         const matchesTimeRange = !thresholdDate || new Date(email.date) >= thresholdDate;
         return matchesSearchQuery && matchesTimeRange;
       })
-      .map(email => ({ ...email, category }));  // Tag each email with its category
+      .map(email => ({ ...email, category }));
 
-    // Sort by date descending
     filteredEmails.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    // Update state and render
     state.isFilteredView = true;
     state.filteredEmails = filteredEmails;
     state.currentPage = 1;
@@ -847,7 +860,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function restoreTabHighlighting() {
     elements.jobTabs.forEach((tab) => {
-      if (tab.dataset.category === state.currentCategory) { // Add state.
+      if (tab.dataset.category === state.currentCategory) {
         tab.classList.add("active-tab");
       } else {
         tab.classList.remove("active-tab");
@@ -878,13 +891,17 @@ document.addEventListener("DOMContentLoaded", () => {
           updateWelcomeHeader(data.userName);
           return resolve({ name: data.userName });
         }
-
         try {
           const response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${token}` }
           });
-          if (!response.ok) throw new Error("Failed to fetch user info");
-
+          if (!response.ok) {
+            if (response.status === 401) {
+              showNotification("Session expired. Please click the Sign In button to reauthenticate.", "error");
+              return reject(new Error("Unauthorized: Your token might be expired. Please reauthenticate via the Sign In button."));
+            }
+            throw new Error(`Profile fetch HTTP ${response.status}`);
+          }
           const profile = await response.json();
           if (profile.name) {
             chrome.storage.local.set({ userName: profile.name });
@@ -903,7 +920,6 @@ document.addEventListener("DOMContentLoaded", () => {
   async function displayEmailModal(emailData, threadId) {
     const { subject, from, date, body } = emailData;
 
-    // 1️⃣ Populate modal elements
     const subjEl = document.getElementById("modal-subject");
     const dateEl = document.getElementById("modal-date");
     const fromEl = document.getElementById("modal-from");
@@ -919,31 +935,26 @@ document.addEventListener("DOMContentLoaded", () => {
     if (fromEl) fromEl.innerHTML = `<strong>From:</strong> ${from}`;
     if (bodyEl) bodyEl.innerHTML = body || "";
 
-    // 2️⃣ Configure “Open in Gmail” link
     const openLink = document.getElementById("open-in-gmail");
     if (openLink) {
       openLink.href = `https://mail.google.com/mail/u/0/#inbox/${threadId}`;
       openLink.target = "_blank";
     }
 
-    // 3️⃣ Setup Reply button behavior
     const replyBtn = document.getElementById("reply-button");
     const replySection = document.getElementById("reply-section");
     const replyTextarea = document.getElementById("reply-body");
 
     if (replyBtn && replySection && replyTextarea) {
-      // Ensure the reply section is hidden and button is reset
       replySection.classList.add("hidden");
       replyTextarea.value = "";
       replyBtn.textContent = "Reply";
 
       replyBtn.onclick = async () => {
-        // If reply textarea is hidden, show it and change button to "Send"
         if (replySection.classList.contains("hidden")) {
           replySection.classList.remove("hidden");
           replyBtn.textContent = "Send";
         }
-        // Otherwise, treat click as sending the reply
         else {
           const replyText = replyTextarea.value.trim();
           if (!replyText) {
@@ -963,7 +974,6 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
-    // 4️⃣ Show modal + backdrop
     toggleModal(elements.emailModal, true);
   }
 
@@ -1037,7 +1047,6 @@ document.addEventListener("DOMContentLoaded", () => {
   function reportMisclassification(emailData) {
     currentReportEmail = emailData;
 
-    // Pre-select the existing category radio
     [...elements.misclassForm.correctCategory].forEach(radio => {
       radio.checked = (radio.value === emailData.category);
     });
@@ -1045,7 +1054,6 @@ document.addEventListener("DOMContentLoaded", () => {
     toggleMisclassModal(true);
   }
 
-  // 2) Close handlers
   elements.misclassCancelBtn.addEventListener('click', () => toggleMisclassModal(false));
   window.addEventListener('click', e => {
     if (e.target === elements.misclassModal) toggleMisclassModal(false);
@@ -1053,10 +1061,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function startUndoCountdown(duration = 5000) {
     const circle = document.getElementById('undo-timer-circle');
-    const totalLength = 88; // Circumference of the circle
+    const totalLength = 88;
     let start = Date.now();
 
-    // Reset stroke-dashoffset
     circle.style.strokeDashoffset = '0';
 
     undoIntervalId = setInterval(() => {
@@ -1065,7 +1072,6 @@ document.addEventListener("DOMContentLoaded", () => {
       circle.style.strokeDashoffset = totalLength * progress;
       if (progress === 1) {
         clearInterval(undoIntervalId);
-        // Trigger the action after countdown completes
       }
     }, 100);
   }
@@ -1078,16 +1084,13 @@ document.addEventListener("DOMContentLoaded", () => {
     toggleMisclassModal(false);
 
     if (correctedCategory === "Irrelevant") {
-      // Show the undo-toast
       const toast = document.getElementById("undo-toast");
       toast.style.display = "flex";
 
-      // Clear any prior timer
       clearTimeout(undoTimeoutId);
       clearInterval(undoIntervalId);
       startUndoCountdown();
 
-      // Only send the report if NOT undone within 5s
       undoTimeoutId = setTimeout(async () => {
         toast.style.display = "none";
         console.log("Reporting email as Irrelevant:", currentReportEmail);
@@ -1097,7 +1100,6 @@ document.addEventListener("DOMContentLoaded", () => {
             emailId,
             threadId,
             originalCategory,
-            // Explicitly override the category with "Irrelevant":
             correctedCategory: "Irrelevant",
             emailSubject: subject,
             emailBody: body,
@@ -1129,7 +1131,6 @@ document.addEventListener("DOMContentLoaded", () => {
       }, 5000);
 
     } else {
-      // All other categories: immediate report
       try {
         const { emailId, threadId, category: originalCategory, subject, body } = currentReportEmail;
         console.log("Sending misclassification payload:", {
@@ -1178,40 +1179,84 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   async function loadFollowUpSuggestions() {
+    const container = document.getElementById("followup-section");
+    const listEl = document.getElementById("followup-list");
+    const url = `${CONFIG.API_BASE}${CONFIG.ENDPOINTS.FOLLOWUP_NEEDED}`;
+
+    // Show the container
+    container.classList.remove("hidden");
+
+    // Insert skeleton placeholders
+    listEl.innerHTML = `
+    <li class="skeleton-followup"></li>
+    <li class="skeleton-followup"></li>
+    <li class="skeleton-followup"></li>
+  `;
+
     try {
-      const resp = await fetch("http://localhost:3000/api/emails/followup-needed", {
+      const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: state.userEmail })
       });
+
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
       const data = await resp.json();
-      if (!data.success) {
-        // Optionally show an empty state message
-        document.getElementById("followup-section").innerHTML = `<p class="text-sm text-gray-600">No follow-up suggestions found.</p>`;
-        document.getElementById("followup-section").classList.remove("hidden");
+      if (!data.success || !data.suggestions.length) {
+        clearFollowupSkeleton();
+        listEl.innerHTML = `
+        <li class="text-center text-sm text-gray-600">
+          No follow-up suggestions found.
+        </li>`;
         return;
       }
-      renderFollowUpSuggestions(data.suggestions);
-      // Show the follow-up section now that it has content
-      document.getElementById("followup-section").classList.remove("hidden");
+
+      // Retrieve followedUpThreadIds from chrome.storage.local
+      const { followedUpThreadIds = [] } = await new Promise(resolve =>
+        chrome.storage.local.get({ followedUpThreadIds: [] }, resolve)
+      );
+
+      // Map suggestions with followedUp status
+      state.followUpSuggestions = data.suggestions.map(s => ({
+        threadId: s.threadId,
+        subject: s.subject,
+        company: s.company,
+        daysSince: s.daysSince,
+        followedUp: followedUpThreadIds.includes(s.threadId)
+      }));
+
+      console.log("Follow-up suggestions:", state.followUpSuggestions);
+
+      // Clear skeletons and render actual suggestions
+      clearFollowupSkeleton();
+      renderFollowUpSuggestions(state.followUpSuggestions);
     } catch (err) {
       console.error("Error loading follow-ups:", err);
+      clearFollowupSkeleton();
+      listEl.innerHTML = `
+      <li class="text-center text-sm text-red-500">
+        Failed to load follow‑ups
+      </li>`;
     }
   }
 
+
   function renderFollowUpSuggestions(list) {
-    const container = document.getElementById("followup-section");
-    if (!container) return;
+    const listEl = document.getElementById("followup-list");
+    const showBtn = document.getElementById("show-more-followups");
+    if (!listEl) return;
 
     const displayLimit = 5;
     const hidden = list.slice(displayLimit);
     const visible = list.slice(0, displayLimit);
 
     const renderCard = item => `
-      <li class="followup-card border rounded-lg px-4 py-3 bg-white shadow-sm hover:bg-gray-50 transition duration-150 group">
+      <li class="followup-card border rounded-lg px-4 py-3 bg-white shadow-sm hover:bg-gray-50 transition duration-150 group"
+          data-thread-id="${item.threadId}">
         <div class="flex justify-between items-center">
           <div class="flex items-start gap-2">
-            <div class="pt-0.5 text-xs text-yellow-500 followup-dot">🟠</div> <!-- The dot -->
+            ${item.followedUp ? '' : '<div class="pt-0.5 text-xs text-yellow-500 followup-dot">🟠</div>'}
             <div>
               <div class="font-medium text-sm text-gray-800 mb-1">${item.subject}</div>
               <div class="text-xs text-gray-500">Sent ${item.daysSince} days ago • ${item.company}</div>
@@ -1219,47 +1264,53 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
           <a href="https://mail.google.com/mail/u/0/#inbox/${item.threadId}"
             target="_blank"
-            class="view-followup text-xs text-blue-500 group-hover:opacity-100 opacity-0 transition-opacity duration-150 ml-2">
+            class="view-followup text-xs text-blue-500 group-hover:opacity-100 opacity-0 transition-opacity duration-150 ml-2"
+            data-thread-id="${item.threadId}">
             View →
           </a>
         </div>
       </li>
     `;
 
-    container.innerHTML = `
-      <h3 class="text-sm font-semibold mb-2 text-gray-800">🔔 Suggested Follow-Ups</h3>
-      <ul class="space-y-3 list-none" id="followup-list">
-        ${visible.map(renderCard).join("")}
-      </ul>
-      ${hidden.length > 0
-          ? `<button id="show-more-followups" class="mt-3 text-xs text-blue-600 hover:underline">Show ${hidden.length} more</button>`
-          : ""
-        }
-    `;
+    listEl.innerHTML = visible.map(renderCard).join("");
 
-    document.querySelectorAll("#followup-list .view-followup").forEach(link => {
-      link.addEventListener("click", (event) => {
-        // Prevent default here if needed, or allow the link to work normally
-        // Find the parent followup-card and remove the dot element
-        const card = event.target.closest(".followup-card");
-        if (card) {
-          const dot = card.querySelector(".followup-dot");
-          if (dot) {
-            dot.remove(); // Remove the dot from the DOM
-          }
-        }
+    listEl.querySelectorAll(".view-followup").forEach(link => {
+      link.addEventListener("click", event => {
+        event.preventDefault();
+        const threadId = event.currentTarget.dataset.threadId;
+        markFollowedUp(threadId);
+        window.open(event.currentTarget.href, "_blank");
       });
     });
 
     if (hidden.length > 0) {
-      document.getElementById("show-more-followups").addEventListener("click", () => {
-        const listEl = document.getElementById("followup-list");
+      showBtn.textContent = `Show ${hidden.length} more`;
+      showBtn.classList.remove("hidden");
+      showBtn.onclick = () => {
         hidden.forEach(item => listEl.insertAdjacentHTML("beforeend", renderCard(item)));
-        document.getElementById("show-more-followups").remove();
+        showBtn.classList.add("hidden");
+      };
+    } else {
+      showBtn.classList.add("hidden");
+    }
+
+    function markFollowedUp(threadId) {
+      const suggestion = state.followUpSuggestions.find(item => item.threadId === threadId);
+
+      if (suggestion) suggestion.followedUp = true;
+
+      chrome.storage.local.get({ followedUpThreadIds: [] }, ({ followedUpThreadIds }) => {
+        if (!followedUpThreadIds.includes(threadId)) {
+          followedUpThreadIds.push(threadId);
+          chrome.storage.local.set({ followedUpThreadIds });
+        }
       });
+
+
+
+      renderFollowUpSuggestions(state.followUpSuggestions);
     }
   }
-
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === "NEW_EMAILS_UPDATED") {

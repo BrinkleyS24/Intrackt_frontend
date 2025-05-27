@@ -1,16 +1,12 @@
-// background.js (Manifest V3 service worker)
-
 const SYNC_INTERVAL_MINUTES = 15;
 const BACKEND = 'http://localhost:3000';
 
 // ── Initialization ───────────────────────────────────────────────────────────
 
-// 1. On install, schedule a recurring alarm (won’t auto-run until login)
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create('emailSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
 });
 
-// 2. On each alarm, attempt a sync
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === 'emailSync') fetchEmailsInBackground();
 });
@@ -21,7 +17,6 @@ let userEmail = null;
 let userPlan = 'free';
 let lastSync = 0;
 
-// Restore from storage (but don’t auto-sync here)
 chrome.storage.local.get(
   ['userEmail', 'userPlan', 'lastSyncTimestamp'],
   data => {
@@ -30,7 +25,7 @@ chrome.storage.local.get(
     lastSync = data.lastSyncTimestamp || 0;
     if (userEmail) {
       console.log('✅ Session restored for', userEmail);
-      updateUserPlanFromBackend(); // Fetch latest plan
+      updateUserPlanFromBackend(); 
     }
   }
 );
@@ -59,7 +54,6 @@ async function updateUserPlanFromBackend() {
 
 async function fetchEmailsInBackground() {
   const now = Date.now();
-  // avoid double sync within half the interval
   if (now - lastSync < (SYNC_INTERVAL_MINUTES * 60e3) / 2) return;
   if (!userEmail) {
     return console.warn('Cannot sync: no userEmail');
@@ -67,14 +61,12 @@ async function fetchEmailsInBackground() {
 
   let token;
   try {
-    // 1) Try non-interactive token fetch
     token = await new Promise((res, rej) => {
       chrome.identity.getAuthToken({ interactive: false }, t =>
         chrome.runtime.lastError ? rej(chrome.runtime.lastError) : res(t)
       );
     });
   } catch {
-    // 2) Fallback to interactive
     token = await new Promise((res, rej) => {
       chrome.identity.getAuthToken({ interactive: true }, t =>
         chrome.runtime.lastError ? rej(chrome.runtime.lastError) : res(t)
@@ -125,7 +117,6 @@ async function handleMisclassification(emailData) {
   console.log("📌 Misclassified Email Reported:", emailData);
 
   try {
-    // 1) Save the misclassification for retraining
     const saveResponse = await fetch(`${BACKEND}/api/emails/save-misclassified`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -137,7 +128,6 @@ async function handleMisclassification(emailData) {
     }
     console.log("✅ Misclassification saved for retraining.");
 
-    // 2) If user said “Irrelevant”, soft-delete (archive) it in the emails table
     if (emailData.correctCategory === "Irrelevant") {
       console.log(`📦 Archiving email ${emailData.emailId} as Irrelevant`);
       const archiveResp = await fetch(`${BACKEND}/api/emails/archive`, {
@@ -154,7 +144,6 @@ async function handleMisclassification(emailData) {
         console.log("✅ Email archived successfully.");
       }
     } else {
-      // 3) Otherwise delete it as before (for other corrections)
       await fetch(`${BACKEND}/api/emails/delete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -174,7 +163,6 @@ async function handleMisclassification(emailData) {
 // ── Login Flow ────────────────────────────────────────────────────────────────
 
 function handleLogin(sendResponse) {
-  // Step 1: get a Google OAuth2 access token via chrome.identity
   chrome.identity.getAuthToken({ interactive: true }, async (token) => {
     if (chrome.runtime.lastError || !token) {
       return sendResponse({
@@ -185,14 +173,12 @@ function handleLogin(sendResponse) {
 
     let profile;
     try {
-      // Step 2: fetch the user’s Google profile to get their email
       const resp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (!resp.ok) throw new Error(`Profile fetch HTTP ${resp.status}`);
       profile = await resp.json();
     } catch (err) {
-      // clear bad token so next time they’ll re-auth
       chrome.identity.removeCachedAuthToken({ token }, () => { });
       return sendResponse({ success: false, error: 'Failed to fetch Google profile' });
     }
@@ -202,24 +188,20 @@ function handleLogin(sendResponse) {
       return sendResponse({ success: false, error: 'No email in profile response' });
     }
 
-    // persist locally
     chrome.storage.local.set({ userEmail, userPlan: 'free' });
     console.log('✅ Logged in as', userEmail);
 
     try {
-      // Step 3: request your backend for a Google consent URL, passing state=userEmail
       const { url } = await fetch(
         `${BACKEND}/api/auth/auth-url?email=${encodeURIComponent(userEmail)}`
       ).then(r => r.json());
 
-      // override the redirect_uri so it returns to this extension
       const authUrl = new URL(url);
       authUrl.searchParams.set(
         'redirect_uri',
         chrome.identity.getRedirectURL('oauth2')
       );
 
-      // Step 4: open Google’s consent screen
       chrome.identity.launchWebAuthFlow(
         { url: authUrl.toString(), interactive: true },
         async (redirectUrl) => {
@@ -228,7 +210,6 @@ function handleLogin(sendResponse) {
             return sendResponse({ success: false, error: 'Consent failed or cancelled' });
           }
 
-          // Parse out the code & the state (the email) from the redirect
           const parsed = new URL(redirectUrl);
           const code = parsed.searchParams.get('code');
           const state = parsed.searchParams.get('state');
@@ -236,7 +217,6 @@ function handleLogin(sendResponse) {
             return sendResponse({ success: false, error: 'Missing code or state in redirect' });
           }
 
-          // Step 5: exchange code+state with your backend to store refresh_token
           const tokenResp = await fetch(`${BACKEND}/api/auth/token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -249,7 +229,6 @@ function handleLogin(sendResponse) {
 
           sendResponse({ success: true, token, email: userEmail });
 
-          // kick off initial sync now that refresh_token exists
           fetchEmailsInBackground();
         }
       );
@@ -259,7 +238,6 @@ function handleLogin(sendResponse) {
     }
   });
 
-  // return true to keep the message channel open for the async response
   return true;
 }
 
@@ -291,7 +269,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ success: true });
       return true;
     default:
-      // If we don't handle this message type, do nothing.
       return false;
   }
 });

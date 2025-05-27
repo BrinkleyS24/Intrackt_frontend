@@ -21,8 +21,7 @@
     <button id="login-btn" class="btn-primary">
       Sign in with Gmail
     </button>
-    <button id="signout-btn"
-      class="btn-secondary hidden">
+    <button id="signout-btn" class="btn-secondary hidden">
       Sign Out
     </button>
     <p class="text-xs text-gray-500 mt-4">
@@ -49,42 +48,45 @@
         class="border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-200">
         <option value="week" selected>Last Week</option>
         <option value="month">Last 30 Days</option>
-        <option value="year">Last Year</option>
       </select>
     </div>
     <div class="flex gap-2">
-      <button id="apply-filters"
-        class="btn-primary">
+      <button id="apply-filters" class="btn-primary">
         Apply Filters
       </button>
-      <button id="clear-filters"
-        class="btn-secondary">
+      <button id="clear-filters" class="btn-secondary">
         Clear Filters
       </button>
     </div>
   </div>
 
   <section id="followup-section" class="card-section hidden">
-    <!-- follow-up suggestions will go here -->
+    <h3 class="text-sm font-semibold mb-2 text-gray-800">🔔 Suggested Follow‑Ups</h3>
+    <ul id="followup-list" class="list-none p-0 m-0">
+      <li class="skeleton-followup"></li>
+      <li class="skeleton-followup"></li>
+      <li class="skeleton-followup"></li>
+    </ul>
+    <button id="show-more-followups" class="mt-3 text-xs text-blue-600 hover:underline hidden">
+      Show more
+    </button>
   </section>
+
+
 
   <!-- Job List & Tabs -->
   <div id="job-list" class="hidden">
     <div id="tabs" class="flex space-x-2 border-b mb-6 hidden" role="tablist">
-      <button class="tab-btn active-tab" role="tab"
-        aria-selected="true" data-category="Applied">
+      <button class="tab-btn active-tab" role="tab" aria-selected="true" data-category="Applied">
         Applied (0)
       </button>
-      <button class="tab-btn active-tab" role="tab"
-        aria-selected="false" data-category="Interviewed">
+      <button class="tab-btn active-tab" role="tab" aria-selected="false" data-category="Interviewed">
         Interviewed
       </button>
-      <button class="tab-btn active-tab" role="tab"
-        aria-selected="false" data-category="Offers">
+      <button class="tab-btn active-tab" role="tab" aria-selected="false" data-category="Offers">
         Offers
       </button>
-      <button class="tab-btn active-tab" role="tab"
-        aria-selected="false" data-category="Rejected">
+      <button class="tab-btn active-tab" role="tab" aria-selected="false" data-category="Rejected">
         Rejected
       </button>
     </div>
@@ -138,12 +140,10 @@
           <label class="block"><input type="radio" name="correctCategory" value="Irrelevant"> Irrelevant</label>
         </fieldset>
         <div class="mt-4 flex justify-end space-x-2">
-          <button type="submit" id="misclass-submit"
-            class="btn-primary">
+          <button type="submit" id="misclass-submit" class="btn-primary">
             Submit Correction
           </button>
-          <button type="button" id="misclass-cancel"
-            class="btn-secondary">
+          <button type="button" id="misclass-cancel" class="btn-secondary">
             Cancel
           </button>
         </div>
@@ -164,8 +164,7 @@
         <li>Smart keyword extraction for resume optimization</li>
         <li>Unlimited email processing & priority support</li>
       </ul>
-      <button id="subscribe-premium"
-        class="btn-primary">
+      <button id="subscribe-premium" class="btn-primary">
         Subscribe Now
       </button>
     </div>
@@ -202,8 +201,7 @@
           <textarea id="reply-body" rows="5" placeholder="Type your reply here..."
             class="border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-200 w-full"></textarea>
           <div class="mt-2 flex justify-between">
-            <button id="send-reply"
-              class="btn-primary">
+            <button id="send-reply" class="btn-primary">
               Send
             </button>
             <a id="open-in-gmail"
