@@ -1181,12 +1181,30 @@ document.addEventListener("DOMContentLoaded", () => {
   async function loadFollowUpSuggestions() {
     const container = document.getElementById("followup-section");
     const listEl = document.getElementById("followup-list");
+    const showMore = document.getElementById("show-more-followups");
     const url = `${CONFIG.API_BASE}${CONFIG.ENDPOINTS.FOLLOWUP_NEEDED}`;
 
-    // Show the container
-    container.classList.remove("hidden");
+    // Gate behind premium
+    if (state.userPlan !== "premium") {
+      container.classList.remove("hidden");
+      listEl.innerHTML = `
+      <li class="text-center text-sm text-gray-600 mb-2">
+        Unlock Suggested Follow-Ups with <strong>Premium</strong>.
+      </li>
+      <li class="text-center">
+        <button id="upgrade-followups" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+          Upgrade Now
+        </button>
+      </li>
+    `;
+      showMore?.classList.add("hidden");
+      document.getElementById("upgrade-followups")
+        .addEventListener("click", () => toggleModal(elements.premiumModal, true));
+      return;
+    }
 
-    // Insert skeleton placeholders
+    // Premium users: show skeleton + fetch
+    container.classList.remove("hidden");
     listEl.innerHTML = `
     <li class="skeleton-followup"></li>
     <li class="skeleton-followup"></li>
@@ -1199,12 +1217,12 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: state.userEmail })
       });
-
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
       const data = await resp.json();
+      clearFollowupSkeleton();
+
       if (!data.success || !data.suggestions.length) {
-        clearFollowupSkeleton();
         listEl.innerHTML = `
         <li class="text-center text-sm text-gray-600">
           No follow-up suggestions found.
@@ -1212,12 +1230,10 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // Retrieve followedUpThreadIds from chrome.storage.local
       const { followedUpThreadIds = [] } = await new Promise(resolve =>
         chrome.storage.local.get({ followedUpThreadIds: [] }, resolve)
       );
 
-      // Map suggestions with followedUp status
       state.followUpSuggestions = data.suggestions.map(s => ({
         threadId: s.threadId,
         subject: s.subject,
@@ -1226,21 +1242,16 @@ document.addEventListener("DOMContentLoaded", () => {
         followedUp: followedUpThreadIds.includes(s.threadId)
       }));
 
-      console.log("Follow-up suggestions:", state.followUpSuggestions);
-
-      // Clear skeletons and render actual suggestions
-      clearFollowupSkeleton();
       renderFollowUpSuggestions(state.followUpSuggestions);
     } catch (err) {
       console.error("Error loading follow-ups:", err);
       clearFollowupSkeleton();
       listEl.innerHTML = `
       <li class="text-center text-sm text-red-500">
-        Failed to load follow‑ups
+        Failed to load follow-ups
       </li>`;
     }
   }
-
 
   function renderFollowUpSuggestions(list) {
     const listEl = document.getElementById("followup-list");
