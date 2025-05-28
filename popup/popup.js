@@ -91,11 +91,12 @@ function toggleUI(isLoggedIn) {
     show(elements.jobList);
     show(elements.signoutBtn);
     hide(elements.loginBtn);
-    show(getElement("followup-section"));
+    if (state.userPlan === "premium") {
+      show(getElement("followup-section"));
+    } else {
+      hide(getElement("followup-section"));
+    }
     show(getElement("tabs"));
-
-    if (elements.viewInsightsBtn)
-      elements.viewInsightsBtn.classList.remove("hidden");
 
     if (elements.followupBtn)
       elements.followupBtn.classList.remove("hidden");
@@ -107,9 +108,6 @@ function toggleUI(isLoggedIn) {
     show(elements.loginBtn);
     hide(getElement("followup-section"));
     hide(getElement("tabs"));
-
-    if (elements.viewInsightsBtn)
-      elements.viewInsightsBtn.classList.add("hidden");
 
     if (elements.followupBtn)
       elements.followupBtn.classList.add("hidden");
@@ -255,47 +253,47 @@ document.addEventListener("DOMContentLoaded", () => {
     state.currentPage = currentPage;
 
     if (state.token && state.userEmail) {
-      toggleUI(true);
+      // FIRST: Fetch user plan before rendering UI that depends on it
+      await fetchUserPlan();
+      await fetchQuotaData();
       updatePremiumButton(true);
+      adjustTimeRangeOptions();
 
+      toggleUI(true); // only now that userPlan is known
+
+      // Render emails and follow-up suggestions (premium-only)
       renderEmails(state.categorizedEmails[state.currentCategory] || [], state.currentPage);
-      state.followUpSuggestions = (await new Promise(r =>
-        chrome.storage.local.get({ followedUpThreadIds: [] }, r)
-      )).followedUpThreadIds
-        .map(id => state.categorizedEmails[state.currentCategory]
-          .find(email => email.threadId === id))
-        .filter(Boolean)
-        .map(email => ({
-          threadId: email.threadId,
-          subject: email.subject,
-          company: extractCompanyName(email.subject),
-          daysSince: differenceInDays(new Date(), new Date(email.date)),
-          followedUp: true
-        }));
 
-      console.log("Follow-up suggestions:", state.followUpSuggestions);
-      renderFollowUpSuggestions(state.followUpSuggestions);
+      const allEmails = Object.values(state.categorizedEmails).flat();
+      const followedUp = followedUpThreadIds.map(id =>
+        allEmails.find(email => email.threadId === id)
+      ).filter(Boolean);
+
+      state.followUpSuggestions = followedUp.map(email => ({
+        threadId: email.threadId,
+        subject: email.subject,
+        company: extractCompanyName(email.subject),
+        daysSince: differenceInDays(new Date(), new Date(email.date)),
+        followedUp: true
+      }));
+
+      if (state.userPlan === "premium") {
+        renderFollowUpSuggestions(state.followUpSuggestions);
+      }
     } else {
       toggleUI(false);
     }
 
     if (state.token && state.userEmail) {
-      fetchUserPlan().then(() => {
-        updatePremiumButton(true);
-        adjustTimeRangeOptions();
-      });
-
-      loadFollowUpSuggestions();
-      fetchStoredEmails();
-      fetchNewEmails(state.token, state.userEmail);
+      await loadFollowUpSuggestions(); // Now respects premium/free
+      await fetchStoredEmails();
+      await fetchNewEmails(state.token, state.userEmail);
       getUserInfo(state.token).catch(console.error);
       setInterval(() => {
         if (state.token && state.userEmail) fetchNewEmails(state.token, state.userEmail);
       }, 60_000);
     }
   }
-
-
 
   // ======================
   // AUTH & USER MANAGEMENT
@@ -398,6 +396,13 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function differenceInDays(dateString) {
+    const now = new Date();
+    const past = new Date(dateString);
+    const diffMs = now - past;
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  }
+
   function clearFollowupSkeleton() {
     const list = document.getElementById("followup-list");
     if (!list) return;
@@ -455,6 +460,20 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
+  async function fetchQuotaData() {
+    try {
+      const response = await fetchData("http://localhost:3000/api/user", {
+        email: state.userEmail
+      });
+      if (response && response.quota) {
+        handleQuotaNotification(response.quota);
+      }
+    } catch (error) {
+      console.error("Error fetching quota data:", error);
+    }
+  }
+
+
   async function fetchNewEmails(token, email) {
     if (!token || !email) {
       console.error("❌ Cannot fetch new emails without token and user email.");
@@ -469,11 +488,14 @@ document.addEventListener("DOMContentLoaded", () => {
       );
 
       if (!data.success || !data.categorizedEmails) {
-        if (data.quota?.usagePercentage >= 100) {
+        if (data.quota?.usagePercentage >= 100 && state.userPlan !== "premium") {
           showNotification("🚫 You've reached your quota. Upgrade for more access.", "warning");
-        } else {
-          console.warn("⚠️ No new emails found.");
         }
+
+        if (data.quota) {
+          handleQuotaNotification(data.quota);
+        }
+
         return;
       }
 
@@ -547,9 +569,18 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (error) {
       console.error("❌ Error fetching new emails:", error.message);
       showNotification("Failed to fetch new emails", "error");
+
+      // 🔴 Check for 100% quota error
+      if (error.message.includes("quota reached")) {
+        console.log("🔴 Quota reached error, forcing quota notification at 100%.");
+        handleQuotaNotification({
+          limit: 50,
+          usage: 50,
+          usagePercentage: 100
+        });
+      }
     }
   }
-
 
   // ======================
   // UTILITIES
@@ -698,32 +729,60 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function handleQuotaNotification(quota) {
-    if (state.userPlan === "premium" || !elements.quotaNotification) {
+    if (state.userPlan === "premium") {
       elements.quotaNotification.style.display = "none";
       return;
     }
-    const { usagePercentage } = quota;
-    if (usagePercentage >= 100) {
-      elements.quotaNotification.style.display = "block";
-      elements.quotaNotification.innerHTML = `
-        <strong>You've reached your quota limit!</strong><br>
-        <a href="#" id="upgrade-link" class="text-blue-600 hover:underline" text-decoration: underline;">Upgrade to Premium Plan</a>
-        for unlimited access, or
-        <a href="#" id="purchase-quota-link" class="text-blue-600 hover:underline" text-decoration: underline;">Purchase 25 more emails for $2</a>.
-      `;
-      getElement("upgrade-link")?.addEventListener("click", () => {
-        alert("Redirecting to Premium Plan payment page...");
-      });
-      getElement("purchase-quota-link")?.addEventListener("click", () => {
-        alert("Redirecting to additional quota payment page...");
-      });
-    } else if (usagePercentage >= 1) {
-      elements.quotaNotification.style.display = "block";
-      elements.quotaNotification.textContent = `Warning: You've used ${usagePercentage}% of your monthly quota.`;
-    } else {
-      elements.quotaNotification.style.display = "none";
+
+    const usagePercentage = Math.round(quota.usagePercentage);
+    const isMaxQuota = usagePercentage >= 100;
+
+    // Force show if at max
+    if (isMaxQuota) {
+      sessionStorage.removeItem("quotaAlertDismissed");
     }
+
+    // Respect dismiss for <100%
+    if (!isMaxQuota && sessionStorage.getItem("quotaAlertDismissed") === "true") {
+      elements.quotaNotification.style.display = "none";
+      return;
+    }
+
+    // Tailwind-based styling
+    const urgencyClass = isMaxQuota
+      ? "bg-red-100 border border-red-200 text-red-800"
+      : "bg-yellow-100 border border-yellow-200 text-yellow-800";
+
+    elements.quotaNotification.className = `
+    flex flex-col gap-2 px-3 py-2 rounded shadow-sm
+    ${urgencyClass} mb-4
+  `;
+
+    const header = "⚠ Quota Warning";
+    const message = `You've used ${usagePercentage}% of your ${quota.limit} email limit.`;
+
+    elements.quotaNotification.innerHTML = `
+    <div class="flex flex-col items-center gap-2 text-center">
+      <h3 class="text-xs font-semibold">${header}</h3>
+      <p class="text-xs">${message}</p>
+    </div>
+    <div class="flex justify-center gap-3 mt-2">
+      <button id="dismiss-btn" class="border border-gray-300 text-xs text-gray-600 px-3 py-1 rounded hover:text-gray-800 hover:bg-gray-100">Dismiss</button>
+    </div>
+    `;
+
+
+    elements.quotaNotification.style.display = "block";
+
+    document.getElementById("upgrade-btn")?.addEventListener("click", () => {
+      toggleModal(elements.premiumModal, true);
+    });
+    document.getElementById("dismiss-btn")?.addEventListener("click", () => {
+      elements.quotaNotification.style.display = "none";
+      sessionStorage.setItem("quotaAlertDismissed", "true");
+    });
   }
+
 
   // ======================
   // EVENT HANDLERS
@@ -783,6 +842,34 @@ document.addEventListener("DOMContentLoaded", () => {
 
     attachEmailEventListeners();
     updatePaginationInfo(emails.length, page);
+
+    if (state.isMaxQuota) {
+      const warningBanner = `
+      <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-4">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+            </svg>
+          </div>
+          <div class="ml-3">
+            <p class="text-sm text-red-700">
+              You've reached your quota limit. New emails won't be processed until you 
+              <a href="#" class="font-medium text-red-700 underline hover:text-red-600" id="inline-upgrade-link">
+                upgrade your plan
+              </a>.
+            </p>
+          </div>
+        </div>
+      </div>
+    `;
+      elements.jobsContainer.insertAdjacentHTML('afterbegin', warningBanner);
+
+      document.getElementById('inline-upgrade-link')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleModal(elements.premiumModal, true);
+      });
+    }
   }
 
 
@@ -887,7 +974,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return new Promise((resolve, reject) => {
       chrome.storage.local.get(["userName"], async (data) => {
         if (data.userName) {
-          console.log("✅ Loaded cached name:", data.userName);
           updateWelcomeHeader(data.userName);
           return resolve({ name: data.userName });
         }
@@ -1178,6 +1264,10 @@ document.addEventListener("DOMContentLoaded", () => {
     toast.style.display = "none";
   });
 
+  function extractCompanyName(text) {
+    return text?.split(" at ")?.[1]?.split(" ")[0] || "Unknown";
+  }
+
   async function loadFollowUpSuggestions() {
     const container = document.getElementById("followup-section");
     const listEl = document.getElementById("followup-list");
@@ -1263,25 +1353,25 @@ document.addEventListener("DOMContentLoaded", () => {
     const visible = list.slice(0, displayLimit);
 
     const renderCard = item => `
-      <li class="followup-card border rounded-lg px-4 py-3 bg-white shadow-sm hover:bg-gray-50 transition duration-150 group"
-          data-thread-id="${item.threadId}">
-        <div class="flex justify-between items-center">
-          <div class="flex items-start gap-2">
-            ${item.followedUp ? '' : '<div class="pt-0.5 text-xs text-yellow-500 followup-dot">🟠</div>'}
-            <div>
-              <div class="font-medium text-sm text-gray-800 mb-1">${item.subject}</div>
-              <div class="text-xs text-gray-500">Sent ${item.daysSince} days ago • ${item.company}</div>
-            </div>
+    <li class="followup-card border rounded-lg px-4 py-3 bg-white shadow-sm hover:bg-gray-50 transition duration-150 group"
+        data-thread-id="${item.threadId}">
+      <div class="flex justify-between items-center">
+        <div class="flex items-start gap-2">
+          ${item.followedUp ? '' : '<div class="pt-0.5 text-xs text-yellow-500 followup-dot">🟠</div>'}
+          <div>
+            <div class="font-medium text-sm text-gray-800 mb-1">${item.subject}</div>
+            <div class="text-xs text-gray-500">Sent ${item.daysSince} days ago • ${item.company}</div>
           </div>
-          <a href="https://mail.google.com/mail/u/0/#inbox/${item.threadId}"
-            target="_blank"
-            class="view-followup text-xs text-blue-500 group-hover:opacity-100 opacity-0 transition-opacity duration-150 ml-2"
-            data-thread-id="${item.threadId}">
-            View →
-          </a>
         </div>
-      </li>
-    `;
+        <a href="https://mail.google.com/mail/u/0/#inbox/${item.threadId}"
+          target="_blank"
+          class="view-followup text-xs text-blue-500 group-hover:opacity-100 opacity-0 transition-opacity duration-150 ml-2"
+          data-thread-id="${item.threadId}">
+          View →
+        </a>
+      </div>
+    </li>
+  `;
 
     listEl.innerHTML = visible.map(renderCard).join("");
 
@@ -1316,8 +1406,6 @@ document.addEventListener("DOMContentLoaded", () => {
           chrome.storage.local.set({ followedUpThreadIds });
         }
       });
-
-
 
       renderFollowUpSuggestions(state.followUpSuggestions);
     }

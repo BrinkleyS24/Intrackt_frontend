@@ -1,6 +1,6 @@
 {
-  "name": "Gmail Job Tracker",
-  "description": "Tracks job application statuses directly from Gmail.",
+  "name": "Intrackt",
+  "description": "Tracks job application statuses directly from your inbox.",
   "version": "1.0",
   "manifest_version": 3,
   "permissions": [

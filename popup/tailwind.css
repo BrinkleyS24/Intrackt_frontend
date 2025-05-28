@@ -876,3 +876,33 @@
     opacity: 1;
   }
 }
+
+.quota-alert {
+  animation: pulse 2s infinite;
+  border-left: 4px solid;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.8; }
+  100% { opacity: 1; }
+}
+
+.quota-full {
+  border-left-color: #ef4444;
+  background-color: #fef2f2;
+}
+
+.quota-warning {
+  border-left-color: #f59e0b;
+  background-color: #fffbeb;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.quota-badge {
+  animation: bounce 2s infinite;
+}
