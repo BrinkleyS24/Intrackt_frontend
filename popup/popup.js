@@ -435,7 +435,9 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       Object.values(state.categorizedEmails).forEach(category =>
-        category.sort((a, b) => new Date(b.date) - new Date(a.date))
+        category.sort((a, b) =>
+          new Date(b.date || b.created_at) - new Date(a.date || a.created_at)
+        )
       );
 
       chrome.storage.local.set({ categorizedEmails: state.categorizedEmails });
@@ -456,9 +458,10 @@ document.addEventListener("DOMContentLoaded", () => {
       ...email,
       emailId: email.emailId || email.email_id,
       threadId: email.threadId || email.thread_id,
-      date: new Date(email.date).toISOString()
+      date: email.date ? new Date(email.date).toISOString() : new Date().toISOString()
     };
   }
+
 
   async function fetchQuotaData() {
     try {
@@ -699,34 +702,62 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     return counts;
+  }function getFilteredCounts() {
+  const counts = {};
+  const searchQuery = elements.searchBar.value.toLowerCase();
+  const timeRange = elements.timeRangeFilter.value;
+  let thresholdDate = null;
+
+  if (timeRange === "week") {
+    thresholdDate = new Date();
+    thresholdDate.setDate(thresholdDate.getDate() - 7);
+  } else if (timeRange === "month") {
+    thresholdDate = new Date();
+    thresholdDate.setMonth(thresholdDate.getMonth() - 1);
+  } else if (timeRange === "90") {
+    thresholdDate = new Date();
+    thresholdDate.setDate(thresholdDate.getDate() - 90);
   }
 
-  function updateCategoryCounts() {
-    let counts = {};
-    if (state.isFilteredView) {
-      counts = getFilteredCounts();
-    }
-
-    elements.jobTabs.forEach((tab) => {
-      const category = tab.dataset.category;
-      const totalCount = state.isFilteredView
-        ? (counts[category] || 0)
-        : (state.categorizedEmails[category]?.length || 0);
-
-      const newCount =
-        !state.isFilteredView && state.newEmailsCounts[category]
-          ? state.newEmailsCounts[category]
-          : 0;
-
-      let label = category;
-      if (newCount > 0) {
-        label += ` (+${newCount}/${totalCount})`;
-      } else {
-        label += ` (${totalCount})`;
-      }
-      tab.textContent = label;
+  Object.keys(state.categorizedEmails).forEach(category => {
+    const filtered = state.categorizedEmails[category].filter(email => {
+      const text = `${email.subject || ""} ${email.from || ""} ${email.body || ""} ${email.snippet || ""}`.toLowerCase();
+      const matchesSearch = !searchQuery || text.includes(searchQuery);
+      const matchesTime = !thresholdDate || new Date(email.date) >= thresholdDate;
+      return matchesSearch && matchesTime;
     });
+    counts[category] = filtered.length;
+  });
+
+  return counts;
+}
+
+function updateCategoryCounts() {
+  let counts = {};
+  if (state.isFilteredView) {
+    counts = getFilteredCounts(); // counts per category in filtered view
   }
+
+  elements.jobTabs.forEach(tab => {
+    const category = tab.dataset.category;
+    const totalCount = state.isFilteredView
+      ? (counts[category] || 0)
+      : (state.categorizedEmails[category]?.length || 0);
+
+    // “new email” badge only shows if NOT filtered view:
+    const newCount = (!state.isFilteredView && state.newEmailsCounts[category])
+      ? state.newEmailsCounts[category]
+      : 0;
+
+    let label = category;
+    if (newCount > 0) {
+      label += ` (+${newCount}/${totalCount})`;
+    } else {
+      label += ` (${totalCount})`;
+    }
+    tab.textContent = label;
+  });
+}
 
   function handleQuotaNotification(quota) {
     if (state.userPlan === "premium") {
@@ -754,22 +785,22 @@ document.addEventListener("DOMContentLoaded", () => {
       : "bg-yellow-100 border border-yellow-200 text-yellow-800";
 
     elements.quotaNotification.className = `
-    flex flex-col gap-2 px-3 py-2 rounded shadow-sm
-    ${urgencyClass} mb-4
-  `;
+  flex flex-col gap-2 px-3 py-2 rounded shadow-sm
+  ${urgencyClass} mb-4
+`;
 
     const header = "⚠ Quota Warning";
     const message = `You've used ${usagePercentage}% of your ${quota.limit} email limit.`;
 
     elements.quotaNotification.innerHTML = `
-    <div class="flex flex-col items-center gap-2 text-center">
+    <div class="flex flex-col items-center gap-2 text-center text-red-800">
       <h3 class="text-xs font-semibold">${header}</h3>
       <p class="text-xs">${message}</p>
     </div>
     <div class="flex justify-center gap-3 mt-2">
       <button id="dismiss-btn" class="border border-gray-300 text-xs text-gray-600 px-3 py-1 rounded hover:text-gray-800 hover:bg-gray-100">Dismiss</button>
     </div>
-    `;
+`;
 
 
     elements.quotaNotification.style.display = "block";
@@ -912,6 +943,8 @@ document.addEventListener("DOMContentLoaded", () => {
       alert("Free plan allows filtering only within the last 30 days.");
       return;
     }
+
+    // compute thresholdDate based on dropdown
     const now = new Date();
     let thresholdDate = null;
     if (timeRange === "week") {
@@ -929,13 +962,16 @@ document.addEventListener("DOMContentLoaded", () => {
     const emailsInCategory = state.categorizedEmails[category] || [];
     const filteredEmails = emailsInCategory
       .filter(email => {
+        // combine subject/from/body/snippet into one lowercase string
         const text = `${email.subject || ""} ${email.from || ""} ${email.body || ""} ${email.snippet || ""}`.toLowerCase();
         const matchesSearchQuery = !searchQuery || text.includes(searchQuery);
-        const matchesTimeRange = !thresholdDate || new Date(email.date) >= thresholdDate;
+        // only keep if no thresholdDate or email.date ≥ thresholdDate
+        const matchesTimeRange = !thresholdDate || (new Date(email.date) >= thresholdDate);
         return matchesSearchQuery && matchesTimeRange;
       })
       .map(email => ({ ...email, category }));
 
+    // sort newest→oldest
     filteredEmails.sort((a, b) => new Date(b.date) - new Date(a.date));
 
     state.isFilteredView = true;
@@ -956,11 +992,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function clearFilters() {
-    elements.jobTabs.forEach((tab) => {
-      if (tab.dataset.category === state.currentCategory) {
-        tab.classList.add("active-tab");
-      }
-    });
     state.isFilteredView = false;
     state.currentPage = 1;
     elements.searchBar.value = "";
@@ -1075,7 +1106,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const authToken = await getAuthToken();
     const url = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send";
 
-    const subject = document.querySelector("#email-content h3")?.textContent || "Re: (no subject)";
+    const subject = document.querySelector("#modal-subject")?.textContent || "(no subject)";
     const emailContent = `To: ${to}\r\nSubject: Re: ${subject}\r\nIn-Reply-To: ${threadId}\r\nReferences: ${threadId}\r\n\r\n${message}`;
 
     const encodedMessage = base64Encode(emailContent);
@@ -1111,24 +1142,41 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("click", (event) => {
     if (event.target === elements.premiumModal) toggleModal(elements.premiumModal, false);
   });
-  elements.jobTabs.forEach(tab => {
+    elements.jobTabs.forEach(tab => {
     tab.addEventListener("click", () => {
+      // 1) Clear any “new-email” badge for this category:
       const category = tab.dataset.category;
       state.newEmailsCounts[category] = 0;
-      updateCategoryCounts();
+
+      // 2) Update CSS so only this tab is highlighted:
       elements.jobTabs.forEach(t => t.classList.remove("active-tab"));
       tab.classList.add("active-tab");
 
+      // 3) Switch to the new category and reset to page 1:
       state.currentCategory = category;
       state.currentPage = 1;
       chrome.storage.local.set({ currentCategory: state.currentCategory });
-      if (state.isFilteredView) {
+
+      // 4) Check whether the user currently has a search/time filter
+      //    (searchBar non-empty OR timeRangeFilter ≠ default “week”)
+      const searchText = elements.searchBar.value.trim();
+      const timeRangeValue = elements.timeRangeFilter.value;
+
+      if (searchText !== "" || timeRangeValue !== "week") {
+        // If either is true, keep “filtered view” on:
+        state.isFilteredView = true;
         applyFilters();
       } else {
+        // No active filter → show the full list for this category
+        state.isFilteredView = false;
         updatePage(1);
       }
+
+      // 5) After switching, refresh the tab counts so badges reflect filtered/full counts:
+      updateCategoryCounts();
     });
   });
+
 
   function reportMisclassification(emailData) {
     currentReportEmail = emailData;
