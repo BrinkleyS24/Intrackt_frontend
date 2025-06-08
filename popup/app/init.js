@@ -63,7 +63,7 @@ export async function initializeApp({
 
     await fetchStoredEmails(state, elements, setLoadingState, CONFIG);
     await fetchNewEmails(state, elements, applyFilters, CONFIG);
-    await loadFollowUpSuggestions();
+    await loadFollowUpSuggestions(state, elements, CONFIG);
 
     getUserInfo(state.token).then(profile => {
       if (profile?.name) updateWelcomeHeader(profile.name);
