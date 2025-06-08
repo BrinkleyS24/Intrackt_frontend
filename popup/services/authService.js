@@ -34,8 +34,8 @@ export async function handleLogin(
         });
 
         await fetchUserPlan();
-        updatePremiumButton(true);
-        toggleUI(true);
+        updatePremiumButton(true, state, elements);
+        toggleUI(true, state, elements);
 
         const profile = await getUserInfo(state.token, updateWelcomeHeader);
         updateWelcomeHeader(profile.name);
@@ -59,8 +59,8 @@ export async function handleLogin(
 export async function handleLogout(state, elements, toggleUI, updatePremiumButton, updateWelcomeHeader, resetAppState) {
     await chrome.runtime.sendMessage({ type: "LOGOUT" });
     resetAppState();
-    toggleUI(false);
-    updatePremiumButton(false);
+    toggleUI(false, state, elements)
+    updatePremiumButton(false, state, elements);
     updateWelcomeHeader(null);
     clearStoredUserData();
     showNotification("Successfully logged out", "success");

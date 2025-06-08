@@ -1,9 +1,5 @@
 import { fetchData } from "./api.js";
-import {
-  handleLogin,
-  handleLogout,
-  getUserInfo
-} from "./services/authService.js";
+import { handleLogin, handleLogout, getUserInfo } from "./services/authService.js";
 import { fetchStoredEmails, fetchNewEmails, fetchQuotaData } from "./services/emailService.js";
 import { renderEmails } from "./ui/emailRenderer.js";
 import { updatePage } from "./ui/pagination.js";
@@ -12,46 +8,12 @@ import { updateWelcomeHeader } from "./ui/welcome.js";
 import { getElement } from "./utils/dom.js";
 import { updateCategoryCounts } from "./ui/emailUI.js";
 import { formatFollowUpTime } from "./utils/time.js";
-
+import { initializeEventListeners } from "./ui/eventListeners.js";
+import { toggleUI, updatePremiumButton, adjustTimeRangeOptions } from "./ui/uiState.js";
 
 // TODO: Backend doesnt catch plan upgrade
 // TODO: Make sure emails are tracked properly across categories
-
-function toggleUI(isLoggedIn) {
-  const show = el => el?.classList.remove("hidden");
-  const hide = el => el?.classList.add("hidden");
-
-  if (isLoggedIn) {
-    show(elements.filterSection);
-    show(elements.jobList);
-    show(elements.signoutBtn);
-    hide(elements.loginBtn);
-
-    if (state.userPlan === "premium") {
-      show(getElement("followup-section"));
-    } else {
-      hide(getElement("followup-section"));
-    }
-
-    show(getElement("tabs"));
-    elements.followupBtn?.classList.remove("hidden");
-  } else {
-    hide(elements.filterSection);
-    hide(elements.jobList);
-    hide(elements.signoutBtn);
-    show(elements.loginBtn);
-    hide(getElement("followup-section"));
-    hide(getElement("tabs"));
-    elements.followupBtn?.classList.add("hidden");
-  }
-}
-
-function updatePremiumButton(isLoggedIn) {
-  if (!elements.premiumBtn) return;
-  const shouldShow = isLoggedIn && state.userPlan === "free";
-  elements.premiumBtn.style.display = shouldShow ? "inline-block" : "none";
-}
-
+// TODO: Fix refresh button
 
 const elements = {
   filterSection: getElement("filter-section"),
@@ -139,59 +101,25 @@ chrome.storage.local.get(["userName"], (data) => {
 
 document.addEventListener("DOMContentLoaded", () => {
 
-  initializeEventListeners();
+  initializeEventListeners(state, elements, {
+    handleLogin,
+    handleLogout,
+    toggleUI,
+    updatePremiumButton,
+    fetchUserPlan,
+    loadFollowUpSuggestions,
+    fetchStoredEmails,
+    fetchNewEmails,
+    updateWelcomeHeader,
+    setLoadingState,
+    applyFilters,
+    clearFilters,
+    updateCategoryCounts,
+    CONFIG,
+    resetAppState
+  });
+
   initializeApp();
-
-  function initializeEventListeners() {
-    elements.loginBtn?.addEventListener("click", () =>
-      handleLogin(
-        state,
-        elements,
-        toggleUI,
-        updatePremiumButton,
-        fetchUserPlan,
-        loadFollowUpSuggestions,
-        fetchStoredEmails,
-        fetchNewEmails,
-        updateWelcomeHeader,
-        setLoadingState,
-        CONFIG
-      )
-    );
-
-    elements.signoutBtn?.addEventListener("click", () =>
-      handleLogout(
-        state,
-        elements,
-        toggleUI,
-        updatePremiumButton,
-        updateWelcomeHeader,
-        resetAppState
-      )
-    );
-
-    elements.applyFiltersBtn?.addEventListener("click", applyFilters);
-    elements.clearFiltersBtn?.addEventListener("click", clearFilters);
-    elements.searchBar?.addEventListener("input", debounce(applyFilters, 300));
-
-    elements.prevButton?.addEventListener("click", () => updatePage(state.currentPage - 1, state, elements, CONFIG));
-    elements.nextButton?.addEventListener("click", () => updatePage(state.currentPage + 1, state, elements, CONFIG));
-
-    elements.closeEmailModal?.addEventListener("click", () => toggleModal(elements.emailModal, false));
-    elements.closePremiumModal?.addEventListener("click", () => toggleModal(elements.premiumModal, false));
-
-    getElement("refresh-btn")?.addEventListener("click", async () => {
-      console.log("Refresh button clicked");
-      await fetchNewEmails(state, elements, applyFilters, CONFIG);
-      await fetchStoredEmails(state, elements, setLoadingState, CONFIG);;
-      state.isFilteredView = false;
-      updatePage(1, state, elements, CONFIG);
-      updateCategoryCounts(state, elements);
-      ;
-    });
-
-  }
-  console.log("✅ setLoadingState is", typeof setLoadingState);
 
   async function initializeApp() {
     const {
@@ -217,9 +145,9 @@ document.addEventListener("DOMContentLoaded", () => {
     if (state.token && state.userEmail) {
       await fetchUserPlan();
       await fetchQuotaData(state);
-      updatePremiumButton(true);
-      adjustTimeRangeOptions();
-      toggleUI(true);
+      updatePremiumButton(true, state, elements);
+      adjustTimeRangeOptions(state);
+      toggleUI(true, state, elements);;
 
       renderEmails(state.categorizedEmails[state.currentCategory] || [], state.currentPage, state, elements, CONFIG);
 
@@ -249,7 +177,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (state.token && state.userEmail) fetchNewEmails(state, elements, applyFilters, CONFIG);
       }, 60_000);
     } else {
-      toggleUI(false);
+      toggleUI(false, state, elements);
     }
   }
 
@@ -338,27 +266,6 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error("Error fetching user plan:", error);
       state.userPlan = "free";
       return state.userPlan;
-    }
-  }
-
-  function adjustTimeRangeOptions() {
-    const timeRangeFilter = document.getElementById("time-range-filter");
-    if (!timeRangeFilter) return;
-
-    const optionValue = "90";
-    const yearOptionExists = Array.from(timeRangeFilter.options)
-      .some(opt => opt.value === optionValue);
-
-    if (state.userPlan === "premium" && !yearOptionExists) {
-      const opt = new Option("Last 90 days", optionValue);
-      timeRangeFilter.add(opt);
-    } else if (state.userPlan === "free" && yearOptionExists) {
-      // remove it
-      Array.from(timeRangeFilter.options).forEach((opt, idx) => {
-        if (opt.value === optionValue) {
-          timeRangeFilter.remove(idx);
-        }
-      });
     }
   }
 
@@ -777,7 +684,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (message.type === "NEW_EMAILS_UPDATED") {
       console.log("🔄 New emails detected. Refreshing stored emails...");
       fetchStoredEmails(state, elements, setLoadingState, CONFIG);
-       fetchNewEmails(state, elements, applyFilters, CONFIG);
+      fetchNewEmails(state, elements, applyFilters, CONFIG);
       ;
     }
   });
