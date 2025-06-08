@@ -1,7 +1,5 @@
 import { showNotification } from "../ui/notification.js";
 
-
-
 export async function handleLogin(
     state,
     elements,

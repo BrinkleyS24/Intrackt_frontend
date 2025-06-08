@@ -1,67 +1,20 @@
-import { fetchData } from "./api.js";
-import { handleLogin, handleLogout, getUserInfo } from "./services/authService.js";
+import { handleLogin, handleLogout } from "./services/authService.js";
 import { fetchStoredEmails, fetchNewEmails, fetchQuotaData } from "./services/emailService.js";
 import { renderEmails } from "./ui/emailRenderer.js";
 import { updatePage } from "./ui/pagination.js";
 import { toggleModal, toggleMisclassModal, toggleEmailModal } from "./ui/modals.js";
 import { updateWelcomeHeader } from "./ui/welcome.js";
-import { getElement } from "./utils/dom.js";
 import { updateCategoryCounts } from "./ui/emailUI.js";
 import { formatFollowUpTime } from "./utils/time.js";
 import { initializeEventListeners } from "./ui/eventListeners.js";
 import { toggleUI, updatePremiumButton, adjustTimeRangeOptions } from "./ui/uiState.js";
+import { state, elements, CONFIG, resetAppState, fetchUserPlan } from "./utils/appGlobals.js";
+import { initializeApp } from "./app/init.js";
+import { applyFilters, clearFilters } from "./app/filters.js";
 
 // TODO: Backend doesnt catch plan upgrade
 // TODO: Make sure emails are tracked properly across categories
 // TODO: Fix refresh button
-
-const elements = {
-  filterSection: getElement("filter-section"),
-  jobList: getElement("job-list"),
-  loginBtn: getElement("login-btn"),
-  signoutBtn: getElement("signout-btn"),
-  searchBar: getElement("search-bar"),
-  timeRangeFilter: getElement("time-range-filter"),
-  applyFiltersBtn: getElement("apply-filters"),
-  clearFiltersBtn: getElement("clear-filters"),
-  jobTabs: document.querySelectorAll(".tab-btn"),
-  jobsContainer: getElement("jobs"),
-  prevButton: getElement("prev-button"),
-  nextButton: getElement("next-button"),
-  premiumBtn: getElement("premium-btn"),
-  premiumModal: getElement("premium-modal"),
-  closePremiumModal: getElement("close-premium-modal"),
-  modalBackdrop: getElement("modal-backdrop"),
-  quotaNotification: getElement("quota-notification"),
-  emailModal: document.getElementById("email-modal"),
-  modalSubject: document.getElementById("modal-subject"),
-  modalFrom: document.getElementById("modal-from"),
-  modalBody: document.getElementById("modal-body"),
-  closeEmailModal: document.getElementById("close-email-modal"),
-  misclassModal: document.getElementById('misclass-modal'),
-  misclassForm: document.getElementById('misclass-form'),
-  misclassCloseBtn: document.getElementById('misclass-close'),
-  misclassCancelBtn: document.getElementById('misclass-cancel'),
-  followupContainer: document.getElementById("followup-section"),
-  toastSuccess: document.getElementById("toast-success")
-
-};
-
-const state = {
-  userEmail: null,
-  currentCategory: "Applied",
-  currentPage: 1,
-  categorizedEmails: {
-    Applied: [],
-    Interviewed: [],
-    Offers: [],
-    Rejected: []
-  },
-  newEmailsCounts: { Applied: 0, Interviewed: 0, Offers: 0, Rejected: 0 },
-  isFilteredView: false,
-  userPlan: "free",
-  activeLabel: null
-};
 
 let undoTimeoutId = null;
 let undoIntervalId = null;
@@ -77,29 +30,20 @@ function setLoadingState(isLoading) {
   }
 }
 
-const CONFIG = {
-  API_BASE: "http://localhost:3000/api",
-  ENDPOINTS: {
-    STORED_EMAILS: "/emails/stored-emails",
-    REPORT_MISCLASS: "/emails/report-misclassification",
-    USER: "/user",
-    EMAILS: "/emails",
-    FOLLOWUP_NEEDED: "/emails/followup-needed",
-
-  },
-  PAGINATION: {
-    PAGE_SIZE: 10,
-    INITIAL_PAGE: 1
-  }
-};
-
-chrome.storage.local.get(["userName"], (data) => {
-  if (data.userName) {
-    updateWelcomeHeader(data.userName);
-  }
-});
+function differenceInDays(dateString) {
+  const now = new Date();
+  const past = new Date(dateString);
+  const diffMs = now - past;
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
 
 document.addEventListener("DOMContentLoaded", () => {
+
+  chrome.storage.local.get(["userName"], (data) => {
+    if (data.userName) {
+      updateWelcomeHeader(data.userName);
+    }
+  });
 
   initializeEventListeners(state, elements, {
     handleLogin,
@@ -119,124 +63,24 @@ document.addEventListener("DOMContentLoaded", () => {
     resetAppState
   });
 
-  initializeApp();
-
-  async function initializeApp() {
-    const {
-      gmail_token,
-      userEmail,
-      categorizedEmails = {},
-      followedUpThreadIds = [],
-      currentCategory = "Applied",
-      currentPage = 1
-    } = await new Promise(resolve =>
-      chrome.storage.local.get(
-        ["gmail_token", "userEmail", "categorizedEmails", "followedUpThreadIds", "currentCategory", "currentPage"],
-        resolve
-      )
-    );
-
-    state.token = gmail_token;
-    state.userEmail = userEmail;
-    state.categorizedEmails = categorizedEmails;
-    state.currentCategory = currentCategory;
-    state.currentPage = currentPage;
-
-    if (state.token && state.userEmail) {
-      await fetchUserPlan();
-      await fetchQuotaData(state);
-      updatePremiumButton(true, state, elements);
-      adjustTimeRangeOptions(state);
-      toggleUI(true, state, elements);;
-
-      renderEmails(state.categorizedEmails[state.currentCategory] || [], state.currentPage, state, elements, CONFIG);
-
-      const allEmails = Object.values(state.categorizedEmails).flat();
-      const followedUp = followedUpThreadIds.map(id =>
-        allEmails.find(email => email.threadId === id)
-      ).filter(Boolean);
-
-      state.followUpSuggestions = followedUp
-        .filter(email => email?.threadId && email?.subject && email?.date)
-        .map(email => ({
-          threadId: email.threadId,
-          subject: email.subject,
-          daysSince: differenceInDays(new Date(), new Date(email.date)),
-          followedUp: true
-        }));
-
-      await fetchStoredEmails(state, elements, setLoadingState, CONFIG);;
-      await fetchNewEmails(state, elements, applyFilters, CONFIG);
-      await loadFollowUpSuggestions();
-      getUserInfo(state.token).then(profile => {
-        if (profile?.name) updateWelcomeHeader(profile.name);
-      }).catch(console.error);
-
-      // Poll for new emails
-      setInterval(() => {
-        if (state.token && state.userEmail) fetchNewEmails(state, elements, applyFilters, CONFIG);
-      }, 60_000);
-    } else {
-      toggleUI(false, state, elements);
-    }
-  }
-
-  // ======================
-  // AUTH & USER MANAGEMENT
-  // ======================
-  function resetAppState() {
-    state.userEmail = null;
-    state.categorizedEmails = {};
-    state.currentCategory = "Applied";
-    state.currentPage = 1;
-
-    if (elements.jobsContainer) {
-      elements.jobsContainer.innerHTML = "<p>Fetching emails...</p>";
-    }
-
-    if (elements.quotaNotification) {
-      elements.quotaNotification.style.display = "none";
-    }
-
-    const followupSection = getElement("followup-section");
-    if (followupSection) {
-      followupSection.classList.add("hidden");
-
-      const followupList = document.getElementById("followup-list");
-      if (followupList) followupList.innerHTML = "";
-
-      const showMore = document.getElementById("show-more-followups");
-      if (showMore) showMore.classList.add("hidden");
-    }
-
-    const toast = document.getElementById("undo-toast");
-    if (toast) toast.style.display = "none";
-    clearTimeout(undoTimeoutId);
-    clearInterval(undoIntervalId);
-
-    const modalBackdrop = getElement("modal-backdrop");
-    if (modalBackdrop) {
-      modalBackdrop.style.display = "none";
-      modalBackdrop.classList.remove("show");
-    }
-
-    const modals = ["email-modal", "premium-modal", "misclass-modal"];
-    modals.forEach(id => {
-      const modal = document.getElementById(id);
-      if (modal) {
-        modal.classList.remove("show");
-        modal.style.display = "none";
-      }
-    });
-  }
-
-
-  function differenceInDays(dateString) {
-    const now = new Date();
-    const past = new Date(dateString);
-    const diffMs = now - past;
-    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  }
+  initializeApp({
+    state,
+    elements,
+    CONFIG,
+    updateWelcomeHeader,
+    fetchUserPlan,
+    fetchQuotaData,
+    toggleUI,
+    updatePremiumButton,
+    adjustTimeRangeOptions,
+    fetchStoredEmails,
+    fetchNewEmails,
+    loadFollowUpSuggestions,
+    renderEmails,
+    differenceInDays,
+    setLoadingState,
+    applyFilters
+  });
 
   function clearFollowupSkeleton() {
     const list = document.getElementById("followup-list");
@@ -248,97 +92,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // ======================
   // UTILITIES
   // ======================
-  function debounce(func, timeout = 300) {
-    let timer;
-    return (...args) => {
-      clearTimeout(timer);
-      timer = setTimeout(() => func.apply(this, args), timeout);
-    };
-  }
-
-  async function fetchUserPlan() {
-    try {
-      const response = await fetchData("http://localhost:3000/api/user", { email: state.userEmail });
-      state.userPlan = response.plan || "free";
-      console.log("Fetched and updated state.userPlan:", state.userPlan);
-      return state.userPlan;
-    } catch (error) {
-      console.error("Error fetching user plan:", error);
-      state.userPlan = "free";
-      return state.userPlan;
-    }
-  }
-
   elements.closeEmailModal.addEventListener("click", () => toggleEmailModal(false, elements));
 
   // ======================
   // UI UPDATES
   // ======================
-  function applyFilters() {
-    const searchQuery = elements.searchBar.value.toLowerCase();
-    const timeRange = elements.timeRangeFilter.value;
-    if (state.userPlan === "free" && timeRange === "90") {
-      alert("Free plan allows filtering only within the last 30 days.");
-      return;
-    }
-
-    // compute thresholdDate based on dropdown
-    const now = new Date();
-    let thresholdDate = null;
-    if (timeRange === "week") {
-      thresholdDate = new Date(now);
-      thresholdDate.setDate(thresholdDate.getDate() - 7);
-    } else if (timeRange === "month") {
-      thresholdDate = new Date(now);
-      thresholdDate.setMonth(thresholdDate.getMonth() - 1);
-    } else if (timeRange === "90") {
-      thresholdDate = new Date(now);
-      thresholdDate.setDate(thresholdDate.getDate() - 90);
-    }
-
-    const category = state.currentCategory;
-    const emailsInCategory = state.categorizedEmails[category] || [];
-    const filteredEmails = emailsInCategory
-      .filter(email => {
-        // combine subject/from/body/snippet into one lowercase string
-        const text = `${email.subject || ""} ${email.from || ""} ${email.body || ""} ${email.snippet || ""}`.toLowerCase();
-        const matchesSearchQuery = !searchQuery || text.includes(searchQuery);
-        // only keep if no thresholdDate or email.date ≥ thresholdDate
-        const matchesTimeRange = !thresholdDate || (new Date(email.date) >= thresholdDate);
-        return matchesSearchQuery && matchesTimeRange;
-      })
-      .map(email => ({ ...email, category }));
-
-    // sort newest→oldest
-    filteredEmails.sort((a, b) => new Date(b.date) - new Date(a.date));
-
-    state.isFilteredView = true;
-    state.filteredEmails = filteredEmails;
-    state.currentPage = 1;
-    updatePage(1, state, elements, CONFIG);
-    updateCategoryCounts(state, elements);
-    ;
-  }
-
-  function restoreTabHighlighting() {
-    elements.jobTabs.forEach((tab) => {
-      if (tab.dataset.category === state.currentCategory) {
-        tab.classList.add("active-tab");
-      } else {
-        tab.classList.remove("active-tab");
-      }
-    });
-  }
-
-  function clearFilters() {
-    state.isFilteredView = false;
-    state.currentPage = 1;
-    elements.searchBar.value = "";
-    elements.timeRangeFilter.value = "week";
-    restoreTabHighlighting();
-    updatePage(1, state, elements, CONFIG);
-    updateCategoryCounts(state, elements);
-  }
 
   elements.closeEmailModal?.addEventListener("click", () => toggleModal(elements.emailModal, false));
   elements.modalBackdrop?.addEventListener("click", () => {
@@ -370,7 +128,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (searchText !== "" || timeRangeValue !== "week") {
         state.isFilteredView = true;
-        applyFilters();
+        applyFilters(state, elements, CONFIG);
       } else {
         state.isFilteredView = false;
         updatePage(1, state, elements, CONFIG);

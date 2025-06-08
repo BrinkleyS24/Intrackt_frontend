@@ -176,7 +176,7 @@ export async function fetchNewEmails(state, elements, applyFilters, CONFIG) {
 
             state.currentPage = 1;
             if (isFilteredView) {
-                applyFilters();
+                applyFilters(state, elements, CONFIG);
             } else {
                 updatePage(1, state, elements, CONFIG);
             }
