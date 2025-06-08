@@ -45,7 +45,16 @@ export async function initializeApp({
     adjustTimeRangeOptions(state);
     toggleUI(true, state, elements);
 
-    renderEmails(state.categorizedEmails[state.currentCategory] || [], state.currentPage, state, elements, CONFIG);
+    await fetchStoredEmails(state, elements, setLoadingState, CONFIG);
+    await fetchNewEmails(state, elements, applyFilters, CONFIG);
+
+    renderEmails(
+      state.categorizedEmails[state.currentCategory] || [],
+      state.currentPage,
+      state,
+      elements,
+      CONFIG
+    );
 
     const allEmails = Object.values(state.categorizedEmails).flat();
     const followedUp = followedUpThreadIds.map(id =>
@@ -61,13 +70,13 @@ export async function initializeApp({
         followedUp: true
       }));
 
-    await fetchStoredEmails(state, elements, setLoadingState, CONFIG);
-    await fetchNewEmails(state, elements, applyFilters, CONFIG);
     await loadFollowUpSuggestions(state, elements, CONFIG);
 
-    getUserInfo(state.token).then(profile => {
-      if (profile?.name) updateWelcomeHeader(profile.name);
-    }).catch(console.error);
+    getUserInfo(state.token)
+      .then(profile => {
+        if (profile?.name) updateWelcomeHeader(profile.name);
+      })
+      .catch(console.error);
 
     setInterval(() => {
       if (state.token && state.userEmail) {
@@ -78,3 +87,4 @@ export async function initializeApp({
     toggleUI(false, state, elements);
   }
 }
+
