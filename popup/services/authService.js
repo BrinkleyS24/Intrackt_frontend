@@ -3,43 +3,57 @@ import { showNotification } from "../ui/notification.js";
 
 
 export async function handleLogin(
-  state,
-  elements,
-  toggleUI,
-  updatePremiumButton,
-  fetchUserPlan,
-  loadFollowUpSuggestions,
-  fetchStoredEmails,
-  fetchNewEmails,
-  updateWelcomeHeader
+    state,
+    elements,
+    toggleUI,
+    updatePremiumButton,
+    fetchUserPlan,
+    loadFollowUpSuggestions,
+    fetchStoredEmails,
+    fetchNewEmails,
+    updateWelcomeHeader,
+    setLoadingState,
+    CONFIG,
+    applyFilters
 ) {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: "LOGIN" });
-    if (!response.success) throw new Error(response.error);
+    if (typeof setLoadingState === "function") {
+        setLoadingState(true);
+    }
 
-    state.userEmail = response.email;
-    state.token     = response.token;
+    try {
+        console.log("📦 Received setLoadingState:", typeof setLoadingState);
+        const response = await chrome.runtime.sendMessage({ type: "LOGIN" });
+        if (!response.success) throw new Error(response.error);
 
-    await chrome.storage.local.set({
-      gmail_token: response.token,
-      userEmail:   response.email
-    });
+        state.userEmail = response.email;
+        state.token = response.token;
 
-    await fetchUserPlan();
-    updatePremiumButton(true);
-    toggleUI(true); // ✅ DOM reflects full login state
+        await chrome.storage.local.set({
+            gmail_token: response.token,
+            userEmail: response.email
+        });
 
-    const profile = await getUserInfo(state.token, updateWelcomeHeader);
-    updateWelcomeHeader(profile.name);
+        await fetchUserPlan();
+        updatePremiumButton(true);
+        toggleUI(true);
 
-    await fetchStoredEmails();
-    await fetchNewEmails(state.token, state.userEmail);
-    await loadFollowUpSuggestions();
+        const profile = await getUserInfo(state.token, updateWelcomeHeader);
+        updateWelcomeHeader(profile.name);
 
-  } catch (err) {
-    showNotification(`Login failed: ${err.message}`, "error");
-  }
+        await fetchStoredEmails(state, elements, setLoadingState, CONFIG);
+        await fetchNewEmails(state, elements, applyFilters, CONFIG);;
+
+        await loadFollowUpSuggestions();
+
+    } catch (err) {
+        showNotification(`Login failed: ${err.message}`, "error");
+    } finally {
+        if (typeof setLoadingState === "function") {
+            setLoadingState(false);
+        }
+    }
 }
+
 
 
 export async function handleLogout(state, elements, toggleUI, updatePremiumButton, updateWelcomeHeader, resetAppState) {

@@ -25,7 +25,7 @@ chrome.storage.local.get(
     lastSync = data.lastSyncTimestamp || 0;
     if (userEmail) {
       console.log('✅ Session restored for', userEmail);
-      updateUserPlanFromBackend(); 
+      updateUserPlanFromBackend();
     }
   }
 );
@@ -183,13 +183,14 @@ function handleLogin(sendResponse) {
       return sendResponse({ success: false, error: 'Failed to fetch Google profile' });
     }
 
-    const userEmail = profile.email;
+    userEmail = profile.email;
     if (!userEmail) {
       return sendResponse({ success: false, error: 'No email in profile response' });
     }
 
     chrome.storage.local.set({ userEmail, userPlan: 'free' });
     console.log('✅ Logged in as', userEmail);
+
 
     try {
       const { url } = await fetch(
