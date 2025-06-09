@@ -906,3 +906,7 @@
 .quota-badge {
   animation: bounce 2s infinite;
 }
+
+input[type="checkbox"] {
+  accent-color: #22c55e; /* Tailwind green-500 */
+}

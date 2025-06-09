@@ -1,7 +1,8 @@
+
 export function updateCategoryCounts(state, elements) {
   let counts = {};
   if (state.isFilteredView) {
-    counts = getFilteredCounts(state, elements); // pass state and elements down
+    counts = getFilteredCounts(state, elements);
   }
 
   elements.jobTabs.forEach(tab => {
@@ -21,6 +22,7 @@ export function updateCategoryCounts(state, elements) {
       label += ` (${totalCount})`;
     }
     tab.textContent = label;
+    counts[category] = totalCount;
   });
 }
 

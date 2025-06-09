@@ -1538,3 +1538,7 @@ video {
     opacity: 1;
   }
 }
+
+input[type="checkbox"] {
+  accent-color: #22c55e;
+}

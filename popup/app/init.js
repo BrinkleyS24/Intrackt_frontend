@@ -46,7 +46,6 @@ export async function initializeApp({
     toggleUI(true, state, elements);
 
     await fetchStoredEmails(state, elements, setLoadingState, CONFIG);
-    await fetchNewEmails(state, elements, applyFilters, CONFIG);
 
     renderEmails(
       state.categorizedEmails[state.currentCategory] || [],
@@ -70,7 +69,10 @@ export async function initializeApp({
         followedUp: true
       }));
 
-    await loadFollowUpSuggestions(state, elements, CONFIG);
+    await Promise.all([
+      fetchNewEmails(state, elements, applyFilters, CONFIG),
+      loadFollowUpSuggestions(state, elements, CONFIG)
+    ]);
 
     getUserInfo(state.token)
       .then(profile => {
