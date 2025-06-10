@@ -31,12 +31,14 @@ export async function fetchStoredEmails(state, elements, setLoadingState, CONFIG
 
         state.categorizedEmails = { Applied: [], Interviewed: [], Offers: [], Rejected: [] };
 
-        data.categorizedEmails.forEach(serverEmail => {
-            const normalized = normalizeEmailData(serverEmail);
-            if (state.categorizedEmails[normalized.category]) {
-                state.categorizedEmails[normalized.category].push(normalized);
+        for (const [category, emails] of Object.entries(data.categorizedEmails)) {
+            if (!state.categorizedEmails[category]) continue;
+
+            for (const email of emails) {
+                const normalized = normalizeEmailData(email);
+                state.categorizedEmails[category].push(normalized);
             }
-        });
+        }
 
         Object.values(state.categorizedEmails).forEach(category =>
             category.sort((a, b) =>
@@ -80,16 +82,15 @@ export async function fetchNewEmails(state, elements, applyFilters, CONFIG) {
         console.error("❌ Cannot fetch new emails without token and user email.");
         return;
     }
+    
 
     console.log("📌 Fetching new emails...");
     try {
-        // ✅ Move this line ABOVE any reference to `data`
         const data = await fetchData(
             `${CONFIG.API_BASE}${CONFIG.ENDPOINTS.EMAILS}`,
             { token, email: userEmail }
         );
 
-        // ✅ Now safe to use `data`
         if (Array.isArray(data.categorizedEmails)) {
             console.error("❌ categorizedEmails should be an object, got array:", data.categorizedEmails);
             return;
@@ -176,7 +177,7 @@ export async function fetchNewEmails(state, elements, applyFilters, CONFIG) {
 
             state.currentPage = 1;
             if (isFilteredView) {
-                applyFilters(state, elements, CONFIG);
+                applyFilters(state, elements, CONFIG, timeRangeWasChanged);
             } else {
                 updatePage(1, state, elements, CONFIG);
             }

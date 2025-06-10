@@ -19,7 +19,6 @@ export async function handleLogin(
     }
 
     try {
-        console.log("📦 Received setLoadingState:", typeof setLoadingState);
         const response = await chrome.runtime.sendMessage({ type: "LOGIN" });
         if (!response.success) throw new Error(response.error);
 

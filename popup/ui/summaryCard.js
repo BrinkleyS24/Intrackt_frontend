@@ -1,59 +1,79 @@
 export function renderSummaryCard(counts, isPremiumUser = false, emails) {
-    const container = document.createElement("div");
-    container.className = "mb-4 p-4 bg-white dark:bg-zinc-800 rounded-2xl shadow flex flex-col gap-2 opacity-0 translate-y-2 transition-all duration-500";
+  const container = document.createElement("div");
+  container.className = "mb-4 p-4 bg-white dark:bg-zinc-800 rounded-2xl shadow flex flex-col gap-4 opacity-0 translate-y-2 transition-all duration-500";
 
-    container.innerHTML = `
+  const summaryHTML = `
     <div class="text-lg font-semibold text-zinc-800 dark:text-white">📊 Job Search Summary</div>
-        <div class="grid grid-cols-2 gap-4 text-sm text-zinc-700 dark:text-zinc-200">
-            <div><strong>📝 Applied:</strong> <span class="count" data-category="Applied">0</span></div>
-            <div><strong>🎤 Interviewed:</strong> <span class="count" data-category="Interviewed">0</span></div>
-            <div><strong>🏆 Offers:</strong> <span class="count" data-category="Offers">0</span></div>
-            <div><strong>❌ Rejected:</strong> <span class="count" data-category="Rejected">0</span></div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center text-sm">
+      ${renderStatCard("📝", "Applied", "blue")}
+      ${renderStatCard("🎤", "Interviewed", "indigo")}
+      ${renderStatCard("🏆", "Offers", "green")}
+      ${renderStatCard("❌", "Rejected", "red")}
     </div>
-
-    ${isPremiumUser ? `
-      <hr class="my-2 border-zinc-300 dark:border-zinc-600">
-      <div class="text-sm text-zinc-600 dark:text-zinc-300">
-        🧠 <strong>Last activity:</strong> ${getLastActivityDate(emails)}
-        <br>
-        ⏳ <strong>Oldest pending reply:</strong> ${getOldestFollowUpAge(emails)} days ago
-      </div>
-    ` : `
-      <div class="mt-2 text-xs text-zinc-500 dark:text-zinc-400 italic">
-        🔒 Upgrade to premium to see response times & follow-up insights.
-      </div>
-    `}
+    ${isPremiumUser ? renderPremiumInsights(emails) : renderFreeTease()}
   `;
 
-    const target = document.getElementById("summary-container");
-    if (target) {
-        target.innerHTML = "";
-        target.appendChild(container);
+  container.innerHTML = summaryHTML;
 
-        requestAnimationFrame(() => {
-            container.classList.remove("opacity-0", "translate-y-2");
-            container.classList.add("opacity-100", "translate-y-0");
-        });
-    }
+  const target = document.getElementById("summary-container");
+  if (target) {
+    target.innerHTML = "";
+    target.appendChild(container);
 
-    animateCounts(counts);
+    requestAnimationFrame(() => {
+      container.classList.remove("opacity-0", "translate-y-2");
+      container.classList.add("opacity-100", "translate-y-0");
+    });
+  }
 
+  animateCounts(counts);
 }
 
-function getLastActivityDate(emails) {
+function renderStatCard(icon, category, color) {
+  return `
+    <div class="bg-zinc-50 dark:bg-zinc-700 p-3 rounded-xl shadow-inner">
+      <div class="text-xs text-zinc-500 dark:text-zinc-300">${icon} ${category}</div>
+      <div class="text-xl font-bold text-${color}-600 dark:text-${color}-400 count" data-category="${category}">0</div>
+    </div>
+  `;
+}
+
+function renderPremiumInsights(emails) {
+  const lastActivity = getLastActivityAge(emails);
+  const oldestFollowUp = getOldestFollowUpAge(emails);
+
+  return `
+    <hr class="my-2 border-zinc-300 dark:border-zinc-600">
+    <div class="text-sm text-zinc-600 dark:text-zinc-300 leading-snug">
+      ⏳ <strong>Oldest pending reply:</strong> ${oldestFollowUp}
+      <br>
+      🧠 <strong>Last activity:</strong> ${lastActivity}
+    </div>
+  `;
+}
+
+function renderFreeTease() {
+  return `
+    <div class="mt-2 text-xs text-zinc-500 dark:text-zinc-400 italic">
+      🔒 Upgrade to premium to see response times & follow-up insights.
+    </div>
+  `;
+}
+
+function getLastActivityAge(emails) {
   if (!emails?.length) return "N/A";
-  const allDates = emails.map(email => new Date(email.timestamp));
-  const mostRecent = new Date(Math.max(...allDates));
-  return mostRecent.toLocaleDateString();
+  const mostRecent = new Date(Math.max(...emails.map(email => new Date(email.timestamp))));
+  const daysAgo = Math.floor((Date.now() - mostRecent) / (1000 * 60 * 60 * 24));
+  return daysAgo === 0 ? "Today" : `${daysAgo} day${daysAgo > 1 ? "s" : ""} ago`;
 }
 
 function getOldestFollowUpAge(emails) {
   if (!emails?.length) return "N/A";
-  const pendingFollowUps = emails.filter(email => email.shouldFollowUp && !email.responded);
-  if (pendingFollowUps.length === 0) return "N/A";
-  const oldestDate = new Date(Math.min(...pendingFollowUps.map(e => new Date(e.timestamp))));
-  const days = Math.floor((Date.now() - oldestDate) / (1000 * 60 * 60 * 24));
-  return days;
+  const pending = emails.filter(email => email.shouldFollowUp && !email.responded);
+  if (pending.length === 0) return "N/A";
+  const oldest = new Date(Math.min(...pending.map(e => new Date(e.timestamp))));
+  const daysAgo = Math.floor((Date.now() - oldest) / (1000 * 60 * 60 * 24));
+  return `${daysAgo} day${daysAgo !== 1 ? "s" : ""} ago`;
 }
 
 function animateCounts(counts) {
@@ -63,7 +83,12 @@ function animateCounts(counts) {
   elements.forEach(el => {
     const category = el.dataset.category;
     const target = counts[category] || 0;
-    let start = 0;
+
+    if (target === 0) {
+      el.textContent = "0";
+      return;
+    }
+
     const startTime = performance.now();
 
     function update(timestamp) {

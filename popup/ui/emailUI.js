@@ -1,8 +1,9 @@
+import { shouldIncludeEmail } from "../app/filters.js";
 
-export function updateCategoryCounts(state, elements) {
+export function updateCategoryCounts(state, elements, searchQuery = null, thresholdDate = null) {
   let counts = {};
-  if (state.isFilteredView) {
-    counts = getFilteredCounts(state, elements);
+  if (state.isFilteredView && searchQuery !== null && thresholdDate !== null) {
+    counts = getFilteredCounts(state, searchQuery, thresholdDate);
   }
 
   elements.jobTabs.forEach(tab => {
@@ -26,32 +27,15 @@ export function updateCategoryCounts(state, elements) {
   });
 }
 
-function getFilteredCounts(state, elements) {
+export function getFilteredCounts(state, searchQuery, thresholdDate) {
   const counts = {};
-  const searchQuery = elements.searchBar.value.toLowerCase();
-  const timeRange = elements.timeRangeFilter.value;
-  let thresholdDate = null;
 
-  if (timeRange === "week") {
-    thresholdDate = new Date();
-    thresholdDate.setDate(thresholdDate.getDate() - 7);
-  } else if (timeRange === "month") {
-    thresholdDate = new Date();
-    thresholdDate.setMonth(thresholdDate.getMonth() - 1);
-  } else if (timeRange === "90") {
-    thresholdDate = new Date();
-    thresholdDate.setDate(thresholdDate.getDate() - 90);
-  }
-
-  Object.keys(state.categorizedEmails).forEach(category => {
-    const filtered = state.categorizedEmails[category].filter(email => {
-      const text = `${email.subject || ""} ${email.from || ""} ${email.body || ""} ${email.snippet || ""}`.toLowerCase();
-      const matchesSearch = !searchQuery || text.includes(searchQuery);
-      const matchesTime = !thresholdDate || new Date(email.date) >= thresholdDate;
-      return matchesSearch && matchesTime;
-    });
+  for (const category of Object.keys(state.categorizedEmails)) {
+    const filtered = state.categorizedEmails[category].filter(email =>
+      shouldIncludeEmail(email, searchQuery, thresholdDate)
+    );
     counts[category] = filtered.length;
-  });
+  }
 
   return counts;
 }

@@ -1,7 +1,40 @@
-import { toggleModal, toggleMisclassModal, toggleEmailModal } from "./modals.js";
+import { toggleModal, toggleMisclassModal } from "./modals.js";
 import { updateCategoryCounts } from "./emailUI.js";
 import { updatePage } from "./pagination.js";
 import { submitMisclassificationForm, undoMisclassificationToast } from "./misclassification.js";
+import { shouldIncludeEmail, calculateThresholdDate } from "../app/filters.js";
+
+function handleTabSwitch(tab, state, elements, CONFIG, applyFilters) {
+  const category = tab.dataset.category;
+  state.newEmailsCounts[category] = 0;
+
+  elements.jobTabs.forEach(t => t.classList.remove("active-tab"));
+  tab.classList.add("active-tab");
+
+  state.currentCategory = category;
+  state.currentPage = 1;
+  chrome.storage.local.set({ currentCategory: category });
+
+  const { searchQuery, timeRange } = state.appliedFilters || {
+    searchQuery: "",
+    timeRange: "week",
+  };
+
+  const thresholdDate = calculateThresholdDate(timeRange);
+
+  if (state.isFilteredView) {
+    const filtered = state.categorizedEmails[category].filter(email =>
+      shouldIncludeEmail(email, searchQuery, thresholdDate)
+    );
+    state.filteredEmails = filtered;
+    updatePage(1, state, elements, CONFIG);
+    updateCategoryCounts(state, elements, searchQuery, thresholdDate);
+  } else {
+    updatePage(1, state, elements, CONFIG);
+    updateCategoryCounts(state, elements);
+  }
+}
+
 
 export function initializeDOMListeners(state, elements, CONFIG, setLoadingState, fetchStoredEmails, fetchNewEmails, applyFilters) {
   // Close email modal
@@ -27,28 +60,7 @@ export function initializeDOMListeners(state, elements, CONFIG, setLoadingState,
   // Handle job tab switching
   elements.jobTabs.forEach(tab => {
     tab.addEventListener("click", () => {
-      const category = tab.dataset.category;
-      state.newEmailsCounts[category] = 0;
-
-      elements.jobTabs.forEach(t => t.classList.remove("active-tab"));
-      tab.classList.add("active-tab");
-
-      state.currentCategory = category;
-      state.currentPage = 1;
-      chrome.storage.local.set({ currentCategory: category });
-
-      const searchText = elements.searchBar.value.trim();
-      const timeRangeValue = elements.timeRangeFilter.value;
-
-      if (searchText !== "" || timeRangeValue !== "week") {
-        state.isFilteredView = true;
-        applyFilters(state, elements, CONFIG);
-      } else {
-        state.isFilteredView = false;
-        updatePage(1, state, elements, CONFIG);
-      }
-
-      updateCategoryCounts(state, elements);
+      handleTabSwitch(tab, state, elements, CONFIG, applyFilters);
     });
   });
 
@@ -67,6 +79,10 @@ export function initializeDOMListeners(state, elements, CONFIG, setLoadingState,
   document.getElementById("undo-btn")?.addEventListener("click", () =>
     undoMisclassificationToast()
   );
+
+  elements.timeRangeFilter.addEventListener("change", () => {
+    timeRangeWasChanged = true;
+  });
 
   // Refresh stored & new emails when notified
   chrome.runtime.onMessage.addListener((message) => {

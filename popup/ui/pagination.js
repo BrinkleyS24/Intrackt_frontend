@@ -1,11 +1,11 @@
 import { renderEmails } from "./emailRenderer.js";
-import { getElement } from "../utils/dom.js"; 
+import { getElement } from "../utils/dom.js";
 
 export function updatePage(newPage, state, elements, CONFIG) {
   const { PAGE_SIZE } = CONFIG.PAGINATION;
   const emails = state.isFilteredView
-    ? state.filteredEmails
-    : state.categorizedEmails[state.currentCategory] || [];
+    ? [...(state.filteredEmails || [])] 
+    : [...state.categorizedEmails[state.currentCategory]];
 
   const totalEmails = emails.length;
   const totalPages = Math.ceil(totalEmails / PAGE_SIZE);

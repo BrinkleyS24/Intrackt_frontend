@@ -86,7 +86,6 @@ async function reportMisclassification(data, state, elements, CONFIG, setLoading
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
         if (correctedCategory === "Irrelevant") {
-            console.log("✅ Irrelevant report sent");
             showNotification("Reported and archived successfully!", "success");
         } else {
             alert("✅ Correction submitted! Thank you.");
