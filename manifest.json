@@ -47,10 +47,7 @@
     {
       "resources": [
         "popup/*",
-        "utils/*",
-        "stripe_loader.js",
-        "oauth2/*",
-        "tailwind.css"
+        "utils/*"
       ],
       "matches": [
         "<all_urls>"
