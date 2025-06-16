@@ -1,12 +1,25 @@
+/**
+ * @file background.js
+ * @description This script handles background tasks for the Intrackt extension,
+ * including email synchronization, user authentication, and misclassification reporting.
+ * It operates as a service worker, listening for alarms and messages from the popup.
+ */
+
 // --- Constants ---
+// Define constants for easier management and clarity.
+// IMPORTANT: For production, 'http://localhost:3000' should be replaced with your actual backend URL.
+// Consider using environment variables or a configuration file for different environments (dev/prod).
 const SYNC_INTERVAL_MINUTES = 15;
-const SYNC_COOLDOWN_MILLISECONDS = (SYNC_INTERVAL_MINUTES * 60 * 1000) / 2; 
-const BACKEND_BASE_URL = 'http://localhost:3000';
+const SYNC_COOLDOWN_MILLISECONDS = (SYNC_INTERVAL_MINUTES * 60 * 1000) / 2; // Prevents syncing too frequently
+const BACKEND_BASE_URL = 'http://localhost:3000'; // Placeholder - CHANGE FOR PRODUCTION!
 
 // --- Global State ---
+// These variables hold the current user's email, plan, and last sync timestamp.
+// They are initialized from chrome.storage.local on startup and updated consistently.
 let userEmail = null;
 let userPlan = 'free';
-let lastSyncTimestamp = 0; 
+let lastSyncTimestamp = 0; // Renamed for consistency with storage key
+
 // --- Initialization Logic ---
 
 /**
@@ -14,7 +27,6 @@ let lastSyncTimestamp = 0;
  * Sets up an alarm for periodic email synchronization.
  */
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('Intrackt: Extension installed. Setting up emailSync alarm.');
   chrome.alarms.create('emailSync', { periodInMinutes: SYNC_INTERVAL_MINUTES });
 });
 
@@ -23,7 +35,8 @@ chrome.runtime.onInstalled.addListener(() => {
  */
 chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === 'emailSync') {
-    console.log('Intrackt: emailSync alarm triggered.');
+    // We don't await this here, as alarms don't need a direct response.
+    // The internal logic of fetchEmailsInBackground will handle updates and notifications.
     fetchEmailsInBackground();
   }
 });
@@ -39,10 +52,8 @@ chrome.storage.local.get(
     userPlan = data.userPlan || 'free';
     lastSyncTimestamp = data.lastSyncTimestamp || 0; // Use consistent name
     if (userEmail) {
-      console.log('✅ Intrackt: Session restored for', userEmail);
       updateUserPlanFromBackend(); // Attempt to get the latest plan
     } else {
-      console.log('ℹ️ Intrackt: No active session found.');
     }
   }
 );
@@ -52,7 +63,7 @@ chrome.storage.local.get(
  * Generic function to make authenticated fetch requests to the backend.
  * @param {string} endpoint - The API endpoint relative to BACKEND_BASE_URL.
  * @param {object} options - Fetch options (method, headers, body).
- * @returns {Promise<Response>} The fetch response object.
+ * @returns {Promise<any>} The parsed JSON data from the response.
  * @throws {Error} If the network request fails or the response status is not OK.
  */
 async function apiFetch(endpoint, options = {}) {
@@ -70,7 +81,7 @@ async function apiFetch(endpoint, options = {}) {
       const errorText = await response.text();
       throw new Error(`HTTP Error ${response.status}: ${errorText || response.statusText}`);
     }
-    return response;
+    return await response.json(); // Always parse JSON on success
   } catch (error) {
     console.error(`❌ Intrackt: API fetch to ${url} failed:`, error);
     throw error; // Re-throw to be handled by the caller
@@ -89,19 +100,17 @@ async function updateUserPlanFromBackend() {
     return;
   }
   try {
-    const resp = await apiFetch('user', {
+    const data = await apiFetch('user', {
       method: 'POST',
       body: JSON.stringify({ email: userEmail }),
     });
-    const { plan } = await resp.json();
+    const { plan } = data;
     if (plan && plan !== userPlan) { // Only update if plan has changed
       userPlan = plan;
       await chrome.storage.local.set({ userPlan: plan });
-      console.log('✅ Intrackt: userPlan updated to:', plan);
       // Notify popup if plan changes while it's open
       chrome.runtime.sendMessage({ type: 'USER_PLAN_UPDATED', userPlan: plan });
     } else {
-      console.log('ℹ️ Intrackt: User plan is already up to date or not provided by backend.');
     }
   } catch (err) {
     console.error('❌ Intrackt: Failed to update userPlan from backend:', err);
@@ -123,7 +132,7 @@ async function getAuthToken() {
         if (chrome.runtime.lastError) {
           // If there's an error, it might just mean no cached token, so we'll try interactive.
           console.warn('Intrackt: Non-interactive auth token failed:', chrome.runtime.lastError.message);
-          resolve(null); 
+          resolve(null); // Resolve with null to trigger interactive attempt
         } else {
           resolve(t);
         }
@@ -152,17 +161,19 @@ async function getAuthToken() {
 /**
  * Fetches categorized emails from the backend in the background.
  * Prevents syncing if already synced recently or if no user is logged in.
+ * This function now returns its result to the caller (e.g., message listener).
+ * @returns {Promise<{success: boolean, categorizedEmails?: object, userPlan?: string, quota?: object, error?: string}>}
  * @async
  */
 async function fetchEmailsInBackground() {
   const now = Date.now();
   if (now - lastSyncTimestamp < SYNC_COOLDOWN_MILLISECONDS) {
-    console.log('ℹ️ Intrackt: Skipping email sync - too soon since last sync.');
-    return;
+    // Return a success response indicating no action needed due to cooldown
+    return { success: true, categorizedEmails: {}, userPlan: userPlan, message: "Skipping sync due to cooldown." };
   }
   if (!userEmail) {
     console.warn('Intrackt: Cannot sync emails - no userEmail available.');
-    return;
+    return { success: false, error: 'No user email available for sync.' };
   }
 
   let token = await getAuthToken();
@@ -170,34 +181,38 @@ async function fetchEmailsInBackground() {
     console.error('❌ Intrackt: No auth token available for email sync.');
     // Optionally, notify the user that they might need to re-authenticate
     chrome.runtime.sendMessage({ type: 'AUTH_REQUIRED' });
-    return;
+    return { success: false, error: 'Authentication required. Please log in.' };
   }
 
   try {
-    const resp = await apiFetch('emails', {
+    const data = await apiFetch('emails', { // Renamed 'resp' to 'data' for clarity
       method: 'POST',
       body: JSON.stringify({ token, email: userEmail }),
     });
 
-    const { success, categorizedEmails, userPlan: updatedUserPlan } = await resp.json();
-
-    if (success) {
-      await chrome.storage.local.set({ categorizedEmails }); // Use await for storage operations
-
-      if (updatedUserPlan && updatedUserPlan !== userPlan) { // Only update if plan changes
-        userPlan = updatedUserPlan;
-        await chrome.storage.local.set({ userPlan: updatedUserPlan });
-        console.log('✅ Intrackt: User plan updated during email sync:', updatedUserPlan);
-        chrome.runtime.sendMessage({ type: 'USER_PLAN_UPDATED', userPlan: updatedUserPlan });
-      }
-
-      lastSyncTimestamp = now;
-      await chrome.storage.local.set({ lastSyncTimestamp: lastSyncTimestamp }); // Use await
-      console.log('✅ Intrackt: Emails synced successfully.');
-      chrome.runtime.sendMessage({ type: 'NEW_EMAILS_UPDATED' }); // Notify popup
-    } else {
+    if (!data.success) { // Backend explicitly indicates failure
       console.error('❌ Intrackt: Email sync failed according to backend response.');
+      return { success: false, error: data.error || 'Backend reported an error during email sync.', quota: data.quota };
     }
+
+    // Update categorizedEmails in local storage
+    await chrome.storage.local.set({ categorizedEmails: data.categorizedEmails });
+
+    // Update userPlan if provided and changed
+    if (data.userPlan && data.userPlan !== userPlan) {
+      userPlan = data.userPlan;
+      await chrome.storage.local.set({ userPlan: data.userPlan });
+      chrome.runtime.sendMessage({ type: 'USER_PLAN_UPDATED', userPlan: data.userPlan });
+    }
+
+    // Update last sync timestamp
+    lastSyncTimestamp = now;
+    await chrome.storage.local.set({ lastSyncTimestamp: lastSyncTimestamp });
+
+    // Broadcast a general update message, in addition to returning the data.
+    chrome.runtime.sendMessage({ type: 'NEW_EMAILS_UPDATED' });
+
+    return { success: true, categorizedEmails: data.categorizedEmails, userPlan: userPlan, quota: data.quota };
   } catch (err) {
     console.error('❌ Intrackt: fetchEmailsInBackground failed:', err);
     // If it's an authorization error, remove the cached token to force re-login next time
@@ -205,11 +220,12 @@ async function fetchEmailsInBackground() {
       console.warn('Intrackt: Invalid auth token detected. Removing cached token.');
       chrome.identity.removeCachedAuthToken({ token }, () => {
         if (chrome.runtime.lastError) {
-          console.error('Error removing cached auth token:', chrome.runtime.lastError);
+          console.error('Error removing cached Google auth token:', chrome.runtime.lastError);
         }
       });
       chrome.runtime.sendMessage({ type: 'AUTH_REQUIRED' }); // Prompt user to re-authenticate
     }
+    return { success: false, error: err.message };
   }
 }
 
@@ -220,10 +236,10 @@ async function fetchEmailsInBackground() {
  * @param {string} emailData.emailId - The ID of the misclassified email.
  * @param {string} emailData.correctCategory - The correct category (e.g., "Irrelevant").
  * @param {string} [emailData.userId] - The user ID associated with the email (optional, derived from userEmail).
+ * @returns {Promise<{success: boolean, error?: string}>}
  * @async
  */
 async function handleMisclassification(emailData) {
-  console.log("📌 Intrackt: Misclassified Email Reported:", emailData);
 
   // Ensure userEmail is available for backend calls that require it
   if (!userEmail) {
@@ -237,25 +253,23 @@ async function handleMisclassification(emailData) {
       method: 'POST',
       body: JSON.stringify({ ...emailData, userId: userEmail }), // Ensure userId is passed, using userEmail
     });
-    console.log("✅ Intrackt: Misclassification saved for retraining.");
 
     // 2. Perform action based on correctCategory
     if (emailData.correctCategory === "Irrelevant") {
-      console.log(`📦 Intrackt: Archiving email ${emailData.emailId} as Irrelevant`);
       await apiFetch('emails/archive', {
         method: 'POST',
         body: JSON.stringify({
-          userId: userEmail,
+          userId: userEmail, // Use userEmail for consistency
           emailId: emailData.emailId
         }),
       });
-      console.log("✅ Intrackt: Email archived successfully.");
     } else {
+      // Assuming 'delete' means remove from Intrackt's tracking, not necessarily Gmail deletion
+      // If it implies deleting from Gmail, you'd need the Gmail API to move it to trash.
       await apiFetch('emails/delete', {
         method: 'POST',
         body: JSON.stringify({ emailId: emailData.emailId, userId: userEmail }), // Pass userId for context
       });
-      console.log(`🗑️ Intrackt: Removed misclassified email: ${emailData.emailId}`);
     }
     return { success: true };
   } catch (error) {
@@ -289,26 +303,23 @@ function handleLogin(sendResponse) {
           }
         });
       });
-      console.log('✅ Intrackt: Google auth token acquired.');
 
       // Step 2: Fetch user profile using the token
-      const profileResp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      profile = await apiFetchFromGoogle('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${token}` }
-      });
-      if (!profileResp.ok) throw new Error(`Profile fetch HTTP ${profileResp.status}`);
-      profile = await profileResp.json();
+      }); // Using a dedicated fetch for Google APIs for clarity
+
       userEmail = profile.email;
 
       if (!userEmail) {
         throw new Error('No email found in Google profile.');
       }
-      console.log('✅ Intrackt: Logged in as', userEmail);
       // Save initial userEmail and set plan to free locally
       await chrome.storage.local.set({ userEmail, userPlan: 'free' });
 
       // Step 3: Get backend-specific auth URL (e.g., for consent)
       const authUrlResp = await apiFetch(`auth/auth-url?email=${encodeURIComponent(userEmail)}`);
-      const { url } = await authUrlResp.json();
+      const { url } = authUrlResp; // apiFetch now returns parsed JSON
 
       const authUrl = new URL(url);
       authUrl.searchParams.set('redirect_uri', chrome.identity.getRedirectURL('oauth2'));
@@ -323,7 +334,6 @@ function handleLogin(sendResponse) {
           }
         });
       });
-      console.log('✅ Intrackt: Backend consent flow completed.');
 
       const parsedRedirect = new URL(redirectUrl);
       const code = parsedRedirect.searchParams.get('code');
@@ -338,18 +348,19 @@ function handleLogin(sendResponse) {
         method: 'POST',
         body: JSON.stringify({ code, state })
       });
-      const tokenRespData = await tokenExchangeResp.json();
 
-      if (!tokenRespData.success) {
-        throw new Error(tokenRespData.error || 'Backend token exchange failed.');
+      if (!tokenExchangeResp.success) {
+        throw new Error(tokenExchangeResp.error || 'Backend token exchange failed.');
       }
-      console.log('✅ Intrackt: Backend token exchange successful.');
 
+      // All steps successful, send success response
       sendResponse({ success: true, token, email: userEmail });
 
+      // After successful login, initiate email fetch (this is a separate background task)
       fetchEmailsInBackground();
     } catch (err) {
       console.error('❌ Intrackt: Login process failed:', err);
+      // Ensure cached token is removed if something went wrong after initial acquisition
       if (token) {
         chrome.identity.removeCachedAuthToken({ token }, () => { });
       }
@@ -357,59 +368,150 @@ function handleLogin(sendResponse) {
     }
   })();
 
+  // Return true to indicate that sendResponse will be called asynchronously.
   return true;
 }
 
+/**
+ * Helper for fetching directly from Google APIs (like userinfo).
+ * Separated from apiFetch to clarify it's not going to YOUR backend.
+ * @param {string} url - The full URL to the Google API endpoint.
+ * @param {object} options - Fetch options.
+ * @returns {Promise<any>} Parsed JSON data.
+ * @throws {Error} If the fetch fails.
+ */
+async function apiFetchFromGoogle(url, options = {}) {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Google API HTTP Error ${response.status}: ${errorText || response.statusText}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error(`❌ Intrackt: Google API fetch to ${url} failed:`, error);
+    throw error;
+  }
+}
+
+
 // --- Message Listener ---
+
+/**
+ * Listens for messages from other parts of the extension (e.g., popup script).
+ * Handles various commands like LOGIN, LOGOUT, CHECK_LOGIN_STATUS, FETCH_EMAILS, REPORT_MISCLASSIFICATION.
+ */
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  console.log(`Intrackt: Received message type: ${msg.type}`);
   switch (msg.type) {
     case 'LOGIN':
-      return handleLogin(sendResponse); 
+      return handleLogin(sendResponse); // handleLogin asynchronously calls sendResponse
 
     case 'CHECK_LOGIN_STATUS':
       sendResponse({ userEmail, userPlan });
-      return true; 
+      return true; // Synchronous response
 
     case 'LOGOUT':
       userEmail = null;
       userPlan = 'free';
+      // Clear all local storage related to the user session
       chrome.storage.local.clear(() => {
         if (chrome.runtime.lastError) {
           console.error('Error clearing local storage:', chrome.runtime.lastError);
           sendResponse({ success: false, error: chrome.runtime.lastError.message });
         } else {
-          console.log('✅ Intrackt: User logged out and local storage cleared.');
           sendResponse({ success: true });
         }
       });
+      // Also remove cached Google auth tokens
       chrome.identity.getAuthToken({ interactive: false }, (token) => {
         if (token) {
           chrome.identity.removeCachedAuthToken({ token }, () => {
             if (chrome.runtime.lastError) {
               console.error('Error removing cached Google auth token:', chrome.runtime.lastError);
             } else {
-              console.log('✅ Intrackt: Cached Google auth token removed.');
             }
           });
         }
       });
-      return true; 
-    case 'FETCH_EMAILS':
-      fetchEmailsInBackground();
-      sendResponse({ success: true }); 
-      return true;
+      return true; // Asynchronous response due to chrome.storage.local.clear and chrome.identity.removeCachedAuthToken
+
+    case 'FETCH_NEW_EMAILS': // Renamed from 'FETCH_EMAILS' for consistency
+      // Execute fetchEmailsInBackground and send its result back
+      (async () => {
+        const result = await fetchEmailsInBackground();
+        sendResponse(result);
+      })();
+      return true; // Indicate that sendResponse will be called asynchronously
+
+    case 'FETCH_STORED_EMAILS':
+      (async () => {
+        if (!msg.userEmail) {
+          sendResponse({ success: false, error: 'User email not provided for FETCH_STORED_EMAILS.' });
+          return;
+        }
+        try {
+          const data = await apiFetch('emails/stored-emails', { // Corrected endpoint for stored emails
+            method: 'POST',
+            body: JSON.stringify({ email: msg.userEmail })
+          });
+          sendResponse({ success: true, categorizedEmails: data.categorizedEmails });
+        } catch (error) {
+          console.error('❌ Intrackt: Error handling FETCH_STORED_EMAILS message:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true; // Indicate that sendResponse will be called asynchronously
+
+    case 'FETCH_QUOTA_DATA':
+      (async () => {
+        if (!msg.userEmail) {
+          sendResponse({ success: false, error: 'User email not provided for FETCH_QUOTA_DATA.' });
+          return;
+        }
+        try {
+          const data = await apiFetch('user', {
+            method: 'POST',
+            body: JSON.stringify({ email: msg.userEmail })
+          });
+          sendResponse({ success: true, quota: data.quota });
+        } catch (error) {
+          console.error('❌ Intrackt: Error handling FETCH_QUOTA_DATA message:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true; // Indicate that sendResponse will be called asynchronously
+
+    case 'FETCH_USER_PLAN': // NEW: Handle requests to fetch user plan
+      (async () => {
+        if (!msg.userEmail) {
+          sendResponse({ success: false, error: 'User email not provided for FETCH_USER_PLAN.' });
+          return;
+        }
+        try {
+          const data = await apiFetch('user', { // Re-using the 'user' endpoint
+            method: 'POST',
+            body: JSON.stringify({ email: msg.userEmail })
+          });
+          sendResponse({ success: true, plan: data.plan }); // Send back the plan
+        } catch (error) {
+          console.error('❌ Intrackt: Error handling FETCH_USER_PLAN message:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+      })();
+      return true; // Indicate that sendResponse will be called asynchronously
 
     case 'REPORT_MISCLASSIFICATION':
+      // The `handleMisclassification` function is async and returns a promise.
+      // We need to wait for it and then send the response.
       (async () => {
         const result = await handleMisclassification(msg);
         sendResponse(result);
       })();
-      return true; 
+      return true; // Indicate that sendResponse will be called asynchronously
 
     default:
       console.warn('Intrackt: Unhandled message type:', msg.type);
-      sendResponse({ success: false, error: 'Unknown message type.' }); 
-      return false;
+      sendResponse({ success: false, error: 'Unknown message type.' }); // Provide a default error response
+      return false; // No async response expected for unhandled types
   }
 });
