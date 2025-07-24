@@ -1,57 +1,54 @@
 {
-  "name": "Intrackt",
-  "description": "Tracks job application statuses directly from your inbox.",
-  "version": "1.0",
   "manifest_version": 3,
-  "permissions": [
-    "identity",
-    "storage",
-    "activeTab",
-    "scripting",
-    "alarms"
-  ],
-  "host_permissions": [
-    "https://gmail.googleapis.com/*",
-    "https://www.googleapis.com/*",
-    "https://gmail-tracker-backend-215378038667.us-central1.run.app/*"
-  ],
-  "background": {
-    "service_worker": "background.js",
-    "type": "module"
+  "name": "Intrackt - Job Tracker",
+  "version": "1.0",
+  "description": "Effortlessly track your job applications directly from Gmail.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "action": {
-    "default_popup": "popup/popup.html",
+    "default_popup": "popup/dist/index.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
   },
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  },
+  "permissions": [
+    "identity",
+    "storage",
+    "activeTab",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://*.googleapis.com/",
+    "https://*.firebase.com/",
+    "https://securetoken.googleapis.com/",
+    "https://www.googleapis.com/",
+    "https://accounts.google.com/",
+    "http://localhost:3000/",
+    "http://localhost:1234/",
+    "ws://localhost:1234/",
+    "https://gmail-tracker-backend-215378038667.us-central1.run.app/"
+  ],
   "oauth2": {
-    "client_id": "215378038667-81tek0h8fuddaur27bl5mm35ejvu0aq3.apps.googleusercontent.com",
+    "client_id": "807157076800-qcgsknjcd45sigpufervigockvgnm06d.apps.googleusercontent.com",
     "scopes": [
+      "openid",
+      "email",
+      "profile",
       "https://www.googleapis.com/auth/gmail.readonly",
-      "https://www.googleapis.com/auth/userinfo.profile",
-      "https://www.googleapis.com/auth/userinfo.email",
-      "https://www.googleapis.com/auth/gmail.send",
-      "openid"
-
+      "https://www.googleapis.com/auth/gmail.modify",
+      "https://www.googleapis.com/auth/gmail.send"
     ]
   },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "popup/*",
-        "utils/*"
-      ],
-      "matches": [
-        "<all_urls>"
-      ]
-    }
-  ]
+  "background": {
+    "service_worker": "popup/dist/background.js",
+    "type": "module"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.firebase.com https://*.googleapis.com http://localhost:3000 http://localhost:1234 ws://localhost:1234 https://gmail-tracker-backend-215378038667.us-central1.run.app;"
+  }
 }
