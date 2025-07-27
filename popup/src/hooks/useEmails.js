@@ -2,6 +2,7 @@
  * @file popup/src/hooks/useEmails.js
  * @description Custom React hook for managing email data, including fetching,
  * filtering, and handling actions like misclassification and replies.
+ * Now includes a chrome.storage.onChanged listener for real-time updates from background script.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -47,16 +48,13 @@ export function useEmails(userEmail, userId, CONFIG) {
     setUnreadCounts(counts);
   }, []);
 
-  const fetchStoredEmails = useCallback(async (email, id) => {
+  const fetchStoredEmails = useCallback(async () => { // Removed userEmail, userId params as it's now internal
     setLoadingEmails(true);
     try {
-      if (!email || !id) {
-        console.warn("useEmails.js: Skipping fetchStoredEmails, userEmail or userId is missing.");
-        return;
-      }
-      const fetchedEmails = await fetchStoredEmailsService(email);
+      // fetchStoredEmailsService no longer needs userEmail/userId as it reads directly from local storage
+      const fetchedEmails = await fetchStoredEmailsService();
       setCategorizedEmails(fetchedEmails);
-      calculateUnreadCounts(fetchedEmails); // UPDATED: Calculate counts after fetching
+      calculateUnreadCounts(fetchedEmails); // Calculate counts after fetching
     } catch (error) {
       console.error("❌ Intrackt: Error fetching stored emails:", error);
       showNotification("Failed to load stored emails.", "error");
@@ -103,6 +101,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       const response = await fetchNewEmailsService(email, id, fullRefresh);
       if (response.success) {
         showNotification("Emails synced successfully!", "success");
+        // No need to call fetchStoredEmails here, as the storage listener will handle it
       } else {
         showNotification(`Failed to sync emails: ${response.error}`, "error");
       }
@@ -142,10 +141,10 @@ export function useEmails(userEmail, userId, CONFIG) {
           emailSubject: emailToReport.subject,
           emailBody: emailToReport.body,
         };
-        const result = await reportMisclassificationService(reportData);
+        const result = await reportMisclassificationService(reportData, newCategory, userEmail); // Pass newCategory and userEmail
         if (result.success) {
           showNotification(`Email moved to ${getCategoryTitle(newCategory)}!`, "success");
-          await fetchStoredEmails(userEmail, userId);
+          // No need to call fetchStoredEmails here, as the storage listener will handle it
         } else {
           showNotification(`Failed to report misclassification: ${result.error}`, "error");
         }
@@ -156,7 +155,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         setLastMisclassifiedEmail(null);
       }
     }, CONFIG.UNDO_TIMEOUT_MS);
-  }, [userEmail, userId, fetchStoredEmails, CONFIG.UNDO_TIMEOUT_MS]);
+  }, [userEmail, CONFIG.UNDO_TIMEOUT_MS]); // Removed userId, fetchStoredEmails from dependencies as storage listener handles it
 
   const undoMisclassification = useCallback(async (emailToUndo) => {
     if (misclassificationTimerRef.current) {
@@ -179,10 +178,10 @@ export function useEmails(userEmail, userId, CONFIG) {
         originalCategory: emailToUndo.category,
         misclassifiedIntoCategory: emailToUndo.correctedCategory
       };
-      const result = await undoMisclassificationService(undoData);
+      const result = await undoMisclassificationService(emailToUndo.threadId, userEmail); // Pass threadId and userEmail
       if (result.success) {
         showNotification("Misclassification undone!", "info");
-        await fetchStoredEmails(userEmail, userId);
+        // No need to call fetchStoredEmails here, as the storage listener will handle it
       } else {
         showNotification(`Failed to undo misclassification: ${result.error}`, "error");
       }
@@ -192,7 +191,7 @@ export function useEmails(userEmail, userId, CONFIG) {
     } finally {
       setLastMisclassifiedEmail(null);
     }
-  }, [userEmail, userId, fetchStoredEmails]);
+  }, [userEmail]); // Removed userId, fetchStoredEmails from dependencies as storage listener handles it
 
   const applyFilters = useCallback((filters) => {
     setAppliedFilters(filters);
@@ -234,7 +233,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       const result = await sendEmailReplyService(threadId, recipient, subject, body, userEmail);
       if (result.success) {
         showNotification("Reply sent successfully!", "success");
-        await fetchStoredEmails(userEmail, userId);
+        // No need to call fetchStoredEmails here, as the storage listener will handle it
       } else {
         showNotification(`Failed to send reply: ${result.error}`, "error");
       }
@@ -244,7 +243,7 @@ export function useEmails(userEmail, userId, CONFIG) {
     } finally {
       setLoadingEmails(false);
     }
-  }, [userEmail, userId, fetchStoredEmails]);
+  }, [userEmail]); // Removed userId, fetchStoredEmails from dependencies
 
   const handleArchiveEmail = useCallback(async (threadId) => {
     setLoadingEmails(true);
@@ -252,7 +251,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       const result = await archiveEmailService(threadId, userEmail);
       if (result.success) {
         showNotification("Email archived!", "success");
-        await fetchStoredEmails(userEmail, userId);
+        // No need to call fetchStoredEmails here, as the storage listener will handle it
       } else {
         showNotification(`Failed to archive email: ${result.error}`, "error");
       }
@@ -262,17 +261,41 @@ export function useEmails(userEmail, userId, CONFIG) {
     } finally {
       setLoadingEmails(false);
     }
-  }, [userEmail, userId, fetchStoredEmails]);
+  }, [userEmail]); // Removed userId, fetchStoredEmails from dependencies
 
+  // Initial load of emails from local storage when the hook mounts
   useEffect(() => {
-    if (userEmail && userId) {
-      fetchStoredEmails(userEmail, userId);
-    }
-  }, [userEmail, userId, fetchStoredEmails]);
+    console.log("DEBUG useEmails: Initializing emails from local storage.");
+    fetchStoredEmails();
+  }, [fetchStoredEmails]); // Depend on fetchStoredEmails to ensure it's called once
+
+  // Listen for changes in chrome.storage.local and update email state
+  // This is crucial for reacting to background syncs and other updates
+  useEffect(() => {
+    const handleStorageChange = (changes, namespace) => {
+      if (namespace === 'local') {
+        // Check if any of the email categories have changed
+        const emailCategories = ['appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'];
+        const changedEmailKeys = emailCategories.filter(key => changes[key]);
+
+        if (changedEmailKeys.length > 0) {
+          console.log("DEBUG useEmails: Detected storage change in email data. Re-loading emails.");
+          fetchStoredEmails(); // Re-fetch all categorized emails from local storage
+        }
+      }
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+
+    return () => {
+      console.log("DEBUG useEmails: Cleaning up chrome.storage.onChanged listener.");
+      chrome.storage.onChanged.removeListener(handleStorageChange);
+    };
+  }, [fetchStoredEmails]); // Depend on fetchStoredEmails
 
   return {
     categorizedEmails,
-    fetchStoredEmails,
+    fetchStoredEmails, // Still expose for explicit initial load if needed
     fetchNewEmails,
     loadingEmails,
     isFilteredView,
@@ -287,7 +310,7 @@ export function useEmails(userEmail, userId, CONFIG) {
     undoMisclassification,
     undoToastVisible,
     setUndoToastVisible,
-    unreadCounts, // NEW: Export the unread counts
-    markEmailsAsReadForCategory, // NEW: Export the function to mark emails as read
+    unreadCounts, // Export the unread counts
+    markEmailsAsReadForCategory, // Export the function to mark emails as read
   };
 }

@@ -49,6 +49,6 @@
     "type": "module"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.firebase.com https://*.googleapis.com http://localhost:3000 http://localhost:1234 ws://localhost:1234 https://gmail-tracker-backend-215378038667.us-central1.run.app;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.firebase.com https://*.googleapis.com http://localhost:3000 http://localhost:1234 ws://localhost:1234 https://gmail-tracker-backend-215378038667.us-central1.run.app/;"
   }
 }
