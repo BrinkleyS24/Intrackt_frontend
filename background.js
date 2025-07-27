@@ -10,15 +10,8 @@ import { initializeApp } from 'firebase/app';
 // CORRECTED: Added setPersistence, indexedDBLocalPersistence for auth state persistence
 import { getAuth, signInWithCustomToken, signOut, onAuthStateChanged, setPersistence, indexedDBLocalPersistence } from 'firebase/auth';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBbQOpJTZmcGdszjtk_Sk2bKXaC5czmRr8",
-  authDomain: "intrackt-908ae.firebaseapp.com",
-  projectId: "intrackt-908ae",
-  storageBucket: "intrackt-908ae.firebasestorage.app",
-  messagingSenderId: "807157076800",
-  appId: "1:807157076800:web:5a41a3959d754a7916a0a5",
-  measurementId: "G-4L3PZXJ4C9"
-};
+import { firebaseConfig } from './firebaseConfig';
+
 // --- Chrome Runtime Message Listener (for popup/content script communication) ---
 // This listener MUST be at the top level of the service worker script
 // to ensure it's registered immediately upon activation.

@@ -2,19 +2,22 @@
  * @file popup/src/hooks/useAuth.js
  * @description Custom React hook for managing user authentication state and actions
  * by communicating with the background script for Firebase Auth operations.
+ * This hook now relies solely on chrome.storage.local and messages from the background script
+ * for authentication state, removing direct Firebase Auth listener from the popup.
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { sendMessageToBackground } from '../utils/chromeMessaging'; // Centralized messaging
 import { fetchUserPlanFromService } from '../services/authService';
 import { showNotification } from '../components/Notification';
-import { onAuthStateChanged } from 'firebase/auth'; // Import onAuthStateChanged
+// REMOVED: import { onAuthStateChanged } from 'firebase/auth'; // No longer needed here
 
-export function useAuth(auth) { // Accept Firebase auth instance
+// The 'auth' instance is no longer passed as a parameter.
+export function useAuth() {
   const [userEmail, setUserEmail] = useState(null);
   const [userName, setUserName] = useState(null);
   const [userPlan, setUserPlan] = useState('free');
-  const [userId, setUserId] = useState(null); // New state for userId
+  const [userId, setUserId] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false); // Indicates initial auth state check is done
   const [quotaData, setQuotaData] = useState(null); // New state for quota data
   const [loadingAuth, setLoadingAuth] = useState(true); // Indicate if auth state is still loading (INITIALIZED TO TRUE)
@@ -32,8 +35,14 @@ export function useAuth(auth) { // Accept Firebase auth instance
       setUserName(result.userName || null);
       setUserId(result.userId || null); // Set userId from storage
       setUserPlan(result.userPlan || 'free'); // Set userPlan from storage, default to 'free'
+
+      // Mark auth as ready once initial state is loaded from storage
+      setIsAuthReady(true);
+      setLoadingAuth(false);
     } catch (error) {
       console.error("❌ Intrackt: Error loading user state from storage:", error);
+      setIsAuthReady(true); // Still mark as ready even on error to unblock UI
+      setLoadingAuth(false);
     }
   }, []);
 
@@ -67,56 +76,24 @@ export function useAuth(auth) { // Accept Firebase auth instance
   }, [userEmail, userId]); // Depend on userEmail and userId
 
 
-  // Firebase Auth listener (runs once on component mount)
+  // Initial load from storage when the hook mounts.
+  // This replaces the Firebase onAuthStateChanged listener in the popup.
   useEffect(() => {
-    console.log("DEBUG useAuth: Setting up Firebase Auth listener.");
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      console.log("DEBUG useAuth: onAuthStateChanged triggered. User:", user);
-      if (user) {
-        console.log("DEBUG useAuth: User logged in.");
-        // When a user logs in, ensure their data is in storage and fetch plan
-        await chrome.storage.local.set({
-          userEmail: user.email,
-          userName: user.displayName || user.email,
-          userId: user.uid, // Store UID
-        });
-        // Fetch the user plan from the backend immediately after Firebase auth
-        const plan = await fetchUserPlanFromService(user.email);
-        await chrome.storage.local.set({ userPlan: plan });
-
-        // Update local state from storage after all updates
-        await loadCurrentUserStateFromStorage();
-
-      } else {
-        console.log("DEBUG useAuth: User logged out.");
-        // Clear user info from storage on logout
-        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan']);
-        await loadCurrentUserStateFromStorage(); // Update local state to nulls
-      }
-      setIsAuthReady(true);
-      setLoadingAuth(false);
-      console.log("DEBUG useAuth: Auth state listener finished. isAuthReady:", true, "loadingAuth:", false);
-    });
-
-    // Initial load from storage
+    console.log("DEBUG useAuth: Initializing user state from storage.");
     loadCurrentUserStateFromStorage();
-
-    return () => {
-      console.log("DEBUG useAuth: Cleaning up Firebase Auth listener.");
-      unsubscribe();
-    };
-  }, [auth, loadCurrentUserStateFromStorage]); // Only depend on auth and the memoized callback
+  }, [loadCurrentUserStateFromStorage]);
 
 
   // Listen for changes in chrome.storage.local and update state
+  // This listener ensures the UI state in the popup stays synchronized
+  // with changes made by the background script (e.g., after login/logout, or plan updates).
   useEffect(() => {
     const handleStorageChange = (changes, namespace) => {
       if (namespace === 'local') {
         // Only trigger a re-load if relevant auth/user data changes
         if (changes.userEmail || changes.userName || changes.userPlan || changes.userId) { // Added userId
-          setIsAuthReady(true);
-          setLoadingAuth(false);
-          console.log("DEBUG useAuth: Auth state readiness set due to storage change.");
+          console.log("DEBUG useAuth: Detected storage change in user data. Re-loading state.");
+          loadCurrentUserStateFromStorage(); // Re-load state from storage
         }
       }
     };
@@ -127,18 +104,18 @@ export function useAuth(auth) { // Accept Firebase auth instance
       console.log("DEBUG useAuth: Cleaning up chrome.storage.onChanged listener.");
       chrome.storage.onChanged.removeListener(handleStorageChange);
     };
-  }, []); // No dependencies, runs once for listener setup
+  }, [loadCurrentUserStateFromStorage]);
 
 
   // Fetch quota data whenever userEmail or userId changes (after initial auth setup)
-  // This is separate from the auth listener to ensure it runs if userEmail/userId changes
-  // outside of the initial onAuthStateChanged, or if it's set from storage.
+  // This is separate from the initial storage load to ensure it runs if userEmail/userId changes
+  // or if it's set from storage.
   useEffect(() => {
-    if (userEmail && userId && isAuthReady) { // Ensure userId is also present
+    if (userEmail && userId && isAuthReady) { // Ensure userId is also present and auth is ready
       console.log("DEBUG useAuth: userEmail, userId or isAuthReady changed. Re-fetching quota data.");
       fetchQuotaData();
     }
-  }, [userEmail, userId, isAuthReady, fetchQuotaData]); // Added userId to dependencies
+  }, [userEmail, userId, isAuthReady, fetchQuotaData]);
 
 
   // Function to initiate Google OAuth login flow
@@ -148,8 +125,8 @@ export function useAuth(auth) { // Accept Firebase auth instance
     try {
       const response = await sendMessageToBackground({ type: 'LOGIN_GOOGLE_OAUTH' });
       if (response.success) {
-        console.log("DEBUG useAuth: Login message sent successfully. Waiting for AUTH_READY from background.");
-        // The AUTH_READY message from background will update state via onAuthStateChanged and storage listener
+        console.log("DEBUG useAuth: Login message sent successfully. Background script will update storage.");
+        // The chrome.storage.onChanged listener will pick up updates from background script
       } else {
         console.error("❌ Intrackt: Error during Google OAuth login process:", response.error);
         showNotification(`Login failed: ${response.error}`, "error");
@@ -179,7 +156,7 @@ export function useAuth(auth) { // Accept Firebase auth instance
       try {
         await sendMessageToBackground({ type: 'LOGOUT' });
         showNotification("Logged out successfully!", "info");
-        // State will be cleared by onAuthStateChanged listener
+        // State will be cleared by chrome.storage.onChanged listener
       } catch (error) {
         console.error("❌ Intrackt: Error during logout:", error);
         showNotification(`Logout failed: ${error.message}`, "error");

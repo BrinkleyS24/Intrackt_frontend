@@ -16,27 +16,20 @@ import QuotaBanner from './components/QuotaBanner';
 import Pagination from './components/Pagination';
 import Modals from './components/Modals';
 
-import { useAuth } from './hooks/useAuth';
+import { useAuth } from './hooks/useAuth'; // No longer passing auth instance here
 import { useEmails } from './hooks/useEmails';
 import { useFollowUps } from './hooks/useFollowUps';
 
 import { CONFIG } from './utils/constants';
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+// REMOVED: import { initializeApp } from 'firebase/app'; // Firebase initialization moved to background.js
+// REMOVED: import { getAuth } from 'firebase/auth'; // Firebase initialization moved to background.js
 import { Crown, Briefcase } from 'lucide-react';
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBbQOpJTZmcGdszjtk_Sk2bKXaC5czmRr8",
-  authDomain: "intrackt-908ae.firebaseapp.com",
-  projectId: "intrackt-908ae",
-  storageBucket: "intrackt-908ae.firebasestorage.app",
-  messagingSenderId: "807157076800",
-  appId: "1:807157076800:web:5a41a3959d754a7916a0a5",
-  measurementId: "G-4L3PZXJ4C9"
-};
+// REMOVED: import { firebaseConfig } from '../../firebaseConfig'; // Firebase config only needed in background.js
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+
+// REMOVED: const app = initializeApp(firebaseConfig); // Firebase initialization moved to background.js
+// REMOVED: const auth = getAuth(app); // Firebase initialization moved to background.js
 
 function App() {
   const [selectedCategory, setSelectedCategory] = useState('dashboard');
@@ -46,6 +39,8 @@ function App() {
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Call useAuth without passing the 'auth' instance.
+  // The useAuth hook will now manage its own Firebase interactions via the background script.
   const {
     userEmail,
     userName,
@@ -59,7 +54,7 @@ function App() {
     fetchQuotaData,
     quotaData,
     loadingAuth
-  } = useAuth(auth);
+  } = useAuth(); // No 'auth' passed here anymore
 
   const {
     categorizedEmails,
@@ -69,8 +64,8 @@ function App() {
     isFilteredView,
     filteredEmails,
     appliedFilters,
-    applyFilters,
-    clearFilters,
+    // applyFilters, // Removed as EmailList doesn't use these directly
+    // clearFilters, // Removed as EmailList doesn't use these directly
     handleReportMisclassification,
     handleSendEmailReply,
     handleArchiveEmail,
@@ -94,14 +89,18 @@ function App() {
 
   useEffect(() => {
     const initialDataFetch = async () => {
+      // Ensure userEmail and userId are truly available and auth is ready before fetching
       if (isAuthReady && userEmail && userId) {
         try {
+          // These calls now rely on userEmail and userId being correctly populated by useAuth
           await fetchStoredEmails(userEmail, userId);
           await fetchQuotaData();
           await loadFollowUpSuggestions();
         } catch (error) {
           showNotification("Failed to load initial data.", "error");
         }
+      } else {
+        console.log("App.jsx: Skipping initial data fetch. Auth not ready or user info missing.", { isAuthReady, userEmail, userId });
       }
     };
     initialDataFetch();
@@ -110,10 +109,15 @@ function App() {
   useEffect(() => {
     const handleBackgroundMessage = (message) => {
       if ((message.type === 'EMAILS_SYNCED' || message.type === 'NEW_EMAILS_UPDATED') && message.userEmail === userEmail) {
+        // These will trigger re-fetches in the respective hooks, or if the hooks
+        // are already listening to chrome.storage.local, this might be redundant.
+        // For now, keep them to ensure data refresh.
         fetchStoredEmails(userEmail, userId);
         fetchQuotaData();
         loadFollowUpSuggestions();
       }
+      // The AUTH_READY message is now primarily handled by useAuth's internal storage listener
+      // so no explicit action needed here for AUTH_READY.
     };
     chrome.runtime.onMessage.addListener(handleBackgroundMessage);
     return () => chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
@@ -124,6 +128,7 @@ function App() {
     try {
       await fetchNewEmails(userEmail, userId, true);
       showNotification("Emails refreshed!", "success");
+      // Re-fetch all data after new emails are fetched
       await fetchStoredEmails(userEmail, userId);
       await fetchQuotaData();
       await loadFollowUpSuggestions();
@@ -135,6 +140,7 @@ function App() {
   const handleCategoryChange = useCallback((category) => {
     setSelectedCategory(category);
     setCurrentPage(1);
+    // Only mark as read if it's not the dashboard and there are unread emails
     if (category !== 'dashboard' && unreadCounts[category] > 0) {
       markEmailsAsReadForCategory(category);
     }
@@ -147,8 +153,9 @@ function App() {
 
   const handleBackToCategory = useCallback(() => {
     setSelectedEmail(null);
-    setSelectedCategory(selectedCategory === 'emailPreview' ? 'dashboard' : selectedCategory);
-  }, [selectedCategory]);
+    // Return to the previously selected category, or dashboard if emailPreview was selected directly
+    setSelectedCategory(prevCategory => prevCategory === 'emailPreview' ? 'dashboard' : prevCategory);
+  }, []);
 
   const openMisclassificationModal = useCallback((email) => {
     setEmailToMisclassify(email);
@@ -163,21 +170,24 @@ function App() {
   const handleMisclassificationSubmit = useCallback(async (emailData, newCategory) => {
     closeMisclassificationModal();
     await handleReportMisclassification(emailData, newCategory);
+    // Re-fetch all data after misclassification
     await fetchStoredEmails(userEmail, userId);
     await loadFollowUpSuggestions();
   }, [handleReportMisclassification, closeMisclassificationModal, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
 
   const handleReplySubmit = useCallback(async (threadId, recipient, subject, body) => {
     await handleSendEmailReply(threadId, recipient, subject, body);
+    // Re-fetch all data after sending reply
     await fetchStoredEmails(userEmail, userId);
     await loadFollowUpSuggestions();
   }, [handleSendEmailReply, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
 
   const handleArchive = useCallback(async (threadId) => {
     await handleArchiveEmail(threadId);
+    // Re-fetch all data after archiving
     await fetchStoredEmails(userEmail, userId);
     await loadFollowUpSuggestions();
-    setSelectedEmail(null);
+    setSelectedEmail(null); // Close email preview after archiving
   }, [handleArchiveEmail, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
 
   const openPremiumModal = useCallback(() => setIsPremiumModalOpen(true), []);
@@ -190,9 +200,11 @@ function App() {
       case 'emailPreview':
         return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, openPremiumModal }} />;
       default:
+        // For other categories (applied, interviewed, etc.)
         const emailsForCategory = categorizedEmails[selectedCategory] || [];
         const paginatedEmails = emailsForCategory.slice((currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE, currentPage * CONFIG.PAGINATION.PAGE_SIZE);
-        const totalPages = Math.ceil(emailsForCategory.length / CONFIG.PAGINATION.PAGE_SIZE);
+        const totalEmailsInCurrentCategory = emailsForCategory.length;
+        const totalPages = Math.ceil(totalEmailsInCurrentCategory / CONFIG.PAGINATION.PAGE_SIZE);
         return (
           <>
             <EmailList
@@ -203,14 +215,23 @@ function App() {
               isFilteredView={isFilteredView}
               filteredEmails={filteredEmails}
               appliedFilters={appliedFilters}
-              applyFilters={applyFilters}
-              clearFilters={clearFilters}
+              // applyFilters={applyFilters} // Removed as EmailList doesn't use these directly
+              // clearFilters={clearFilters} // Removed as EmailList doesn't use these directly
             />
-            {totalPages > 1 && <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />}
+            {totalPages > 1 && (
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                totalEmails={totalEmailsInCurrentCategory}
+                pageSize={CONFIG.PAGINATION.PAGE_SIZE}
+              />
+            )}
           </>
         );
     }
   };
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
@@ -264,7 +285,6 @@ function App() {
         <header className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
           <h1 id="welcome-header" className="text-xl font-semibold text-gray-900 dark:text-white truncate">
             Welcome, {userName || userEmail}!
-
           </h1>
           <div className="flex items-center space-x-2 flex-shrink-0">
             {userPlan === 'free' && (
