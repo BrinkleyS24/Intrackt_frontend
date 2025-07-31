@@ -29,40 +29,62 @@ const CONFIG_ENDPOINTS = {
   SYNC_EMAILS: '/api/emails',
   FETCH_STORED_EMAILS: '/api/emails/stored-emails', // This endpoint is not used by background script directly for fetching
   FOLLOWUP_NEEDED: '/api/emails/followup-needed',
-  REPORT_MISCLASSIFICATION: '/api/emails/report-misclassification',
+  // CORRECTED: Changed endpoint to match backend route /misclassification
+  REPORT_MISCLASSIFICATION: '/api/emails/misclassification',
+  // CORRECTED: Changed endpoint to match backend route /undo-misclassification
   UNDO_MISCLASSIFICATION: '/api/emails/undo-misclassification',
   FETCH_USER_PLAN: '/api/user',
   UPDATE_USER_PLAN: '/api/user/update-plan',
-  // Assuming a backend endpoint for sending replies
   SEND_REPLY: '/api/emails/send-reply',
-  // Assuming a backend endpoint for archiving
   ARCHIVE_EMAIL: '/api/emails/archive', // Ensure this matches your backend's archive endpoint
 };
+
+// --- Authentication Readiness Promise ---
+// This promise will resolve once Firebase Auth has initialized and determined
+// the user's state (logged in or logged out).
+let authReadyResolve;
+const authReadyPromise = new Promise(resolve => {
+  authReadyResolve = resolve;
+});
 
 // --- Helper Functions ---
 
 /**
  * Generic fetch wrapper for backend API calls.
  * Automatically adds authorization header if a Firebase user is logged in.
+ * Ensures a fresh ID token is obtained.
  * @param {string} endpoint - The API endpoint (e.g., '/api/emails').
  * @param {object} options - Fetch options (method, headers, body, etc.).
  * @returns {Promise<object>} The JSON response from the backend.
  */
 async function apiFetch(endpoint, options = {}) {
+  // Wait for authentication to be ready before proceeding
+  await authReadyPromise;
+
   const user = auth.currentUser;
   const headers = {
     'Content-Type': 'application/json',
     ...options.headers,
   };
 
-  if (user) {
+  if (user && !user.isAnonymous) { // Only attempt to get ID token for non-anonymous users
     try {
-      const idToken = await user.getIdToken();
+      // Force refresh the token to ensure it's not expired
+      const idToken = await user.getIdToken(true); // Pass true to force refresh
       headers['Authorization'] = `Bearer ${idToken}`;
+      console.log(`✅ Intrackt: Attached fresh ID token for user: ${user.uid}`);
     } catch (error) {
-      console.error("❌ Intrackt: Failed to get Firebase ID token:", error);
+      console.error("❌ Intrackt: Failed to get fresh Firebase ID token:", error);
+      // [Inference] If token acquisition fails, it's better to proceed without it
+      // and let the backend return 401 if it requires authentication.
+      // This prevents blocking the request entirely if token refresh fails.
     }
+  } else if (user && user.isAnonymous) {
+      console.log("Intrackt: Anonymous user, skipping ID token attachment.");
+  } else {
+      console.log("Intrackt: No authenticated user, skipping ID token attachment.");
   }
+
 
   const url = `${CONFIG_ENDPOINTS.BACKEND_BASE_URL}${endpoint}`;
   console.log(`📡 Intrackt: Making API call to: ${url} with method: ${options.method || 'GET'}`);
@@ -186,9 +208,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const currentUserEmail = currentUserInfo.userEmail;
 
     // Check if user info is available for operations requiring it
+    // [Inference] This check is to prevent API calls when user is not authenticated or info is not cached.
+    // [Unverified] This might need refinement based on exact backend requirements for each endpoint.
     const isUserAuthenticated = !!auth.currentUser && !auth.currentUser.isAnonymous;
     const hasCachedUserInfo = !!currentUserEmail && !!currentUserId;
 
+    // For any message type *other than* LOGIN_GOOGLE_OAUTH, we expect user info to be present.
+    // If not, we respond with an error.
     if (!isUserAuthenticated && !hasCachedUserInfo && msg.type !== 'LOGIN_GOOGLE_OAUTH') {
       console.warn(`Intrackt Background: User not authenticated or user info not cached for message type: ${msg.type}.`);
       sendResponse({ success: false, error: "User not authenticated or user info not available." });
@@ -213,6 +239,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           // Step 2: Launch Chrome's interactive web auth flow
           const finalAuthUrl = authUrlResponse.url;
+          console.log(`DEBUG: Attempting to launch Web Auth Flow with URL: ${finalAuthUrl}`); // ADDED LOG
           const authRedirectUrl = await new Promise((resolve, reject) => {
             chrome.identity.launchWebAuthFlow(
               {
@@ -290,17 +317,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'FETCH_USER_PLAN':
         try {
-          const userEmailToFetch = msg.userEmail || currentUserEmail;
-          const userIdToFetch = msg.userId || currentUserId;
-
-          if (!userEmailToFetch || !userIdToFetch) {
-            sendResponse({ success: false, error: "User email or ID not available for fetching plan." });
-            return;
-          }
-
           const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_USER_PLAN, {
             method: 'POST',
-            body: { email: userEmailToFetch, userId: userIdToFetch } // Explicitly send email and userId
+            body: { email: currentUserEmail, userId: currentUserId } // Always use cached info
           });
           if (response.success) {
             await chrome.storage.local.set({ userPlan: response.plan }); // Cache the plan
@@ -316,17 +335,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'UPDATE_USER_PLAN':
         try {
-          const { newPlan, userEmail: emailForUpdate } = msg;
-          const userIdForUpdate = currentUserId; // Use currentUserId from storage
-
-          if (!emailForUpdate || !userIdForUpdate) {
-            sendResponse({ success: false, error: "User email or ID not available for updating plan." });
-            return;
-          }
-
+          const { newPlan } = msg;
           const response = await apiFetch(CONFIG_ENDPOINTS.UPDATE_USER_PLAN, {
             method: 'POST',
-            body: { newPlan, userEmail: emailForUpdate, userId: userIdForUpdate } // Ensure userId is sent
+            body: { newPlan, userEmail: currentUserEmail, userId: currentUserId } // Always use cached info
           });
           if (response.success) {
             await chrome.storage.local.set({ userPlan: newPlan }); // Cache the updated plan
@@ -346,8 +358,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'FETCH_NEW_EMAILS':
         try {
-          // Use msg.userEmail and msg.userId as they are explicitly passed from the popup for this action
-          const syncResult = await triggerEmailSync(msg.userEmail, msg.userId, msg.fullRefresh);
+          // Use current cached info for sync
+          const syncResult = await triggerEmailSync(currentUserEmail, currentUserId, msg.fullRefresh);
           sendResponse(syncResult); // Send back { success: true, categorizedEmails: {...}, quota: {...} }
         } catch (error) {
           console.error("❌ Intrackt Background: Error fetching new emails:", error);
@@ -357,17 +369,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'FETCH_QUOTA_DATA':
         try {
-          const userEmailForQuota = msg.userEmail || currentUserEmail;
-          const userIdForQuota = msg.userId || currentUserId;
-
-          if (!userEmailForQuota || !userIdForQuota) {
-            sendResponse({ success: false, error: "User email or ID not available for fetching quota." });
-            return;
-          }
-
           const response = await apiFetch(CONFIG_ENDPOINTS.SYNC_EMAILS, {
             method: 'POST',
-            body: { userEmail: userEmailForQuota, userId: userIdForQuota, fetchOnlyQuota: true }
+            body: { userEmail: currentUserEmail, userId: currentUserId, fetchOnlyQuota: true } // Always use cached info
           });
           if (response.success && response.quota) {
             await chrome.storage.local.set({ quotaData: response.quota }); // Cache the quota data
@@ -383,17 +387,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'FETCH_FOLLOWUP_SUGGESTIONS':
         try {
-          const userEmailForFollowup = msg.userEmail || currentUserEmail;
-          const userIdForFollowup = msg.userId || currentUserId;
-
-          if (!userEmailForFollowup || !userIdForFollowup) {
-            sendResponse({ success: false, error: "User email or ID not available for follow-up suggestions." });
-            return;
-          }
-
           const response = await apiFetch(CONFIG_ENDPOINTS.FOLLOWUP_NEEDED, {
             method: 'POST',
-            body: { userEmail: userEmailForFollowup, userId: userIdForFollowup }
+            body: { userEmail: currentUserEmail, userId: currentUserId } // Always use cached info
           });
           if (response.success && response.suggestions) {
             await chrome.storage.local.set({ followUpSuggestions: response.suggestions }); // Cache suggestions
@@ -403,17 +399,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
         } catch (error) {
           console.error("❌ Intrackt Background: Error fetching follow-up suggestions:", error);
-          sendResponse({ success: false, error: error.message });
+          sendResponse({ success : false, error: error.message });
         }
         break;
 
       case 'SEND_EMAIL_REPLY':
         try {
-          const { threadId, recipient, subject, body, userEmail: senderEmail } = msg;
-          // Ensure userId is passed for sendGmailReply
-          const result = await sendGmailReply(threadId, recipient, subject, body, senderEmail, currentUserId);
-          // After sending a reply, trigger a sync to update the email status in the UI
-          await triggerEmailSync(senderEmail, currentUserId, false); // No full refresh needed, just update
+          const { threadId, recipient, subject, body } = msg;
+          const result = await sendGmailReply(threadId, recipient, subject, body, currentUserEmail, currentUserId); // Always use cached info
+          await triggerEmailSync(currentUserEmail, currentUserId, false); // Trigger sync after reply
           sendResponse({ success: true, message: "Email sent successfully!", result });
         } catch (error) {
           console.error("❌ Intrackt Background: Error sending email reply:", error);
@@ -423,14 +417,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'ARCHIVE_EMAIL':
         try {
-          // Ensure userId is sent in the body
           const response = await apiFetch(CONFIG_ENDPOINTS.ARCHIVE_EMAIL, {
             method: 'POST',
-            body: { threadId: msg.threadId, userEmail: msg.userEmail, userId: currentUserId }
+            body: { threadId: msg.threadId, userEmail: currentUserEmail, userId: currentUserId } // Always use cached info
           });
           if (response.success) {
-            // After archiving, trigger a sync to update the email list
-            await triggerEmailSync(msg.userEmail, currentUserId, false);
+            await triggerEmailSync(currentUserEmail, currentUserId, false); // Trigger sync after archive
           }
           sendResponse(response);
         } catch (error) {
@@ -443,19 +435,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try {
           const reportData = {
             ...msg.emailData, // Contains emailId, threadId, originalCategory, correctedCategory, emailSubject, emailBody
-            userEmail: msg.emailData.userEmail || currentUserEmail, // Ensure userEmail is present
-            userId: currentUserInfo.userId // Ensure userId is present
+            userEmail: currentUserEmail, // Override with cached info
+            userId: currentUserId // Override with cached info
           };
           const response = await apiFetch(CONFIG_ENDPOINTS.REPORT_MISCLASSIFICATION, {
             method: 'POST',
             body: reportData
           });
           if (response.success) {
-            // After misclassification, trigger a sync to update the email list
-            await triggerEmailSync(reportData.userEmail, reportData.userId, false);
+            await triggerEmailSync(currentUserEmail, currentUserId, false); // Trigger sync after misclassification
+            // Notify popup of success
+            chrome.runtime.sendMessage({
+              type: 'SHOW_NOTIFICATION',
+              msg: 'Email misclassification reported successfully!',
+              msgType: 'success'
+            });
+          } else {
+            // Notify popup of error
+            chrome.runtime.sendMessage({
+              type: 'SHOW_NOTIFICATION',
+              msg: `Failed to report misclassification: ${response.error}`,
+              msgType: 'error'
+            });
           }
           sendResponse(response);
         } catch (error) {
+          console.error("❌ Intrackt Background: Error reporting misclassification:", error);
+          // Notify popup of network/communication error
+          chrome.runtime.sendMessage({
+            type: 'SHOW_NOTIFICATION',
+            msg: `Error reporting misclassification: ${error.message}`,
+            msgType: 'error'
+          });
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -464,19 +475,38 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try {
           const undoData = {
             ...msg.undoData, // Contains emailId, threadId, originalCategory, misclassifiedIntoCategory
-            userEmail: msg.userEmail || currentUserEmail, // Ensure userEmail is present
-            userId: currentUserInfo.userId // Ensure userId is present
+            userEmail: currentUserEmail, // Override with cached info
+            userId: currentUserId // Override with cached info
           };
           const response = await apiFetch(CONFIG_ENDPOINTS.UNDO_MISCLASSIFICATION, {
             method: 'POST',
             body: undoData
           });
           if (response.success) {
-            // After undoing, trigger a sync to update the email list
-            await triggerEmailSync(undoData.userEmail, undoData.userId, false);
+            await triggerEmailSync(currentUserEmail, currentUserId, false); // Trigger sync after undo
+            // Notify popup of success
+            chrome.runtime.sendMessage({
+              type: 'SHOW_NOTIFICATION',
+              msg: 'Misclassification undone successfully!',
+              msgType: 'success'
+            });
+          } else {
+            // Notify popup of error
+            chrome.runtime.sendMessage({
+              type: 'SHOW_NOTIFICATION',
+              msg: `Failed to undo misclassification: ${response.error}`,
+              msgType: 'error'
+            });
           }
           sendResponse(response);
         } catch (error) {
+          console.error("❌ Intrackt Background: Error undoing misclassification:", error);
+          // Notify popup of network/communication error
+          chrome.runtime.sendMessage({
+            type: 'SHOW_NOTIFICATION',
+            msg: `Error undoing misclassification: ${error.message}`,
+            msgType: 'error'
+          });
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -505,9 +535,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await chrome.storage.local.set({ [`${category}Emails`]: updatedCategoryEmails });
           console.log(`✅ Intrackt Background: Marked emails in category '${category}' as read in local storage.`);
 
-          // Optionally, notify backend about read status if it needs to be persisted there
-          // For now, assuming local storage update is sufficient for this action.
-          // If backend needs to know, you'd make an apiFetch call here.
+          // [Inference] If backend needs to know about read status, you'd make an apiFetch call here.
           // Example: await apiFetch(CONFIG_ENDPOINTS.MARK_READ_ON_BACKEND, { method: 'POST', body: { category, userId: targetUserId, userEmail: currentUserEmail } });
 
           sendResponse({ success: true, message: `Emails in ${category} marked as read.` });
@@ -533,6 +561,9 @@ setPersistence(auth, indexedDBLocalPersistence)
   .then(() => {
     console.log("✅ Intrackt Background: Firebase Auth persistence set to IndexedDB.");
     onAuthStateChanged(auth, async (user) => {
+      // Resolve the authReadyPromise once the initial auth state is determined
+      authReadyResolve();
+
       if (user) {
         console.log("✅ Intrackt Background: Auth State Changed - User logged in:", user.email, "UID:", user.uid);
         // Ensure userEmail and userId are immediately available in local storage
@@ -576,6 +607,9 @@ setPersistence(auth, indexedDBLocalPersistence)
     console.error("❌ Intrackt Background: Error setting Firebase Auth persistence:", error);
     // Even if persistence fails, still listen for auth state changes
     onAuthStateChanged(auth, async (user) => {
+      // Resolve the authReadyPromise even if persistence setup failed
+      authReadyResolve();
+
       if (user) {
         console.log("Intrackt Background: Auth State Changed (without persistence) - User logged in:", user.email);
         await chrome.storage.local.set({ userEmail: user.email, userName: user.displayName || user.email, userId: user.uid });

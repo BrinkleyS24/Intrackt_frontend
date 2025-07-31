@@ -92,8 +92,13 @@ function App() {
       // Ensure userEmail and userId are truly available and auth is ready before fetching
       if (isAuthReady && userEmail && userId) {
         try {
-          // These calls now rely on userEmail and userId being correctly populated by useAuth
-          await fetchStoredEmails(userEmail, userId);
+          // First, try to get stored emails from local storage
+          await fetchStoredEmails();
+          
+          // Then trigger a sync from the backend to ensure we have fresh data
+          // This will populate local storage if it's empty and update it if it's stale
+          await fetchNewEmails(false); // false = not a full refresh, just sync
+          
           await fetchQuotaData();
           await loadFollowUpSuggestions();
         } catch (error) {
@@ -104,7 +109,7 @@ function App() {
       }
     };
     initialDataFetch();
-  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData, loadFollowUpSuggestions]);
+  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchNewEmails, fetchQuotaData, loadFollowUpSuggestions]);
 
   useEffect(() => {
     const handleBackgroundMessage = (message) => {
@@ -112,7 +117,7 @@ function App() {
         // These will trigger re-fetches in the respective hooks, or if the hooks
         // are already listening to chrome.storage.local, this might be redundant.
         // For now, keep them to ensure data refresh.
-        fetchStoredEmails(userEmail, userId);
+        fetchStoredEmails();
         fetchQuotaData();
         loadFollowUpSuggestions();
       }
@@ -126,10 +131,10 @@ function App() {
   const handleRefresh = useCallback(async () => {
     if (!userEmail || !userId) return;
     try {
-      await fetchNewEmails(userEmail, userId, true);
+      await fetchNewEmails(true); // true = full refresh
       showNotification("Emails refreshed!", "success");
       // Re-fetch all data after new emails are fetched
-      await fetchStoredEmails(userEmail, userId);
+      await fetchStoredEmails();
       await fetchQuotaData();
       await loadFollowUpSuggestions();
     } catch (error) {
@@ -171,21 +176,21 @@ function App() {
     closeMisclassificationModal();
     await handleReportMisclassification(emailData, newCategory);
     // Re-fetch all data after misclassification
-    await fetchStoredEmails(userEmail, userId);
+    await fetchStoredEmails();
     await loadFollowUpSuggestions();
   }, [handleReportMisclassification, closeMisclassificationModal, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
 
   const handleReplySubmit = useCallback(async (threadId, recipient, subject, body) => {
     await handleSendEmailReply(threadId, recipient, subject, body);
     // Re-fetch all data after sending reply
-    await fetchStoredEmails(userEmail, userId);
+    await fetchStoredEmails();
     await loadFollowUpSuggestions();
   }, [handleSendEmailReply, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
 
   const handleArchive = useCallback(async (threadId) => {
     await handleArchiveEmail(threadId);
     // Re-fetch all data after archiving
-    await fetchStoredEmails(userEmail, userId);
+    await fetchStoredEmails();
     await loadFollowUpSuggestions();
     setSelectedEmail(null); // Close email preview after archiving
   }, [handleArchiveEmail, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);

@@ -2,7 +2,6 @@
  * @file popup/src/hooks/useEmails.js
  * @description Custom React hook for managing email data, including fetching,
  * filtering, and handling actions like misclassification and replies.
- * Now includes a chrome.storage.onChanged listener for real-time updates from background script.
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -34,27 +33,72 @@ export function useEmails(userEmail, userId, CONFIG) {
   const [undoToastVisible, setUndoToastVisible] = useState(false);
   const misclassificationTimerRef = useRef(null);
 
-  // NEW: State to explicitly track unread counts for the UI
-  const [unreadCounts, setUnreadCounts] = useState({});
+  // NEW: State to track unread counts per category
+  const [unreadCounts, setUnreadCounts] = useState({
+    applied: 0,
+    interviewed: 0,
+    offers: 0,
+    rejected: 0,
+    irrelevant: 0,
+  });
 
-  // NEW: Function to calculate unread counts from the main email list
+  // Function to calculate unread counts
   const calculateUnreadCounts = useCallback((emails) => {
-    const counts = {};
-    for (const category in emails) {
-      if (Object.prototype.hasOwnProperty.call(emails, category)) {
-        counts[category] = emails[category].filter(email => !email.isRead).length;
-      }
-    }
+    const counts = {
+      applied: 0,
+      interviewed: 0,
+      offers: 0,
+      rejected: 0,
+      irrelevant: 0,
+    };
+    Object.keys(emails).forEach(category => {
+      counts[category] = emails[category].filter(email => !email.is_read).length;
+    });
     setUnreadCounts(counts);
   }, []);
 
-  const fetchStoredEmails = useCallback(async () => { // Removed userEmail, userId params as it's now internal
+  // Use a ref to store the latest categorizedEmails for background sync
+  const categorizedEmailsRef = useRef(categorizedEmails);
+  useEffect(() => {
+    categorizedEmailsRef.current = categorizedEmails;
+  }, [categorizedEmails]);
+
+
+  // Effect to listen for EMAILS_SYNCED messages from background.js
+  // This updates the UI with the latest data from the backend sync.
+  useEffect(() => {
+    const handleEmailsSynced = (msg) => {
+      if (msg.type === 'EMAILS_SYNCED' && msg.success) {
+        console.log("✅ Intrackt: EMAILS_SYNCED message received in useEmails hook.");
+        setCategorizedEmails(msg.categorizedEmails);
+        calculateUnreadCounts(msg.categorizedEmails); // Update unread counts
+        setLoadingEmails(false); // Stop loading after sync
+        // Update quota data if available in the message
+        if (msg.quota) {
+          // This will be handled by useAuth's chrome.storage.onChanged listener
+          // No direct state update needed here for quotaData
+        }
+      } else if (msg.type === 'EMAILS_SYNCED' && !msg.success) {
+        console.error("❌ Intrackt: Email sync failed:", msg.error);
+        showNotification(`Email sync failed: ${msg.error}`, 'error');
+        setLoadingEmails(false); // Stop loading even on error
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handleEmailsSynced);
+
+    return () => {
+      chrome.runtime.onMessage.removeListener(handleEmailsSynced);
+    };
+  }, [calculateUnreadCounts]);
+
+
+  const fetchStoredEmails = useCallback(async () => {
     setLoadingEmails(true);
     try {
-      // fetchStoredEmailsService no longer needs userEmail/userId as it reads directly from local storage
-      const fetchedEmails = await fetchStoredEmailsService();
-      setCategorizedEmails(fetchedEmails);
-      calculateUnreadCounts(fetchedEmails); // Calculate counts after fetching
+      const stored = await fetchStoredEmailsService();
+      setCategorizedEmails(stored);
+      calculateUnreadCounts(stored); // Calculate unread counts after fetching stored emails
     } catch (error) {
       console.error("❌ Intrackt: Error fetching stored emails:", error);
       showNotification("Failed to load stored emails.", "error");
@@ -63,163 +107,76 @@ export function useEmails(userEmail, userId, CONFIG) {
     }
   }, [calculateUnreadCounts]);
 
-  // NEW: Function to mark emails in a category as read
-  const markEmailsAsReadForCategory = useCallback(async (category) => {
-    if (!userId || !category || !unreadCounts[category] || unreadCounts[category] === 0) {
-      return; // No user, no category, or nothing to mark
-    }
 
-    // 1. Optimistic UI Update: Update local state immediately for a responsive feel
-    const originalEmails = categorizedEmails;
-    const updatedEmails = {
-        ...originalEmails,
-        [category]: originalEmails[category].map(email => ({ ...email, isRead: true }))
-    };
-    setCategorizedEmails(updatedEmails);
-    calculateUnreadCounts(updatedEmails); // This will set the count to 0 for the UI
-
-    // 2. Backend Update: Send request to the server to persist the change
-    try {
-      await markEmailsAsReadService(category, userId);
-      // Success! The UI is already updated.
-    } catch (error) {
-      console.error(`Failed to mark emails as read for ${category}:`, error);
-      showNotification(`Could not update read status.`, 'error');
-      // On error, revert the optimistic update
-      setCategorizedEmails(originalEmails);
-      calculateUnreadCounts(originalEmails);
-    }
-  }, [userId, categorizedEmails, unreadCounts, calculateUnreadCounts]);
-
-  const fetchNewEmails = useCallback(async (email, id, fullRefresh = false) => {
+  const fetchNewEmails = useCallback(async (fullRefresh = false) => {
     setLoadingEmails(true);
     try {
-      if (!email || !id) {
-        console.warn("useEmails.js: Skipping fetchNewEmails, userEmail or userId is missing.");
-        return { success: false, error: "User email or ID missing." };
-      }
-      const response = await fetchNewEmailsService(email, id, fullRefresh);
-      if (response.success) {
-        showNotification("Emails synced successfully!", "success");
-        // No need to call fetchStoredEmails here, as the storage listener will handle it
-      } else {
+      // The actual fetching and caching is done by the background script,
+      // which then sends an 'EMAILS_SYNCED' message back to the popup.
+      // The 'EMAILS_SYNCED' listener in this hook will update the state.
+      const response = await fetchNewEmailsService(userEmail, userId, fullRefresh);
+      if (!response.success) {
         showNotification(`Failed to sync emails: ${response.error}`, "error");
       }
-      return response;
     } catch (error) {
-      console.error("❌ Intrackt: Error fetching new emails:", error);
-      showNotification("Error syncing new emails.", "error");
-      return { success: false, error: error.message };
+      console.error("❌ Intrackt: Error requesting new email sync:", error);
+      showNotification(`Failed to request email sync: ${error.message}`, "error");
     } finally {
-      setLoadingEmails(false);
+      // Loading state will be set to false by the EMAILS_SYNCED listener
     }
-  }, []);
+  }, [userEmail, userId]); // Depend on userEmail and userId
 
-  const handleReportMisclassification = useCallback(async (emailData, newCategory) => {
-    if (!emailData || !emailData.email_id) {
-      console.error("ERROR: Cannot report misclassification, emailData or emailData.email_id is missing.");
-      showNotification("Error: Email data missing for misclassification.", "error");
-      return;
-    }
-
-    const emailToReport = { ...emailData, correctedCategory: newCategory };
-    setLastMisclassifiedEmail(emailToReport);
-    setUndoToastVisible(true);
-
-    if (misclassificationTimerRef.current) {
-      clearTimeout(misclassificationTimerRef.current);
-    }
-    misclassificationTimerRef.current = setTimeout(async () => {
-      setUndoToastVisible(false);
-      try {
-        const reportData = {
-          userEmail: userEmail,
-          emailId: emailToReport.email_id,
-          threadId: emailToReport.threadId,
-          originalCategory: emailToReport.category,
-          correctedCategory: newCategory,
-          emailSubject: emailToReport.subject,
-          emailBody: emailToReport.body,
-        };
-        const result = await reportMisclassificationService(reportData, newCategory, userEmail); // Pass newCategory and userEmail
-        if (result.success) {
-          showNotification(`Email moved to ${getCategoryTitle(newCategory)}!`, "success");
-          // No need to call fetchStoredEmails here, as the storage listener will handle it
-        } else {
-          showNotification(`Failed to report misclassification: ${result.error}`, "error");
-        }
-      } catch (error) {
-        console.error("❌ Intrackt: Error reporting misclassification:", error);
-        showNotification("Error reporting misclassification.", "error");
-      } finally {
-        setLastMisclassifiedEmail(null);
-      }
-    }, CONFIG.UNDO_TIMEOUT_MS);
-  }, [userEmail, CONFIG.UNDO_TIMEOUT_MS]); // Removed userId, fetchStoredEmails from dependencies as storage listener handles it
-
-  const undoMisclassification = useCallback(async (emailToUndo) => {
-    if (misclassificationTimerRef.current) {
-      clearTimeout(misclassificationTimerRef.current);
-      misclassificationTimerRef.current = null;
-    }
-    setUndoToastVisible(false);
-
-    if (!emailToUndo || !emailToUndo.email_id) {
-      console.error("ERROR: No email ID (email_id) provided to undo misclassification.");
-      showNotification("No recent misclassification to undo.", "warning");
-      return;
-    }
-
-    try {
-      const undoData = {
-        userEmail: userEmail,
-        emailId: emailToUndo.email_id,
-        threadId: emailToUndo.threadId,
-        originalCategory: emailToUndo.category,
-        misclassifiedIntoCategory: emailToUndo.correctedCategory
-      };
-      const result = await undoMisclassificationService(emailToUndo.threadId, userEmail); // Pass threadId and userEmail
-      if (result.success) {
-        showNotification("Misclassification undone!", "info");
-        // No need to call fetchStoredEmails here, as the storage listener will handle it
-      } else {
-        showNotification(`Failed to undo misclassification: ${result.error}`, "error");
-      }
-    } catch (error) {
-      console.error("❌ Intrackt: Error undoing misclassification:", error);
-      showNotification("Error undoing misclassification.", "error");
-    } finally {
-      setLastMisclassifiedEmail(null);
-    }
-  }, [userEmail]); // Removed userId, fetchStoredEmails from dependencies as storage listener handles it
 
   const applyFilters = useCallback((filters) => {
     setAppliedFilters(filters);
-    if (filters.category || filters.searchQuery || filters.timeRange !== 'all') {
-      setIsFilteredView(true);
-      let tempEmails = [];
-      if (filters.category) {
-        tempEmails = categorizedEmails[filters.category] || [];
-      } else {
-        tempEmails = Object.values(categorizedEmails).flat();
-      }
+    const { searchQuery, timeRange } = filters;
+    let filtered = [];
 
-      if (filters.searchQuery) {
-        const query = filters.searchQuery.toLowerCase();
-        tempEmails = tempEmails.filter(email =>
-          email.subject.toLowerCase().includes(query) ||
-          email.from.toLowerCase().includes(query) ||
-          email.body.toLowerCase().includes(query) ||
-          email.company?.toLowerCase().includes(query) ||
-          email.position?.toLowerCase().includes(query)
-        );
-      }
-      setFilteredEmails(tempEmails);
-    } else {
+    // If no search query and time range is 'all', show all emails for the selected category
+    if (!searchQuery && timeRange === 'all') {
       setIsFilteredView(false);
-      setFilteredEmails([]);
+      setFilteredEmails([]); // Clear filtered emails
+      return;
     }
-  }, [categorizedEmails]);
+
+    setIsFilteredView(true);
+
+    // Flatten all categorized emails into a single array for filtering
+    const allEmails = Object.values(categorizedEmails).flat();
+
+    filtered = allEmails.filter(email => {
+      const matchesSearch = searchQuery
+        ? (email.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          email.body?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          email.company?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          email.position?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          email.from?.toLowerCase().includes(searchQuery.toLowerCase()))
+        : true;
+
+      const emailDate = new Date(email.date);
+      const now = new Date();
+      let matchesTimeRange = true;
+
+      switch (timeRange) {
+        case 'last7days':
+          matchesTimeRange = (now.getTime() - emailDate.getTime()) < 7 * 24 * 60 * 60 * 1000;
+          break;
+        case 'last30days':
+          matchesTimeRange = (now.getTime() - emailDate.getTime()) < 30 * 24 * 60 * 60 * 1000;
+          break;
+        case 'older':
+          matchesTimeRange = (now.getTime() - emailDate.getTime()) >= 30 * 24 * 60 * 60 * 1000;
+          break;
+        case 'all':
+        default:
+          matchesTimeRange = true;
+          break;
+      }
+      return matchesSearch && matchesTimeRange;
+    });
+    setFilteredEmails(filtered);
+  }, [categorizedEmails]); // Recalculate if categorizedEmails change
+
 
   const clearFilters = useCallback(() => {
     setAppliedFilters({ searchQuery: '', timeRange: 'all' });
@@ -227,15 +184,105 @@ export function useEmails(userEmail, userId, CONFIG) {
     setFilteredEmails([]);
   }, []);
 
+  // Add this helper function at the top of useEmails.js
+  const transformCategoryForBackend = (category) => {
+    const categoryMap = {
+      'applied': 'Applied',
+      'interviewed': 'Interviewed',
+      'offers': 'Offers',
+      'rejected': 'Rejected',
+      'irrelevant': 'Irrelevant'
+    };
+    return categoryMap[category] || category;
+  };
+
+  const handleReportMisclassification = useCallback(async (emailData, correctedCategory) => {
+    // Transform both categories to match database expectations
+    const reportPayload = {
+      emailId: emailData.id, // Supabase row ID
+      threadId: emailData.thread_id, // Gmail thread ID
+      originalCategory: transformCategoryForBackend(emailData.category), // Transform original
+      correctedCategory: transformCategoryForBackend(correctedCategory), // Transform corrected
+      emailSubject: emailData.subject || 'No Subject',
+      emailBody: emailData.body || 'No Body',
+    };
+
+    if (!reportPayload.emailId || !reportPayload.threadId || !reportPayload.originalCategory || !reportPayload.correctedCategory) {
+      showNotification("Missing critical email data for misclassification report.", "error");
+      console.error("❌ Intrackt: Missing critical email data for misclassification report:", reportPayload);
+      return;
+    }
+
+    setLoadingEmails(true);
+    try {
+      const result = await reportMisclassificationService(reportPayload);
+      if (result.success) {
+        showNotification("Email reported as misclassified!", "success");
+        setLastMisclassifiedEmail({
+          emailId: reportPayload.emailId,
+          threadId: reportPayload.threadId,
+          originalCategory: reportPayload.originalCategory,
+          misclassifiedIntoCategory: reportPayload.correctedCategory,
+        });
+        setUndoToastVisible(true);
+        misclassificationTimerRef.current = setTimeout(() => {
+          setUndoToastVisible(false);
+          setLastMisclassifiedEmail(null);
+        }, 10000); // UNDO_TIMEOUT_MS
+
+        await fetchStoredEmails();
+      } else {
+        showNotification(`Failed to report misclassification: ${result.error}`, "error");
+      }
+    } catch (error) {
+      console.error("❌ Intrackt: Error reporting misclassification:", error);
+      showNotification("Error reporting misclassification.", "error");
+    } finally {
+      setLoadingEmails(false);
+    }
+  }, [fetchStoredEmails, userId, userEmail]);
+  const undoMisclassification = useCallback(async () => {
+    if (!lastMisclassifiedEmail) {
+      showNotification("No recent misclassification to undo.", "info");
+      return;
+    }
+
+    setLoadingEmails(true);
+    try {
+      // Clear the existing timeout immediately
+      if (misclassificationTimerRef.current) {
+        clearTimeout(misclassificationTimerRef.current);
+        misclassificationTimerRef.current = null;
+      }
+      setUndoToastVisible(false); // Hide toast immediately
+
+      const result = await undoMisclassificationService(lastMisclassifiedEmail); // Send undo data
+      if (result.success) {
+        showNotification("Misclassification undone!", "success");
+        setLastMisclassifiedEmail(null); // Clear undo state
+        await fetchStoredEmails(); // Refresh emails after undo
+      } else {
+        showNotification(`Failed to undo misclassification: ${result.error}`, "error");
+      }
+    } catch (error) {
+      console.error("❌ Intrackt: Error undoing misclassification:", error);
+      showNotification("Error undoing misclassification.", "error");
+    } finally {
+      setLoadingEmails(false);
+    }
+  }, [lastMisclassifiedEmail, fetchStoredEmails, userId, userEmail]); // Added userId and userEmail to dependencies
+
   const handleSendEmailReply = useCallback(async (threadId, recipient, subject, body) => {
     setLoadingEmails(true);
     try {
-      const result = await sendEmailReplyService(threadId, recipient, subject, body, userEmail);
+      const result = await sendEmailReplyService(threadId, recipient, subject, body, userEmail, userId);
       if (result.success) {
-        showNotification("Reply sent successfully!", "success");
-        // No need to call fetchStoredEmails here, as the storage listener will handle it
+        showNotification("Email reply sent successfully!", "success");
+        // Optionally, mark the email as read or update its status if needed
+        // await markEmailsAsReadService(email.category, userId); // Example
+        await fetchStoredEmails(); // Refresh emails after sending reply
       } else {
-        showNotification(`Failed to send reply: ${result.error}`, "error");
+        showNotification(`Failed to send email reply: ${result.error}`, "error");
       }
     } catch (error) {
       console.error("❌ Intrackt: Error sending email reply:", error);
@@ -243,7 +290,7 @@ export function useEmails(userEmail, userId, CONFIG) {
     } finally {
       setLoadingEmails(false);
     }
-  }, [userEmail]); // Removed userId, fetchStoredEmails from dependencies
+  }, [userEmail, userId, fetchStoredEmails]);
 
   const handleArchiveEmail = useCallback(async (threadId) => {
     setLoadingEmails(true);
@@ -251,7 +298,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       const result = await archiveEmailService(threadId, userEmail);
       if (result.success) {
         showNotification("Email archived!", "success");
-        // No need to call fetchStoredEmails here, as the storage listener will handle it
+        await fetchStoredEmails(); // Refresh emails after archiving
       } else {
         showNotification(`Failed to archive email: ${result.error}`, "error");
       }
@@ -261,41 +308,16 @@ export function useEmails(userEmail, userId, CONFIG) {
     } finally {
       setLoadingEmails(false);
     }
-  }, [userEmail]); // Removed userId, fetchStoredEmails from dependencies
-
-  // Initial load of emails from local storage when the hook mounts
+  }, [userEmail, fetchStoredEmails]);
   useEffect(() => {
-    console.log("DEBUG useEmails: Initializing emails from local storage.");
-    fetchStoredEmails();
-  }, [fetchStoredEmails]); // Depend on fetchStoredEmails to ensure it's called once
-
-  // Listen for changes in chrome.storage.local and update email state
-  // This is crucial for reacting to background syncs and other updates
-  useEffect(() => {
-    const handleStorageChange = (changes, namespace) => {
-      if (namespace === 'local') {
-        // Check if any of the email categories have changed
-        const emailCategories = ['appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'];
-        const changedEmailKeys = emailCategories.filter(key => changes[key]);
-
-        if (changedEmailKeys.length > 0) {
-          console.log("DEBUG useEmails: Detected storage change in email data. Re-loading emails.");
-          fetchStoredEmails(); // Re-fetch all categorized emails from local storage
-        }
-      }
-    };
-
-    chrome.storage.onChanged.addListener(handleStorageChange);
-
-    return () => {
-      console.log("DEBUG useEmails: Cleaning up chrome.storage.onChanged listener.");
-      chrome.storage.onChanged.removeListener(handleStorageChange);
-    };
-  }, [fetchStoredEmails]); // Depend on fetchStoredEmails
+    if (userEmail && userId) {
+      fetchStoredEmails();
+    }
+  }, [userEmail, userId, fetchStoredEmails]);
 
   return {
     categorizedEmails,
-    fetchStoredEmails, // Still expose for explicit initial load if needed
+    fetchStoredEmails,
     fetchNewEmails,
     loadingEmails,
     isFilteredView,
@@ -310,7 +332,6 @@ export function useEmails(userEmail, userId, CONFIG) {
     undoMisclassification,
     undoToastVisible,
     setUndoToastVisible,
-    unreadCounts, // Export the unread counts
-    markEmailsAsReadForCategory, // Export the function to mark emails as read
+    unreadCounts,
   };
 }

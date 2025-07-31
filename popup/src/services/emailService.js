@@ -114,21 +114,17 @@ export async function sendEmailReplyService(threadId, recipient, subject, body, 
 
 /**
  * Sends a request to the background script to report an email misclassification.
- * @param {object} emailData - The full email object that was misclassified.
- * @param {string} newCategory - The correct category for the email.
- * @param {string} userEmail - The email of the authenticated user.
+ * @param {object} reportPayload - The complete report payload containing all necessary data.
  * @returns {Promise<Object>} A success/error object from the background script.
  */
-export async function reportMisclassificationService(emailData, newCategory, userEmail) {
+
+export async function reportMisclassificationService(reportPayload) {
   try {
-    if (!userEmail) {
-      return { success: false, error: 'User email not provided for misclassification.' };
-    }
+    // The reportPayload should contain all necessary data including emailId, threadId, etc.
+    // userEmail and userId will be added by background.js from chrome.storage.local
     const response = await sendMessageToBackground({
       type: 'REPORT_MISCLASSIFICATION',
-      emailData: emailData,
-      newCategory: newCategory,
-      userEmail: userEmail
+      emailData: reportPayload, // Pass the entire payload as emailData
     });
     return response;
   } catch (error) {
@@ -139,19 +135,16 @@ export async function reportMisclassificationService(emailData, newCategory, use
 
 /**
  * Sends a request to the background script to undo a previous misclassification.
- * @param {string} threadId - The thread ID of the email to undo.
- * @param {string} userEmail - The email of the authenticated user.
+ * @param {object} undoData - The undo data containing emailId, threadId, originalCategory, etc.
  * @returns {Promise<Object>} A success/error object from the background script.
  */
-export async function undoMisclassificationService(threadId, userEmail) {
+export async function undoMisclassificationService(undoData) {
   try {
-    if (!userEmail) {
-      return { success: false, error: 'User email not provided for undo misclassification.' };
-    }
+    // The undoData should contain emailId, threadId, originalCategory, etc.
+    // userEmail and userId will be added by background.js from chrome.storage.local
     const response = await sendMessageToBackground({
       type: 'UNDO_MISCLASSIFICATION',
-      threadId: threadId,
-      userEmail: userEmail
+      undoData: undoData, // Pass the entire undo data object
     });
     return response;
   } catch (error) {
@@ -159,7 +152,6 @@ export async function undoMisclassificationService(threadId, userEmail) {
     return { success: false, error: error.message };
   }
 }
-
 /**
  * Sends a request to the background script to archive an email thread.
  * @param {string} threadId - The ID of the thread to archive.
