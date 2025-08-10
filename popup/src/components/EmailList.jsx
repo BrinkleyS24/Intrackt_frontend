@@ -69,7 +69,7 @@ function EmailList({ emails, category, selectedEmail, onEmailSelect, totalEmails
                       {email.subject}
                     </h3>
                     <div className="flex items-center space-x-2 ml-2 flex-shrink-0">
-                      {!email.isRead && (
+                      {!email.is_read && (
                         <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                       )}
                       <span className="text-xs text-gray-400 dark:text-zinc-500">

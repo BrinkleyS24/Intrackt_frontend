@@ -12,7 +12,7 @@ import {
   reportMisclassificationService,
   undoMisclassificationService,
   sendEmailReplyService,
-  markEmailsAsReadService
+  markEmailAsReadService
 } from '../services/emailService';
 import { showNotification } from '../components/Notification';
 import { getCategoryTitle } from '../utils/uiHelpers';
@@ -101,6 +101,60 @@ export function useEmails(userEmail, userId, CONFIG) {
       chrome.runtime.onMessage.removeListener(handleEmailsSynced);
     };
   }, [calculateUnreadCounts]);
+
+  useEffect(() => {
+    const counts = {
+      applied: 0,
+      interviewed: 0,
+      offers: 0,
+      rejected: 0,
+      irrelevant: 0,
+    };
+    if (categorizedEmails) {
+      for (const category in categorizedEmails) {
+        if (Array.isArray(categorizedEmails[category])) {
+          counts[category] = categorizedEmails[category].filter(email => !email.is_read).length;
+        }
+      }
+    }
+    setUnreadCounts(counts);
+  }, [categorizedEmails]); // This now correctly depends on the source state.
+
+  const markEmailAsRead = useCallback(async (emailId) => {
+    let originalEmails = JSON.parse(JSON.stringify(categorizedEmails));
+    let targetEmail = null;
+    let categoryKey = null;
+
+    for (const category in categorizedEmails) {
+      const email = categorizedEmails[category].find(e => e.id === emailId);
+      if (email) {
+        targetEmail = email;
+        categoryKey = category;
+        break;
+      }
+    }
+
+    if (!targetEmail || targetEmail.is_read) {
+      return;
+    }
+
+    // Optimistic UI Update: Just update the emails. The useEffect above will handle counts.
+    const newCategorizedEmails = { ...categorizedEmails };
+    newCategorizedEmails[categoryKey] = newCategorizedEmails[categoryKey].map(e =>
+      e.id === emailId ? { ...e, is_read: true } : e
+    );
+    setCategorizedEmails(newCategorizedEmails);
+
+    try {
+      // Call the actual backend service to persist the change.
+      await markEmailAsReadService(emailId);
+    } catch (error) {
+      console.error("❌ Intrackt: Failed to mark email as read on the server:", error);
+      showNotification("Failed to update email read status.", "error");
+      // Revert on failure, which will also re-trigger the useEffect to fix counts.
+      setCategorizedEmails(originalEmails);
+    }
+  }, [categorizedEmails]);
 
   /**
    * Fetches previously stored emails from chrome.storage.local.
@@ -283,11 +337,11 @@ export function useEmails(userEmail, userId, CONFIG) {
       }
       setUndoToastVisible(false);
 
-      const result = await undoMisclassificationService(lastMisclassifiedEmail); 
+      const result = await undoMisclassificationService(lastMisclassifiedEmail);
       if (result.success) {
         showNotification("Misclassification undone!", "success");
-        setLastMisclassifiedEmail(null); 
-        await fetchStoredEmails(); 
+        setLastMisclassifiedEmail(null);
+        await fetchStoredEmails();
       } else {
         showNotification(`Failed to undo misclassification: ${result.error}`, "error");
       }
@@ -308,7 +362,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       const result = await sendEmailReplyService(threadId, recipient, subject, body, userEmail, userId);
       if (result.success) {
         showNotification("Email reply sent successfully!", "success");
-        await fetchStoredEmails(); 
+        await fetchStoredEmails();
       } else {
         showNotification(`Failed to send email reply: ${result.error}`, "error");
       }
@@ -370,5 +424,6 @@ export function useEmails(userEmail, userId, CONFIG) {
     undoToastVisible,
     setUndoToastVisible,
     unreadCounts,
+    markEmailAsRead
   };
 }

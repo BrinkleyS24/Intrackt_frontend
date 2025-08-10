@@ -80,9 +80,9 @@ async function apiFetch(endpoint, options = {}) {
       // This prevents blocking the request entirely if token refresh fails.
     }
   } else if (user && user.isAnonymous) {
-      console.log("Intrackt: Anonymous user, skipping ID token attachment.");
+    console.log("Intrackt: Anonymous user, skipping ID token attachment.");
   } else {
-      console.log("Intrackt: No authenticated user, skipping ID token attachment.");
+    console.log("Intrackt: No authenticated user, skipping ID token attachment.");
   }
 
 
@@ -167,7 +167,6 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         interviewedEmails: response.categorizedEmails.interviewed || [],
         offersEmails: response.categorizedEmails.offers || [],
         rejectedEmails: response.categorizedEmails.rejected || [],
-        irrelevantEmails: response.categorizedEmails.irrelevant || [],
         quotaData: response.quota || null // Also cache quota data
       });
       console.log('✅ Intrackt Background: Emails and quota cached successfully in local storage.');
@@ -399,7 +398,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
         } catch (error) {
           console.error("❌ Intrackt Background: Error fetching follow-up suggestions:", error);
-          sendResponse({ success : false, error: error.message });
+          sendResponse({ success: false, error: error.message });
         }
         break;
 
@@ -511,7 +510,42 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'MARK_AS_READ': // NEW CASE for marking emails as read
+      case 'MARK_SINGLE_EMAIL_AS_READ':
+        try {
+          const { emailId } = msg.payload;
+          const user = auth.currentUser;
+
+          // **FIX**: Simplified and more robust guard clauses.
+          // We only need the current user's UID to authorize the request on the backend.
+          if (!user || !user.uid) {
+            // This is the likely source of the original silent error.
+            throw new Error("User not authenticated.");
+          }
+          if (!emailId) {
+            throw new Error("Email ID was not provided.");
+          }
+
+          // **FIX**: The only job is to call the backend. No more manual cache updates.
+          // The backend is the source of truth.
+          const response = await apiFetch('/api/emails/mark-as-read', {
+            method: 'POST',
+            body: {
+              emailId,
+              userId: user.uid // The backend uses the token, but sending it is fine.
+            }
+          });
+
+          // Simply pass the backend's response back to the frontend.
+          sendResponse(response);
+
+        } catch (error) {
+          console.error("❌ Intrackt Background: Error in MARK_SINGLE_EMAIL_AS_READ:", error);
+          // The error will now be correctly sent to the frontend thanks to our fix in emailService.js
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'MARK_AS_READ':
         try {
           const { category, userId: targetUserId } = msg.payload;
           // Ensure we have a user and it matches the targetUserId for security
@@ -523,7 +557,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           // Fetch current emails from local storage to update their read status
           const currentEmails = await chrome.storage.local.get([
-            'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'
+            'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails'
           ]);
 
           const updatedCategoryEmails = (currentEmails[`${category}Emails`] || []).map(email => ({
@@ -534,9 +568,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // Save updated emails back to local storage
           await chrome.storage.local.set({ [`${category}Emails`]: updatedCategoryEmails });
           console.log(`✅ Intrackt Background: Marked emails in category '${category}' as read in local storage.`);
-
-          // [Inference] If backend needs to know about read status, you'd make an apiFetch call here.
-          // Example: await apiFetch(CONFIG_ENDPOINTS.MARK_READ_ON_BACKEND, { method: 'POST', body: { category, userId: targetUserId, userEmail: currentUserEmail } });
 
           sendResponse({ success: true, message: `Emails in ${category} marked as read.` });
         } catch (error) {
@@ -597,7 +628,7 @@ setPersistence(auth, indexedDBLocalPersistence)
         }
       } else {
         console.log("✅ Intrackt Background: Auth State Changed - User logged out.");
-        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails', 'quotaData', 'followUpSuggestions']); // Clear all cached data on logout
+        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']); // Clear all cached data on logout
       }
       // Notify the popup that auth state is ready (after all initial processing)
       chrome.runtime.sendMessage({ type: 'AUTH_READY', success: true, loggedOut: !user });
@@ -619,7 +650,7 @@ setPersistence(auth, indexedDBLocalPersistence)
         }
       } else {
         console.log("Intrackt Background: Auth State Changed (without persistence) - User logged out.");
-        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails', 'quotaData', 'followUpSuggestions']);
+        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']);
       }
       chrome.runtime.sendMessage({ type: 'AUTH_READY', success: true, loggedOut: !user });
     });

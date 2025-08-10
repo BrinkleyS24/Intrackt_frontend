@@ -3,30 +3,18 @@ import { Crown, AlertTriangle, Mail } from "lucide-react";
 import { useEmailQuota } from '../hooks/useEmailQuota';
 import { cn } from '../utils/cn';
 
-// A simple Progress component placeholder to avoid breaking the app if not using a UI library
-const Progress = ({ value, className, style, ...props }) => {
-    const progressStyle = { ...style };
-    if (className && className.includes('bg-')) {
-        const colorMap = {
-            'bg-red-500': '#ef4444',
-            'bg-yellow-500': '#eab308',
-            'bg-blue-500': '#3b82f6',
-            'bg-green-500': '#22c55e',
-        };
-        const colorKey = Object.keys(colorMap).find(key => className.includes(key));
-        if (colorKey) {
-            progressStyle.backgroundColor = colorMap[colorKey];
-        }
-    }
-    progressStyle.width = `${value}%`;
-
+// A simple Progress component that renders a track with a border and a fill.
+const Progress = ({ value, className }) => {
     return (
-      <div className={cn("relative h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-zinc-700", className)} {...props}>
-        <div className="h-full w-full flex-1 bg-inherit transition-all" style={{ transform: `translateX(-${100 - (value || 0)}%)`, backgroundColor: progressStyle.backgroundColor }} />
+      // This is the track/container. It's transparent with a border.
+      <div className="relative h-2 w-full overflow-hidden rounded-full bg-transparent border border-gray-800 dark:border-gray-300">
+        <div
+          className={cn("h-full transition-all", className)}
+          style={{ width: `${value || 0}%` }}
+        />
       </div>
     );
 };
-
 
 // A simple Button component placeholder
 const Button = ({ children, size, ...props }) => {

@@ -21,7 +21,6 @@ export async function fetchStoredEmailsService() {
       'interviewedEmails',
       'offersEmails',
       'rejectedEmails',
-      'irrelevantEmails'
     ]);
 
     const categorizedEmails = {
@@ -29,7 +28,6 @@ export async function fetchStoredEmailsService() {
       interviewed: result.interviewedEmails || [],
       offers: result.offersEmails || [],
       rejected: result.rejectedEmails || [],
-      irrelevant: result.irrelevantEmails || []
     };
 
     console.log("✅ Intrackt: Fetched stored emails from local storage:", categorizedEmails);
@@ -194,5 +192,28 @@ export async function markEmailsAsReadService(category, userId) {
   } catch (error) {
     console.error("❌ Intrackt: Error sending MARK_AS_READ message to background:", error);
     return { success: false, error: error.message };
+  }
+}
+
+export async function markEmailAsReadService(emailId) {
+  try {
+    const response = await sendMessageToBackground({
+      type: 'MARK_SINGLE_EMAIL_AS_READ',
+      payload: {
+        emailId,
+      },
+    });
+
+    // **FIX**: Check for a failure response from the background script.
+    // If the operation was not successful, throw an error to be caught by the calling hook.
+    if (!response || !response.success) {
+      throw new Error(response.error || 'Failed to mark email as read in background script.');
+    }
+
+    return response;
+  } catch (error) {
+    // Log the error and re-throw it so the UI layer can handle it (e.g., show a notification).
+    console.error("❌ Intrackt: Error in markEmailAsReadService:", error);
+    throw error;
   }
 }

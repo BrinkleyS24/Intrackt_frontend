@@ -30,8 +30,9 @@ function App() {
   const [emailToMisclassify, setEmailToMisclassify] = useState(null);
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [categoryBeforePreview, setCategoryBeforePreview] = useState('dashboard');
 
-    const {
+  const {
     userEmail,
     userName,
     userPlan,
@@ -44,7 +45,7 @@ function App() {
     fetchQuotaData,
     quotaData,
     loadingAuth
-  } = useAuth(); 
+  } = useAuth();
   const {
     categorizedEmails,
     fetchStoredEmails,
@@ -62,6 +63,7 @@ function App() {
     setUndoToastVisible,
     unreadCounts,
     markEmailsAsReadForCategory,
+    markEmailAsRead
   } = useEmails(userEmail, userId, CONFIG);
 
   const {
@@ -79,7 +81,7 @@ function App() {
       if (isAuthReady && userEmail && userId) {
         try {
           await fetchStoredEmails();
-          await fetchNewEmails(false); 
+          await fetchNewEmails(false);
           await fetchQuotaData();
           await loadFollowUpSuggestions();
         } catch (error) {
@@ -108,7 +110,7 @@ function App() {
   const handleRefresh = useCallback(async () => {
     if (!userEmail || !userId) return;
     try {
-      await fetchNewEmails(true); 
+      await fetchNewEmails(true);
       showNotification("Emails refreshed!", "success");
       await fetchStoredEmails();
       await fetchQuotaData();
@@ -120,21 +122,27 @@ function App() {
 
   const handleCategoryChange = useCallback((category) => {
     setSelectedCategory(category);
+    setSelectedEmail(null);
     setCurrentPage(1);
-    if (category !== 'dashboard' && unreadCounts[category] > 0) {
-      markEmailsAsReadForCategory(category);
-    }
-  }, [unreadCounts, markEmailsAsReadForCategory]);
+  }, []);
 
   const handleEmailSelect = useCallback((email) => {
-    setSelectedEmail(email);
-    setSelectedCategory('emailPreview');
-  }, []);
+    if (email) {
+      // Mark as read if it's not already
+      if (!email.is_read) {
+        markEmailAsRead(email.id);
+      }
+      // Remember the current category before showing the preview
+      setCategoryBeforePreview(selectedCategory);
+      setSelectedEmail(email);
+      setSelectedCategory('emailPreview');
+    }
+  }, [selectedCategory, markEmailAsRead]);
 
   const handleBackToCategory = useCallback(() => {
-    setSelectedEmail(null);
-    setSelectedCategory(prevCategory => prevCategory === 'emailPreview' ? 'dashboard' : prevCategory);
-  }, []);
+    setSelectedEmail(null); 
+    setSelectedCategory(categoryBeforePreview); 
+  }, [categoryBeforePreview]);
 
   const openMisclassificationModal = useCallback((email) => {
     setEmailToMisclassify(email);
@@ -163,7 +171,7 @@ function App() {
     await handleArchiveEmail(threadId);
     await fetchStoredEmails();
     await loadFollowUpSuggestions();
-    setSelectedEmail(null); 
+    setSelectedEmail(null);
   }, [handleArchiveEmail, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
 
   const openPremiumModal = useCallback(() => setIsPremiumModalOpen(true), []);
@@ -236,23 +244,23 @@ function App() {
 
   return (
     <div className="flex h-screen bg-gray-100 dark:bg-zinc-900 text-gray-900 dark:text-white font-inter">
-    {isLoadingApp && <LoadingOverlay message="Loading data..." />}
-    <Notification />
+      {isLoadingApp && <LoadingOverlay message="Loading data..." />}
+      <Notification />
 
-    <div className="w-64 h-full flex flex-col border-r border-gray-200 dark:border-zinc-700">
-      <Sidebar
-        selectedCategory={selectedCategory}
-        onCategoryChange={handleCategoryChange}
-        unreadCounts={unreadCounts}
-        categorizedEmails={categorizedEmails}
-        onLogout={logout}
-        onRefresh={handleRefresh}
-        isLoadingEmails={loadingEmails || !isAuthReady || !isLoggedIn}
-        userPlan={userPlan}
-        quotaData={quotaData}
-        onUpgradeClick={openPremiumModal}
-      />
-    </div>
+      <div className="w-64 h-full flex flex-col border-r border-gray-200 dark:border-zinc-700">
+        <Sidebar
+          selectedCategory={selectedCategory}
+          onCategoryChange={handleCategoryChange}
+          unreadCounts={unreadCounts}
+          categorizedEmails={categorizedEmails}
+          onLogout={logout}
+          onRefresh={handleRefresh}
+          isLoadingEmails={loadingEmails || !isAuthReady || !isLoggedIn}
+          userPlan={userPlan}
+          quotaData={quotaData}
+          onUpgradeClick={openPremiumModal}
+        />
+      </div>
 
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
