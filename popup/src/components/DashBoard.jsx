@@ -6,11 +6,10 @@
  */
 
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-// Import ALL necessary Lucide React icons directly. No more custom SVG Icons object.
 import {
   FileText, Calendar, Gift, X, TrendingUp, Clock, CheckCircle,
   MessageSquare, Send, Crown, Lock, Mail, BarChart3, PieChart,
-  Flag, MoreHorizontal // Added Flag for misclassification
+  Flag, MoreHorizontal 
 } from 'lucide-react';
 
 import { cn } from '../utils/cn'; // For conditional class joining
@@ -26,12 +25,11 @@ import { showNotification } from './Notification'; // For toasts
 const StatCard = ({ icon: Icon, title, value, subtitle, bgColorClasses, textColorClasses }) => (
   <div className={cn(
     "relative flex flex-col justify-between rounded-lg p-4 shadow-sm transition-all duration-300 ease-in-out",
-    "dark:bg-zinc-800 dark:text-white", // Default dark mode background/text
-    bgColorClasses, // Overrides for specific card backgrounds (like gradient)
-    textColorClasses // Overrides for specific card text colors (like green/blue for stats)
+    "dark:bg-zinc-800 dark:text-white", 
+    bgColorClasses, 
+    textColorClasses 
   )}>
     <div className="flex items-center space-x-3 mb-2">
-      {/* Icon rendering using Lucide React component directly */}
       {Icon && <Icon className={cn("h-5 w-5 opacity-80", textColorClasses ? 'text-current' : 'text-gray-900 dark:text-white')} />}
       <h3 className="text-sm font-medium">{title}</h3>
     </div>
@@ -54,7 +52,6 @@ const CategorySummaryCard = ({ categoryKey, counts, onCategorySelect }) => {
   let iconBgColorClass = '';
   let iconTextColorClass = '';
 
-  // Correctly reference the Lucide React components
   switch (categoryKey) {
     case 'applied': IconComponent = FileText; iconBgColorClass = 'bg-blue-100 dark:bg-blue-900'; iconTextColorClass = 'text-blue-700 dark:text-blue-300'; break;
     case 'interviewed': IconComponent = Calendar; iconBgColorClass = 'bg-yellow-100 dark:bg-yellow-900'; iconTextColorClass = 'text-yellow-700 dark:text-yellow-300'; break;
@@ -77,20 +74,19 @@ const CategorySummaryCard = ({ categoryKey, counts, onCategorySelect }) => {
     <div
       className={cn(
         "card p-4 flex flex-col justify-between transition-shadow hover:shadow-md h-full cursor-pointer rounded-lg shadow-sm bg-white dark:bg-zinc-800",
-        getCategoryColor(categoryKey) // This applies the vibrant background, or can be removed if specific bg is desired
+        getCategoryColor(categoryKey) 
       )}
       onClick={() => onCategorySelect(categoryKey)}
     >
       <div className="flex items-center mb-3">
         <div className={cn("p-2 rounded-lg mr-3", iconBgColorClass)}>
-          {/* Icon rendering using Lucide React component directly */}
           {IconComponent && <IconComponent className={cn("h-5 w-5", iconTextColorClass)} />}
         </div>
         <h4 className="text-md font-semibold text-gray-900 dark:text-white">{categoryTitle}</h4>
         <span className={cn(
             "ml-auto text-xs font-medium px-2.5 py-0.5 rounded-full",
-            getCategoryBadgeColor(categoryKey), // Dynamic badge color
-            "dark:bg-opacity-20 dark:text-white" // Adjust for dark mode badge readability
+            getCategoryBadgeColor(categoryKey), 
+            "dark:bg-opacity-20 dark:text-white" 
         )}>
           {count}
         </span>
@@ -108,14 +104,12 @@ const CategorySummaryCard = ({ categoryKey, counts, onCategorySelect }) => {
  * Uses Lucide React icons for action buttons.
  */
 function DashboardEmailCard({ email, onEmailSelect, onOpenMisclassificationModal }) {
-  // ADDED DEBUG LOG HERE to confirm component renders and receives prop
   console.log("DEBUG DashboardEmailCard: Rendering for email:", email, "onOpenMisclassificationModal prop:", typeof onOpenMisclassificationModal);
 
   const handleMisclassifyClick = (e) => {
-    e.stopPropagation(); // Prevent opening email when clicking misclassify
-    // FIX: Pass email.email_id instead of email.id as it's present in the object
+    e.stopPropagation(); 
     console.log("DEBUG: Misclassification button clicked for email:", email?.email_id);
-    if (onOpenMisclassificationModal) { // Added a check to ensure prop is not null/undefined
+    if (onOpenMisclassificationModal) {
       onOpenMisclassificationModal(email);
     } else {
       console.error("ERROR: onOpenMisclassificationModal is undefined!");
@@ -144,13 +138,12 @@ function DashboardEmailCard({ email, onEmailSelect, onOpenMisclassificationModal
       </p>
       <p className="text-xs text-gray-500 dark:text-zinc-400 mt-1">{email.from}</p>
 
-      {/* Misclassification button/icon - moved to bottom right */}
       <button
         onClick={handleMisclassifyClick}
         className="absolute bottom-2 right-2 p-1 rounded-full text-gray-500 hover:bg-gray-300 dark:hover:bg-zinc-500 dark:text-zinc-400 transition-colors"
         title="Report Misclassification"
       >
-        <Flag className="h-4 w-4" /> {/* Using Lucide React Flag */}
+        <Flag className="h-4 w-4" /> 
       </button>
     </div>
   );
@@ -159,17 +152,14 @@ function DashboardEmailCard({ email, onEmailSelect, onOpenMisclassificationModal
 
 /**
  * Renders a single follow-up suggestion card.
- * Uses Lucide React icons for action buttons.
  */
 function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedState, onEmailSelect, openMisclassificationModal }) {
-  // Ensure suggestion.lastActivityDate is a valid date string before processing
-  const now = new Date(); // Define 'now' for comparison
+  const now = new Date(); 
   const lastActivityDateObj = suggestion.lastActivityDate ? new Date(suggestion.lastActivityDate) : null;
 
-  // Calculate daysSinceLastActivity only if lastActivityDateObj is a valid Date
   const daysSinceLastActivity = (lastActivityDateObj && !isNaN(lastActivityDateObj.getTime()))
     ? differenceInDays(now, lastActivityDateObj)
-    : null; // Set to null if date is invalid or missing
+    : null; 
 
   const handleFollowedUp = (e) => {
     e.stopPropagation();
@@ -183,7 +173,7 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
 
   const handleMisclassifyClick = (e) => {
     e.stopPropagation();
-    openMisclassificationModal(suggestion); // Assuming suggestion has enough email data
+    openMisclassificationModal(suggestion);
   };
 
   // Uses Lucide React for these icons
@@ -192,12 +182,11 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
       case "follow_up": return Send;
       case "thank_you": return MessageSquare;
       case "status_check": return Clock;
-      case "application": return FileText; // Using FileText Lucide component here
+      case "application": return FileText; 
       default: return CheckCircle;
     }
   };
   const IconComponent = getFollowUpIcon(suggestion.type);
-
 
   const getUrgencyColorClasses = (urgency) => {
     switch (urgency) {
@@ -240,13 +229,12 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
         `p-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 ease-in-out cursor-pointer`,
         urgencyColors.bg,
         urgencyColors.border,
-        urgencyColors.text // Apply main text color to the card
+        urgencyColors.text 
       )}
-      onClick={() => onEmailSelect(suggestion)} // Assuming suggestion has enough data to be selected like an email
+      onClick={() => onEmailSelect(suggestion)} 
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center space-x-3">
-          {/* Icon with a subtle background for better visual separation */}
           {IconComponent && (
             <div className={cn("p-2 rounded-full", urgencyColors.iconBg)}>
               <IconComponent className={cn("h-5 w-5", urgencyColors.iconText)} />
@@ -254,11 +242,10 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
           )}
           <h3 className="font-semibold text-lg text-gray-900 dark:text-white">{suggestion.title}</h3>
         </div>
-        {/* Urgency Badge */}
         <span className={cn(
           "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold capitalize",
-          urgencyColors.iconBg.replace('bg-', 'bg-opacity-50 bg-'), // Slightly more opaque badge background
-          urgencyColors.iconText // Badge text color
+          urgencyColors.iconBg.replace('bg-', 'bg-opacity-50 bg-'), 
+          urgencyColors.iconText 
         )}>
           {suggestion.urgency}
         </span>
@@ -274,7 +261,6 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
                   (Followed up {formatDate(suggestion.followedUpAt)})
               </span>
           )}
-          {/* Only show "Overdue!" if daysSinceLastActivity is a valid number */}
           {daysSinceLastActivity !== null && daysSinceLastActivity > 10 && !suggestion.responded && !suggestion.followedUp && (
               <span className="text-red-500 dark:text-red-400 ml-auto font-semibold">
                   Overdue!
@@ -291,12 +277,10 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
           />
           <span>Responded</span>
         </label>
-        {/* Removed the "Take Action" button as per your request */}
       </div>
     </div>
   );
 }
-
 
 // --- Main Dashboard Component ---
 function Dashboard({
@@ -304,19 +288,18 @@ function Dashboard({
   onCategorySelect,
   onEmailSelect,
   followUpSuggestions = [],
-  loadingSuggestions, // Added loadingSuggestions prop
+  loadingSuggestions,
   markFollowedUp,
   updateRespondedState,
   openMisclassificationModal,
-  userPlan, // Changed from isPremium
-  openPremiumModal // New prop to handle premium subscription logic from App.jsx
+  userPlan, 
+  openPremiumModal
 }) {
   console.log("DEBUG Dashboard.jsx: Received categorizedEmails prop:", categorizedEmails); // ADDED LOG
 
   const getCount = useCallback((category) => {
-    // Check for both original and capitalized versions of the category key
     const count = (categorizedEmails[category] || categorizedEmails[category.charAt(0).toUpperCase() + category.slice(1)] || []).length;
-    console.log(`Count for ${category}:`, count); // Debugging count
+    console.log(`Count for ${category}:`, count); 
     return count;
   }, [categorizedEmails]);
 
@@ -328,32 +311,23 @@ function Dashboard({
 
 
   const allRelevantEmails = useMemo(() => {
-    // Filter out irrelevant emails for total applications calculation
     const relevantEmails = Object.values(categorizedEmails).flat()
       .filter(email => email.category?.toLowerCase() !== 'irrelevant');
     return relevantEmails;
   }, [categorizedEmails]);
 
-  // FIX: Re-added calculation for totalApplications
   const totalApplications = useMemo(() => allRelevantEmails.length, [allRelevantEmails]);
-
-  // FIX: Re-added calculation for totalInterviewsAndOffers
   const totalInterviewsAndOffers = useMemo(() => interviewedCount + offersCount, [interviewedCount, offersCount]);
-
-  // FIX: Re-added calculation for responseRate
   const responseRate = useMemo(() => totalApplications > 0 ? Math.round((totalInterviewsAndOffers / totalApplications) * 100) : 0, [totalInterviewsAndOffers, totalApplications]);
 
   const newApplicationsThisWeek = useMemo(() => {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    // Filter applied emails that are within the last 7 days
     return (categorizedEmails.applied || categorizedEmails.Applied || []).filter(email => new Date(email.date) >= sevenDaysAgo).length;
   }, [categorizedEmails.applied, categorizedEmails.Applied]);
 
-  // FIX: Re-added calculation for successRate
   const successRate = useMemo(() => totalInterviewsAndOffers > 0 ? Math.round((offersCount / totalInterviewsAndOffers) * 100) : 0, [offersCount, totalInterviewsAndOffers]);
-
-  // CATEGORY CARDS: Using Lucide React Icons directly
+  
   const categories = useMemo(() => [
     { id: "applied", title: "Applied", count: appliedCount, icon: FileText, description: "Applications sent" },
     { id: "interviewed", title: "Interviewed", count: interviewedCount, icon: Calendar, description: "Interview invitations" },
@@ -361,8 +335,7 @@ function Dashboard({
     { id: "rejected", "title": "Rejected", count: rejectedCount, icon: X, description: "Applications declined" }
   ], [appliedCount, interviewedCount, offersCount, rejectedCount, irrelevantCount]);
 
-
-  const recentEmails = useMemo(() => allRelevantEmails // Use allRelevantEmails here too
+  const recentEmails = useMemo(() => allRelevantEmails 
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5), [allRelevantEmails]);
 
@@ -373,7 +346,6 @@ function Dashboard({
     setShowAllFollowups(prev => !prev);
   }, []);
 
-  // getUrgencyColor is moved here from DashboardFollowUpCard to be accessible
   const getUrgencyColor = (urgency) => {
     switch (urgency) {
       case "high": return "bg-red-50 border-red-200 text-red-700 dark:bg-red-950 dark:border-red-900 dark:text-red-300";
@@ -385,7 +357,6 @@ function Dashboard({
 
 
   return (
-    // The root div no longer needs padding or overflow control.
     <div className="min-w-0 bg-gray-50 dark:bg-zinc-900 text-gray-900 dark:text-white">
       {/* Dashboard Header with dynamic greeting */}
       <div className="flex justify-between items-start mb-6">
@@ -393,7 +364,6 @@ function Dashboard({
           <h2 className="text-2xl font-bold mb-2">Job Search Dashboard</h2>
           <p className="text-gray-60:0 dark:text-zinc-400">Track your applications and progress</p>
         </div>
-        {/* The "Upgrade to Premium" button was moved to App.jsx header */}
       </div>
 
       {/* Overview Stats Grid */}
@@ -517,10 +487,8 @@ function Dashboard({
                         Unlock smart follow-up reminders, application analytics, and more
                     </p>
                 </div>
-                {/* Blurred content underneath */}
                 <div className="blur-sm pointer-events-none">
                     <div className="space-y-4">
-                        {/* Mock content for blurring */}
                         <div className="p-4 rounded-lg border bg-gray-50 dark:bg-zinc-700 border-gray-200 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">
                             <div className="flex items-start justify-between">
                                 <div className="flex-1">

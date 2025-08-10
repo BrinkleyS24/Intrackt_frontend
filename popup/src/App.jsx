@@ -16,20 +16,12 @@ import QuotaBanner from './components/QuotaBanner';
 import Pagination from './components/Pagination';
 import Modals from './components/Modals';
 
-import { useAuth } from './hooks/useAuth'; // No longer passing auth instance here
+import { useAuth } from './hooks/useAuth'; 
 import { useEmails } from './hooks/useEmails';
 import { useFollowUps } from './hooks/useFollowUps';
 
 import { CONFIG } from './utils/constants';
-// REMOVED: import { initializeApp } from 'firebase/app'; // Firebase initialization moved to background.js
-// REMOVED: import { getAuth } from 'firebase/auth'; // Firebase initialization moved to background.js
 import { Crown, Briefcase } from 'lucide-react';
-
-// REMOVED: import { firebaseConfig } from '../../firebaseConfig'; // Firebase config only needed in background.js
-
-
-// REMOVED: const app = initializeApp(firebaseConfig); // Firebase initialization moved to background.js
-// REMOVED: const auth = getAuth(app); // Firebase initialization moved to background.js
 
 function App() {
   const [selectedCategory, setSelectedCategory] = useState('dashboard');
@@ -39,9 +31,7 @@ function App() {
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Call useAuth without passing the 'auth' instance.
-  // The useAuth hook will now manage its own Firebase interactions via the background script.
-  const {
+    const {
     userEmail,
     userName,
     userPlan,
@@ -54,8 +44,7 @@ function App() {
     fetchQuotaData,
     quotaData,
     loadingAuth
-  } = useAuth(); // No 'auth' passed here anymore
-
+  } = useAuth(); 
   const {
     categorizedEmails,
     fetchStoredEmails,
@@ -64,8 +53,6 @@ function App() {
     isFilteredView,
     filteredEmails,
     appliedFilters,
-    // applyFilters, // Removed as EmailList doesn't use these directly
-    // clearFilters, // Removed as EmailList doesn't use these directly
     handleReportMisclassification,
     handleSendEmailReply,
     handleArchiveEmail,
@@ -89,16 +76,10 @@ function App() {
 
   useEffect(() => {
     const initialDataFetch = async () => {
-      // Ensure userEmail and userId are truly available and auth is ready before fetching
       if (isAuthReady && userEmail && userId) {
         try {
-          // First, try to get stored emails from local storage
           await fetchStoredEmails();
-          
-          // Then trigger a sync from the backend to ensure we have fresh data
-          // This will populate local storage if it's empty and update it if it's stale
-          await fetchNewEmails(false); // false = not a full refresh, just sync
-          
+          await fetchNewEmails(false); 
           await fetchQuotaData();
           await loadFollowUpSuggestions();
         } catch (error) {
@@ -114,15 +95,11 @@ function App() {
   useEffect(() => {
     const handleBackgroundMessage = (message) => {
       if ((message.type === 'EMAILS_SYNCED' || message.type === 'NEW_EMAILS_UPDATED') && message.userEmail === userEmail) {
-        // These will trigger re-fetches in the respective hooks, or if the hooks
-        // are already listening to chrome.storage.local, this might be redundant.
-        // For now, keep them to ensure data refresh.
         fetchStoredEmails();
         fetchQuotaData();
         loadFollowUpSuggestions();
       }
-      // The AUTH_READY message is now primarily handled by useAuth's internal storage listener
-      // so no explicit action needed here for AUTH_READY.
+
     };
     chrome.runtime.onMessage.addListener(handleBackgroundMessage);
     return () => chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
@@ -131,9 +108,8 @@ function App() {
   const handleRefresh = useCallback(async () => {
     if (!userEmail || !userId) return;
     try {
-      await fetchNewEmails(true); // true = full refresh
+      await fetchNewEmails(true); 
       showNotification("Emails refreshed!", "success");
-      // Re-fetch all data after new emails are fetched
       await fetchStoredEmails();
       await fetchQuotaData();
       await loadFollowUpSuggestions();
@@ -145,7 +121,6 @@ function App() {
   const handleCategoryChange = useCallback((category) => {
     setSelectedCategory(category);
     setCurrentPage(1);
-    // Only mark as read if it's not the dashboard and there are unread emails
     if (category !== 'dashboard' && unreadCounts[category] > 0) {
       markEmailsAsReadForCategory(category);
     }
@@ -158,7 +133,6 @@ function App() {
 
   const handleBackToCategory = useCallback(() => {
     setSelectedEmail(null);
-    // Return to the previously selected category, or dashboard if emailPreview was selected directly
     setSelectedCategory(prevCategory => prevCategory === 'emailPreview' ? 'dashboard' : prevCategory);
   }, []);
 
@@ -175,24 +149,21 @@ function App() {
   const handleMisclassificationSubmit = useCallback(async (emailData, newCategory) => {
     closeMisclassificationModal();
     await handleReportMisclassification(emailData, newCategory);
-    // Re-fetch all data after misclassification
     await fetchStoredEmails();
     await loadFollowUpSuggestions();
   }, [handleReportMisclassification, closeMisclassificationModal, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
 
   const handleReplySubmit = useCallback(async (threadId, recipient, subject, body) => {
     await handleSendEmailReply(threadId, recipient, subject, body);
-    // Re-fetch all data after sending reply
     await fetchStoredEmails();
     await loadFollowUpSuggestions();
   }, [handleSendEmailReply, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
 
   const handleArchive = useCallback(async (threadId) => {
     await handleArchiveEmail(threadId);
-    // Re-fetch all data after archiving
     await fetchStoredEmails();
     await loadFollowUpSuggestions();
-    setSelectedEmail(null); // Close email preview after archiving
+    setSelectedEmail(null); 
   }, [handleArchiveEmail, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
 
   const openPremiumModal = useCallback(() => setIsPremiumModalOpen(true), []);
@@ -205,7 +176,6 @@ function App() {
       case 'emailPreview':
         return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, openPremiumModal }} />;
       default:
-        // For other categories (applied, interviewed, etc.)
         const emailsForCategory = categorizedEmails[selectedCategory] || [];
         const paginatedEmails = emailsForCategory.slice((currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE, currentPage * CONFIG.PAGINATION.PAGE_SIZE);
         const totalEmailsInCurrentCategory = emailsForCategory.length;
@@ -220,8 +190,7 @@ function App() {
               isFilteredView={isFilteredView}
               filteredEmails={filteredEmails}
               appliedFilters={appliedFilters}
-              // applyFilters={applyFilters} // Removed as EmailList doesn't use these directly
-              // clearFilters={clearFilters} // Removed as EmailList doesn't use these directly
+              totalEmails={totalEmailsInCurrentCategory}
             />
             {totalPages > 1 && (
               <Pagination
@@ -245,7 +214,7 @@ function App() {
             <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4 shadow-md">
               <Briefcase className="h-8 w-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">Intrackt</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Job Tracker</h1>
             <p className="text-gray-600 mt-2">Manage your job applications with ease</p>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-lg space-y-6">
@@ -270,7 +239,6 @@ function App() {
     {isLoadingApp && <LoadingOverlay message="Loading data..." />}
     <Notification />
 
-    {/* Sidebar - Fixed width with proper height */}
     <div className="w-64 h-full flex flex-col border-r border-gray-200 dark:border-zinc-700">
       <Sidebar
         selectedCategory={selectedCategory}

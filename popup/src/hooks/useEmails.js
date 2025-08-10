@@ -12,12 +12,13 @@ import {
   reportMisclassificationService,
   undoMisclassificationService,
   sendEmailReplyService,
-  markEmailsAsReadService // NEW: Import the service to mark emails as read
+  markEmailsAsReadService
 } from '../services/emailService';
 import { showNotification } from '../components/Notification';
 import { getCategoryTitle } from '../utils/uiHelpers';
 
 export function useEmails(userEmail, userId, CONFIG) {
+  // State to hold emails categorized by their job application status
   const [categorizedEmails, setCategorizedEmails] = useState({
     applied: [],
     interviewed: [],
@@ -25,15 +26,22 @@ export function useEmails(userEmail, userId, CONFIG) {
     rejected: [],
     irrelevant: [],
   });
+  // State to indicate if email operations are in progress (e.g., fetching, sending)
   const [loadingEmails, setLoadingEmails] = useState(false);
+  // State to determine if the current view is a filtered view of emails
   const [isFilteredView, setIsFilteredView] = useState(false);
+  // State to hold emails after applying search and time range filters
   const [filteredEmails, setFilteredEmails] = useState([]);
+  // State to store the currently applied filters (search query and time range)
   const [appliedFilters, setAppliedFilters] = useState({ searchQuery: '', timeRange: 'all' });
+  // State to temporarily store the last misclassified email for the undo feature
   const [lastMisclassifiedEmail, setLastMisclassifiedEmail] = useState(null);
+  // State to control the visibility of the undo toast notification
   const [undoToastVisible, setUndoToastVisible] = useState(false);
+  // Ref to store the timeout ID for the misclassification undo toast
   const misclassificationTimerRef = useRef(null);
 
-  // NEW: State to track unread counts per category
+  // State to store unread counts for each email category
   const [unreadCounts, setUnreadCounts] = useState({
     applied: 0,
     interviewed: 0,
@@ -42,7 +50,9 @@ export function useEmails(userEmail, userId, CONFIG) {
     irrelevant: 0,
   });
 
-  // Function to calculate unread counts
+  /**
+   * Calculates and updates the unread counts for all email categories.
+   */
   const calculateUnreadCounts = useCallback((emails) => {
     const counts = {
       applied: 0,
@@ -58,30 +68,30 @@ export function useEmails(userEmail, userId, CONFIG) {
   }, []);
 
   // Use a ref to store the latest categorizedEmails for background sync
+  // This ensures the chrome.runtime.onMessage listener always has the most current state
   const categorizedEmailsRef = useRef(categorizedEmails);
   useEffect(() => {
     categorizedEmailsRef.current = categorizedEmails;
   }, [categorizedEmails]);
 
-
-  // Effect to listen for EMAILS_SYNCED messages from background.js
-  // This updates the UI with the latest data from the backend sync.
+  /**
+   * Effect hook to listen for 'EMAILS_SYNCED' messages from the background script.
+   * Updates the categorized emails and unread counts in the UI.
+   */
   useEffect(() => {
     const handleEmailsSynced = (msg) => {
       if (msg.type === 'EMAILS_SYNCED' && msg.success) {
         console.log("✅ Intrackt: EMAILS_SYNCED message received in useEmails hook.");
         setCategorizedEmails(msg.categorizedEmails);
-        calculateUnreadCounts(msg.categorizedEmails); // Update unread counts
-        setLoadingEmails(false); // Stop loading after sync
-        // Update quota data if available in the message
+        calculateUnreadCounts(msg.categorizedEmails);
+        setLoadingEmails(false);
         if (msg.quota) {
-          // This will be handled by useAuth's chrome.storage.onChanged listener
-          // No direct state update needed here for quotaData
+          // Additional quota handling if needed, though useAuth already handles this
         }
       } else if (msg.type === 'EMAILS_SYNCED' && !msg.success) {
         console.error("❌ Intrackt: Email sync failed:", msg.error);
         showNotification(`Email sync failed: ${msg.error}`, 'error');
-        setLoadingEmails(false); // Stop loading even on error
+        setLoadingEmails(false);
       }
     };
 
@@ -92,13 +102,16 @@ export function useEmails(userEmail, userId, CONFIG) {
     };
   }, [calculateUnreadCounts]);
 
-
+  /**
+   * Fetches previously stored emails from chrome.storage.local.
+   * This is used for initial loading to quickly display cached data.
+   */
   const fetchStoredEmails = useCallback(async () => {
     setLoadingEmails(true);
     try {
       const stored = await fetchStoredEmailsService();
       setCategorizedEmails(stored);
-      calculateUnreadCounts(stored); // Calculate unread counts after fetching stored emails
+      calculateUnreadCounts(stored);
     } catch (error) {
       console.error("❌ Intrackt: Error fetching stored emails:", error);
       showNotification("Failed to load stored emails.", "error");
@@ -108,12 +121,12 @@ export function useEmails(userEmail, userId, CONFIG) {
   }, [calculateUnreadCounts]);
 
 
+  /**
+   * Requests the background script to initiate a new email synchronization with the backend.
+   */
   const fetchNewEmails = useCallback(async (fullRefresh = false) => {
     setLoadingEmails(true);
     try {
-      // The actual fetching and caching is done by the background script,
-      // which then sends an 'EMAILS_SYNCED' message back to the popup.
-      // The 'EMAILS_SYNCED' listener in this hook will update the state.
       const response = await fetchNewEmailsService(userEmail, userId, fullRefresh);
       if (!response.success) {
         showNotification(`Failed to sync emails: ${response.error}`, "error");
@@ -122,26 +135,27 @@ export function useEmails(userEmail, userId, CONFIG) {
       console.error("❌ Intrackt: Error requesting new email sync:", error);
       showNotification(`Failed to request email sync: ${error.message}`, "error");
     } finally {
-      // Loading state will be set to false by the EMAILS_SYNCED listener
+      // Loading state will be set to false by the EMAILS_SYNCED message listener
     }
-  }, [userEmail, userId]); // Depend on userEmail and userId
+  }, [userEmail, userId]);
 
-
+  /**
+   * Applies search and time range filters to the currently categorized emails.
+   * Updates `filteredEmails` and `isFilteredView` states.
+   */
   const applyFilters = useCallback((filters) => {
     setAppliedFilters(filters);
     const { searchQuery, timeRange } = filters;
     let filtered = [];
 
-    // If no search query and time range is 'all', show all emails for the selected category
     if (!searchQuery && timeRange === 'all') {
       setIsFilteredView(false);
-      setFilteredEmails([]); // Clear filtered emails
+      setFilteredEmails([]);
       return;
     }
 
     setIsFilteredView(true);
 
-    // Flatten all categorized emails into a single array for filtering
     const allEmails = Object.values(categorizedEmails).flat();
 
     filtered = allEmails.filter(email => {
@@ -175,16 +189,21 @@ export function useEmails(userEmail, userId, CONFIG) {
       return matchesSearch && matchesTimeRange;
     });
     setFilteredEmails(filtered);
-  }, [categorizedEmails]); // Recalculate if categorizedEmails change
+  }, [categorizedEmails]);
 
-
+  /**
+   * Clears all applied filters and reverts to showing all categorized emails.
+   */
   const clearFilters = useCallback(() => {
     setAppliedFilters({ searchQuery: '', timeRange: 'all' });
     setIsFilteredView(false);
     setFilteredEmails([]);
   }, []);
 
-  // Add this helper function at the top of useEmails.js
+  /**
+   * Helper function to transform frontend category names (lowercase) to backend
+   * expected format (capitalized).
+   */
   const transformCategoryForBackend = (category) => {
     const categoryMap = {
       'applied': 'Applied',
@@ -196,13 +215,16 @@ export function useEmails(userEmail, userId, CONFIG) {
     return categoryMap[category] || category;
   };
 
+  /**
+   * Handles reporting an email misclassification to the backend.
+   * Triggers a notification and an undo toast.
+   */
   const handleReportMisclassification = useCallback(async (emailData, correctedCategory) => {
-    // Transform both categories to match database expectations
     const reportPayload = {
-      emailId: emailData.id, // Supabase row ID
-      threadId: emailData.thread_id, // Gmail thread ID
-      originalCategory: transformCategoryForBackend(emailData.category), // Transform original
-      correctedCategory: transformCategoryForBackend(correctedCategory), // Transform corrected
+      emailId: emailData.id,
+      threadId: emailData.thread_id,
+      originalCategory: transformCategoryForBackend(emailData.category),
+      correctedCategory: transformCategoryForBackend(correctedCategory),
       emailSubject: emailData.subject || 'No Subject',
       emailBody: emailData.body || 'No Body',
     };
@@ -222,15 +244,15 @@ export function useEmails(userEmail, userId, CONFIG) {
           emailId: reportPayload.emailId,
           threadId: reportPayload.threadId,
           originalCategory: reportPayload.originalCategory,
-          misclassifiedIntoCategory: reportPayload.correctedCategory,
+          misclassifiedIntoCategory: reportPayload.correctedCategory, // Store the category it was moved INTO
         });
         setUndoToastVisible(true);
         misclassificationTimerRef.current = setTimeout(() => {
           setUndoToastVisible(false);
           setLastMisclassifiedEmail(null);
-        }, 10000); // UNDO_TIMEOUT_MS
+        }, 10000); // Undo toast visible for 10 seconds
 
-        await fetchStoredEmails();
+        await fetchStoredEmails(); // Re-fetch emails to reflect the category change
       } else {
         showNotification(`Failed to report misclassification: ${result.error}`, "error");
       }
@@ -240,7 +262,12 @@ export function useEmails(userEmail, userId, CONFIG) {
     } finally {
       setLoadingEmails(false);
     }
-  }, [fetchStoredEmails, userId, userEmail]);
+  }, [fetchStoredEmails]);
+
+  /**
+   * Handles undoing a previously reported misclassification.
+   * Clears the undo toast and re-fetches emails.
+   */
   const undoMisclassification = useCallback(async () => {
     if (!lastMisclassifiedEmail) {
       showNotification("No recent misclassification to undo.", "info");
@@ -249,18 +276,18 @@ export function useEmails(userEmail, userId, CONFIG) {
 
     setLoadingEmails(true);
     try {
-      // Clear the existing timeout immediately
+      // Clear any existing undo timer and hide toast immediately
       if (misclassificationTimerRef.current) {
         clearTimeout(misclassificationTimerRef.current);
         misclassificationTimerRef.current = null;
       }
-      setUndoToastVisible(false); // Hide toast immediately
+      setUndoToastVisible(false);
 
-      const result = await undoMisclassificationService(lastMisclassifiedEmail); // Send undo data
+      const result = await undoMisclassificationService(lastMisclassifiedEmail); 
       if (result.success) {
         showNotification("Misclassification undone!", "success");
-        setLastMisclassifiedEmail(null); // Clear undo state
-        await fetchStoredEmails(); // Refresh emails after undo
+        setLastMisclassifiedEmail(null); 
+        await fetchStoredEmails(); 
       } else {
         showNotification(`Failed to undo misclassification: ${result.error}`, "error");
       }
@@ -270,17 +297,18 @@ export function useEmails(userEmail, userId, CONFIG) {
     } finally {
       setLoadingEmails(false);
     }
-  }, [lastMisclassifiedEmail, fetchStoredEmails, userId, userEmail]); // Added userId and userEmail to dependencies
+  }, [lastMisclassifiedEmail, fetchStoredEmails]);
 
+  /**
+   * Handles sending an email reply via the background script.
+   */
   const handleSendEmailReply = useCallback(async (threadId, recipient, subject, body) => {
     setLoadingEmails(true);
     try {
       const result = await sendEmailReplyService(threadId, recipient, subject, body, userEmail, userId);
       if (result.success) {
         showNotification("Email reply sent successfully!", "success");
-        // Optionally, mark the email as read or update its status if needed
-        // await markEmailsAsReadService(email.category, userId); // Example
-        await fetchStoredEmails(); // Refresh emails after sending reply
+        await fetchStoredEmails(); 
       } else {
         showNotification(`Failed to send email reply: ${result.error}`, "error");
       }
@@ -292,13 +320,16 @@ export function useEmails(userEmail, userId, CONFIG) {
     }
   }, [userEmail, userId, fetchStoredEmails]);
 
+  /**
+   * Handles archiving an email via the background script.
+   */
   const handleArchiveEmail = useCallback(async (threadId) => {
     setLoadingEmails(true);
     try {
       const result = await archiveEmailService(threadId, userEmail);
       if (result.success) {
         showNotification("Email archived!", "success");
-        await fetchStoredEmails(); // Refresh emails after archiving
+        await fetchStoredEmails();
       } else {
         showNotification(`Failed to archive email: ${result.error}`, "error");
       }
@@ -309,12 +340,18 @@ export function useEmails(userEmail, userId, CONFIG) {
       setLoadingEmails(false);
     }
   }, [userEmail, fetchStoredEmails]);
+
+  /**
+   * Effect hook to fetch stored emails when `userEmail` or `userId` changes.
+   * This ensures data is loaded once the user is authenticated.
+   */
   useEffect(() => {
     if (userEmail && userId) {
       fetchStoredEmails();
     }
   }, [userEmail, userId, fetchStoredEmails]);
 
+  // Returns all states and functions provided by this hook
   return {
     categorizedEmails,
     fetchStoredEmails,
