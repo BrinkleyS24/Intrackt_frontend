@@ -16,7 +16,7 @@ import QuotaBanner from './components/QuotaBanner';
 import Pagination from './components/Pagination';
 import Modals from './components/Modals';
 
-import { useAuth } from './hooks/useAuth'; 
+import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
 import { useFollowUps } from './hooks/useFollowUps';
 
@@ -50,7 +50,6 @@ function App() {
     categorizedEmails,
     fetchStoredEmails,
     fetchNewEmails,
-    loadingEmails,
     isFilteredView,
     filteredEmails,
     appliedFilters,
@@ -63,7 +62,9 @@ function App() {
     setUndoToastVisible,
     unreadCounts,
     markEmailsAsReadForCategory,
-    markEmailAsRead
+    markEmailAsRead,
+    initialLoading,
+    isSyncing,
   } = useEmails(userEmail, userId, CONFIG);
 
   const {
@@ -74,7 +75,7 @@ function App() {
     updateRespondedState,
   } = useFollowUps(userEmail, userId, userPlan);
 
-  const isLoadingApp = loadingAuth || loadingEmails || loadingSuggestions;
+  const isLoadingApp = loadingAuth || initialLoading || loadingSuggestions;
 
   useEffect(() => {
     const initialDataFetch = async () => {
@@ -106,6 +107,22 @@ function App() {
     chrome.runtime.onMessage.addListener(handleBackgroundMessage);
     return () => chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
   }, [userEmail, userId, fetchStoredEmails, fetchQuotaData, loadFollowUpSuggestions]);
+
+  // Add this useEffect to listen for the custom FORCE_LOGOUT message
+  useEffect(() => {
+    const handleForceLogout = (message) => {
+      if (message.type === 'FORCE_LOGOUT') {
+        showNotification(message.reason || "You have been logged out for security reasons.", "error");
+
+        // Note: We don't need to call logout() here. The background script
+        // already called signOut(), which will trigger the onAuthStateChanged
+        // listener to update the UI and clear local data.
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handleForceLogout);
+    return () => chrome.runtime.onMessage.removeListener(handleForceLogout);
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     if (!userEmail || !userId) return;
@@ -140,8 +157,8 @@ function App() {
   }, [selectedCategory, markEmailAsRead]);
 
   const handleBackToCategory = useCallback(() => {
-    setSelectedEmail(null); 
-    setSelectedCategory(categoryBeforePreview); 
+    setSelectedEmail(null);
+    setSelectedCategory(categoryBeforePreview);
   }, [categoryBeforePreview]);
 
   const openMisclassificationModal = useCallback((email) => {
@@ -255,7 +272,7 @@ function App() {
           categorizedEmails={categorizedEmails}
           onLogout={logout}
           onRefresh={handleRefresh}
-          isLoadingEmails={loadingEmails || !isAuthReady || !isLoggedIn}
+          isLoadingEmails={isSyncing}
           userPlan={userPlan}
           quotaData={quotaData}
           onUpgradeClick={openPremiumModal}

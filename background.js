@@ -69,15 +69,24 @@ async function apiFetch(endpoint, options = {}) {
 
   if (user && !user.isAnonymous) { // Only attempt to get ID token for non-anonymous users
     try {
-      // Force refresh the token to ensure it's not expired
       const idToken = await user.getIdToken(true); // Pass true to force refresh
       headers['Authorization'] = `Bearer ${idToken}`;
       console.log(`✅ Intrackt: Attached fresh ID token for user: ${user.uid}`);
     } catch (error) {
       console.error("❌ Intrackt: Failed to get fresh Firebase ID token:", error);
-      // [Inference] If token acquisition fails, it's better to proceed without it
-      // and let the backend return 401 if it requires authentication.
-      // This prevents blocking the request entirely if token refresh fails.
+      
+      if (error.code === 'auth/user-token-expired' || error.code === 'auth/invalid-user-token') {
+        console.warn("Intrackt: Unrecoverable auth token error. Forcing user logout.");
+
+        await signOut(auth);
+
+        chrome.runtime.sendMessage({
+          type: 'FORCE_LOGOUT',
+          reason: 'Your session has expired. Please log in again.'
+        });
+
+        throw new Error("User session expired and was forcefully terminated.");
+      }
     }
   } else if (user && user.isAnonymous) {
     console.log("Intrackt: Anonymous user, skipping ID token attachment.");

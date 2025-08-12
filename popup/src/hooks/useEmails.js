@@ -27,7 +27,8 @@ export function useEmails(userEmail, userId, CONFIG) {
     irrelevant: [],
   });
   // State to indicate if email operations are in progress (e.g., fetching, sending)
-  const [loadingEmails, setLoadingEmails] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   // State to determine if the current view is a filtered view of emails
   const [isFilteredView, setIsFilteredView] = useState(false);
   // State to hold emails after applying search and time range filters
@@ -80,26 +81,20 @@ export function useEmails(userEmail, userId, CONFIG) {
    */
   useEffect(() => {
     const handleEmailsSynced = (msg) => {
-      if (msg.type === 'EMAILS_SYNCED' && msg.success) {
-        console.log("✅ Intrackt: EMAILS_SYNCED message received in useEmails hook.");
-        setCategorizedEmails(msg.categorizedEmails);
-        calculateUnreadCounts(msg.categorizedEmails);
-        setLoadingEmails(false);
-        if (msg.quota) {
-          // Additional quota handling if needed, though useAuth already handles this
+      if (msg.type === 'EMAILS_SYNCED') { 
+        console.log("✅ Intrackt: EMAILS_SYNCED message received, ending sync state.");
+        setIsSyncing(false); 
+        if (msg.success) {
+          setCategorizedEmails(msg.categorizedEmails);
+          calculateUnreadCounts(msg.categorizedEmails);
+        } else {
+          console.error("❌ Intrackt: Email sync failed:", msg.error);
+          showNotification(`Email sync failed: ${msg.error}`, 'error');
         }
-      } else if (msg.type === 'EMAILS_SYNCED' && !msg.success) {
-        console.error("❌ Intrackt: Email sync failed:", msg.error);
-        showNotification(`Email sync failed: ${msg.error}`, 'error');
-        setLoadingEmails(false);
       }
     };
-
     chrome.runtime.onMessage.addListener(handleEmailsSynced);
-
-    return () => {
-      chrome.runtime.onMessage.removeListener(handleEmailsSynced);
-    };
+    return () => chrome.runtime.onMessage.removeListener(handleEmailsSynced);
   }, [calculateUnreadCounts]);
 
   useEffect(() => {
@@ -160,8 +155,9 @@ export function useEmails(userEmail, userId, CONFIG) {
    * Fetches previously stored emails from chrome.storage.local.
    * This is used for initial loading to quickly display cached data.
    */
+  // 2. Update `fetchStoredEmails` to control the 'initialLoading' state
   const fetchStoredEmails = useCallback(async () => {
-    setLoadingEmails(true);
+    setInitialLoading(true);
     try {
       const stored = await fetchStoredEmailsService();
       setCategorizedEmails(stored);
@@ -170,7 +166,8 @@ export function useEmails(userEmail, userId, CONFIG) {
       console.error("❌ Intrackt: Error fetching stored emails:", error);
       showNotification("Failed to load stored emails.", "error");
     } finally {
-      setLoadingEmails(false);
+      // This will remove the main loading overlay, revealing the stored emails.
+      setInitialLoading(false);
     }
   }, [calculateUnreadCounts]);
 
@@ -179,17 +176,17 @@ export function useEmails(userEmail, userId, CONFIG) {
    * Requests the background script to initiate a new email synchronization with the backend.
    */
   const fetchNewEmails = useCallback(async (fullRefresh = false) => {
-    setLoadingEmails(true);
+    setIsSyncing(true);
     try {
       const response = await fetchNewEmailsService(userEmail, userId, fullRefresh);
       if (!response.success) {
         showNotification(`Failed to sync emails: ${response.error}`, "error");
+        setIsSyncing(false);
       }
     } catch (error) {
       console.error("❌ Intrackt: Error requesting new email sync:", error);
       showNotification(`Failed to request email sync: ${error.message}`, "error");
-    } finally {
-      // Loading state will be set to false by the EMAILS_SYNCED message listener
+      setIsSyncing(false);
     }
   }, [userEmail, userId]);
 
@@ -410,7 +407,6 @@ export function useEmails(userEmail, userId, CONFIG) {
     categorizedEmails,
     fetchStoredEmails,
     fetchNewEmails,
-    loadingEmails,
     isFilteredView,
     filteredEmails,
     appliedFilters,
@@ -424,6 +420,8 @@ export function useEmails(userEmail, userId, CONFIG) {
     undoToastVisible,
     setUndoToastVisible,
     unreadCounts,
-    markEmailAsRead
+    markEmailAsRead,
+    initialLoading,
+    isSyncing
   };
 }
