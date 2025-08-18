@@ -29,6 +29,7 @@ const CONFIG_ENDPOINTS = {
   SYNC_EMAILS: '/api/emails',
   FETCH_STORED_EMAILS: '/api/emails/stored-emails', // This endpoint is not used by background script directly for fetching
   FOLLOWUP_NEEDED: '/api/emails/followup-needed',
+  SYNC_STATUS: '/api/emails/sync-status',
   // CORRECTED: Changed endpoint to match backend route /misclassification
   REPORT_MISCLASSIFICATION: '/api/emails/misclassification',
   // CORRECTED: Changed endpoint to match backend route /undo-misclassification
@@ -46,6 +47,10 @@ let authReadyResolve;
 const authReadyPromise = new Promise(resolve => {
   authReadyResolve = resolve;
 });
+
+// --- Sync de-duplication state ---
+let syncInFlight = false;
+let lastSyncStartTs = 0;
 
 // --- Helper Functions ---
 
@@ -122,6 +127,56 @@ async function apiFetch(endpoint, options = {}) {
 }
 
 /**
+ * Fetch stored emails from backend and update local cache, then notify popup.
+ */
+async function refreshStoredEmailsCache(syncInProgress = undefined) {
+  try {
+    const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, { method: 'POST' });
+    if (response.success && response.categorizedEmails) {
+      await chrome.storage.local.set({
+        appliedEmails: response.categorizedEmails.applied || [],
+        interviewedEmails: response.categorizedEmails.interviewed || [],
+        offersEmails: response.categorizedEmails.offers || [],
+        rejectedEmails: response.categorizedEmails.rejected || [],
+      });
+      chrome.runtime.sendMessage({
+        type: 'EMAILS_SYNCED',
+        success: true,
+        categorizedEmails: response.categorizedEmails,
+  syncInProgress,
+      });
+    }
+  } catch (e) {
+    console.warn('Intrackt Background: refreshStoredEmailsCache failed:', e?.message);
+  }
+}
+
+/**
+ * Poll the sync status and periodically refresh stored emails until complete or timeout.
+ */
+async function pollSyncStatusAndRefresh(maxSeconds = 60, intervalMs = 2000) {
+  const start = Date.now();
+  while (Date.now() - start < maxSeconds * 1000) {
+    try {
+    const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
+      if (status?.success) {
+        if (status.sync?.inProgress) {
+          // Pull latest stored emails incrementally
+      await refreshStoredEmailsCache(true);
+        } else {
+          // One final refresh at completion
+      await refreshStoredEmailsCache(false);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Intrackt Background: sync-status polling error:', e?.message);
+    }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+}
+
+/**
  * Sends an email reply using the Gmail API (via backend).
  * @param {string} threadId - The ID of the email thread to reply to.
  * @param {string} to - Recipient email address.
@@ -163,6 +218,28 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
     return { success: false, error: 'User email or ID missing for sync.' };
   }
 
+  // Coalesce duplicate sync triggers
+  if (syncInFlight) {
+    // Return current cached emails immediately instead of hitting backend again
+    const cached = await chrome.storage.local.get([
+      'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData'
+    ]);
+    return {
+      success: true,
+      categorizedEmails: {
+        applied: cached.appliedEmails || [],
+        interviewed: cached.interviewedEmails || [],
+        offers: cached.offersEmails || [],
+        rejected: cached.rejectedEmails || [],
+      },
+      quota: cached.quotaData || null,
+      sync: { inProgress: true }
+    };
+  }
+
+  syncInFlight = true;
+  lastSyncStartTs = Date.now();
+
   try {
     const response = await apiFetch(CONFIG_ENDPOINTS.SYNC_EMAILS, {
       method: 'POST',
@@ -186,8 +263,14 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         success: true,
         categorizedEmails: response.categorizedEmails,
         quota: response.quota,
-        userEmail: userEmail // Include userEmail for targeted updates in popup
+  userEmail: userEmail, // Include userEmail for targeted updates in popup
+  syncInProgress: !!response.sync?.inProgress
       });
+
+      // If backend indicates a background sync is in progress, start polling without blocking
+      if (response.sync?.inProgress) {
+        pollSyncStatusAndRefresh().catch(e => console.warn('Intrackt Background: polling failed:', e?.message));
+      }
       return { success: true, categorizedEmails: response.categorizedEmails, quota: response.quota };
     } else {
       console.error('❌ Intrackt Background: Backend sync failed or returned no emails:', response.error);
@@ -196,6 +279,8 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
   } catch (error) {
     console.error('❌ Intrackt Background: Error during email sync:', error);
     return { success: false, error: error.message };
+  } finally {
+    syncInFlight = false;
   }
 }
 

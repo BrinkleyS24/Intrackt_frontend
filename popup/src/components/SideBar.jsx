@@ -66,6 +66,12 @@ export function Sidebar({
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-bold text-gray-900 dark:text-white truncate">Intrackt</h1>
             <p className="text-xs text-gray-500 dark:text-zinc-400 truncate">Job Application Assistant</p>
+            {isLoadingEmails && (
+              <div className="flex items-center text-xs text-blue-600 dark:text-blue-400 mt-1">
+                <span className="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse mr-2"></span>
+                Syncing…
+              </div>
+            )}
           </div>
         </div>
       </div>

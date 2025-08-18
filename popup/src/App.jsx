@@ -77,14 +77,15 @@ function App() {
 
   const isLoadingApp = loadingAuth || initialLoading || loadingSuggestions;
 
-  useEffect(() => {
+ useEffect(() => {
     const initialDataFetch = async () => {
       if (isAuthReady && userEmail && userId) {
+        console.log("✅ App.jsx: Auth ready, initiating single authoritative data fetch.");
         try {
-          await fetchStoredEmails();
-          await fetchNewEmails(false);
-          await fetchQuotaData();
-          await loadFollowUpSuggestions();
+    await fetchStoredEmails();
+    // Avoid double-triggering sync here; background starts sync on auth state change
+          fetchQuotaData();
+          loadFollowUpSuggestions();
         } catch (error) {
           showNotification("Failed to load initial data.", "error");
         }
@@ -93,14 +94,17 @@ function App() {
       }
     };
     initialDataFetch();
-  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchNewEmails, fetchQuotaData, loadFollowUpSuggestions]);
+  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData, loadFollowUpSuggestions]);
 
   useEffect(() => {
     const handleBackgroundMessage = (message) => {
       if ((message.type === 'EMAILS_SYNCED' || message.type === 'NEW_EMAILS_UPDATED') && message.userEmail === userEmail) {
-        fetchStoredEmails();
-        fetchQuotaData();
-        loadFollowUpSuggestions();
+        // Only run heavier refreshes once the background sync finishes.
+        if (!message.syncInProgress) {
+          fetchStoredEmails();
+          fetchQuotaData();
+          loadFollowUpSuggestions();
+        }
       }
 
     };

@@ -9,7 +9,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   FileText, Calendar, Gift, X, TrendingUp, Clock, CheckCircle,
   MessageSquare, Send, Crown, Lock, Mail, BarChart3, PieChart,
-  Flag, MoreHorizontal 
+  Flag, MoreHorizontal
 } from 'lucide-react';
 
 import { cn } from '../utils/cn'; // For conditional class joining
@@ -25,9 +25,9 @@ import { showNotification } from './Notification'; // For toasts
 const StatCard = ({ icon: Icon, title, value, subtitle, bgColorClasses, textColorClasses }) => (
   <div className={cn(
     "relative flex flex-col justify-between rounded-lg p-4 shadow-sm transition-all duration-300 ease-in-out",
-    "dark:bg-zinc-800 dark:text-white", 
-    bgColorClasses, 
-    textColorClasses 
+    "dark:bg-zinc-800 dark:text-white",
+    bgColorClasses,
+    textColorClasses
   )}>
     <div className="flex items-center space-x-3 mb-2">
       {Icon && <Icon className={cn("h-5 w-5 opacity-80", textColorClasses ? 'text-current' : 'text-gray-900 dark:text-white')} />}
@@ -62,11 +62,11 @@ const CategorySummaryCard = ({ categoryKey, counts, onCategorySelect }) => {
   }
 
   const descriptionMap = {
-      'applied': 'Applications sent',
-      'interviewed': 'Interview invitations',
-      'offers': 'Job offers received',
-      'rejected': 'Applications declined',
-      'irrelevant': 'Emails marked as irrelevant'
+    'applied': 'Applications sent',
+    'interviewed': 'Interview invitations',
+    'offers': 'Job offers received',
+    'rejected': 'Applications declined',
+    'irrelevant': 'Emails marked as irrelevant'
   };
   const description = descriptionMap[categoryKey];
 
@@ -74,7 +74,7 @@ const CategorySummaryCard = ({ categoryKey, counts, onCategorySelect }) => {
     <div
       className={cn(
         "card p-4 flex flex-col justify-between transition-shadow hover:shadow-md h-full cursor-pointer rounded-lg shadow-sm bg-white dark:bg-zinc-800",
-        getCategoryColor(categoryKey) 
+        getCategoryColor(categoryKey)
       )}
       onClick={() => onCategorySelect(categoryKey)}
     >
@@ -84,9 +84,9 @@ const CategorySummaryCard = ({ categoryKey, counts, onCategorySelect }) => {
         </div>
         <h4 className="text-md font-semibold text-gray-900 dark:text-white">{categoryTitle}</h4>
         <span className={cn(
-            "ml-auto text-xs font-medium px-2.5 py-0.5 rounded-full",
-            getCategoryBadgeColor(categoryKey), 
-            "dark:bg-opacity-20 dark:text-white" 
+          "ml-auto text-xs font-medium px-2.5 py-0.5 rounded-full",
+          getCategoryBadgeColor(categoryKey),
+          "dark:bg-opacity-20 dark:text-white"
         )}>
           {count}
         </span>
@@ -107,7 +107,7 @@ function DashboardEmailCard({ email, onEmailSelect, onOpenMisclassificationModal
   console.log("DEBUG DashboardEmailCard: Rendering for email:", email, "onOpenMisclassificationModal prop:", typeof onOpenMisclassificationModal);
 
   const handleMisclassifyClick = (e) => {
-    e.stopPropagation(); 
+    e.stopPropagation();
     console.log("DEBUG: Misclassification button clicked for email:", email?.email_id);
     if (onOpenMisclassificationModal) {
       onOpenMisclassificationModal(email);
@@ -143,7 +143,7 @@ function DashboardEmailCard({ email, onEmailSelect, onOpenMisclassificationModal
         className="absolute bottom-2 right-2 p-1 rounded-full text-gray-500 hover:bg-gray-300 dark:hover:bg-zinc-500 dark:text-zinc-400 transition-colors"
         title="Report Misclassification"
       >
-        <Flag className="h-4 w-4" /> 
+        <Flag className="h-4 w-4" />
       </button>
     </div>
   );
@@ -154,12 +154,12 @@ function DashboardEmailCard({ email, onEmailSelect, onOpenMisclassificationModal
  * Renders a single follow-up suggestion card.
  */
 function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedState, onEmailSelect, openMisclassificationModal }) {
-  const now = new Date(); 
+  const now = new Date();
   const lastActivityDateObj = suggestion.lastActivityDate ? new Date(suggestion.lastActivityDate) : null;
 
   const daysSinceLastActivity = (lastActivityDateObj && !isNaN(lastActivityDateObj.getTime()))
     ? differenceInDays(now, lastActivityDateObj)
-    : null; 
+    : null;
 
   const handleFollowedUp = (e) => {
     e.stopPropagation();
@@ -182,7 +182,7 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
       case "follow_up": return Send;
       case "thank_you": return MessageSquare;
       case "status_check": return Clock;
-      case "application": return FileText; 
+      case "application": return FileText;
       default: return CheckCircle;
     }
   };
@@ -229,9 +229,9 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
         `p-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 ease-in-out cursor-pointer`,
         urgencyColors.bg,
         urgencyColors.border,
-        urgencyColors.text 
+        urgencyColors.text
       )}
-      onClick={() => onEmailSelect(suggestion)} 
+      onClick={() => onEmailSelect(suggestion)}
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center space-x-3">
@@ -244,28 +244,28 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
         </div>
         <span className={cn(
           "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold capitalize",
-          urgencyColors.iconBg.replace('bg-', 'bg-opacity-50 bg-'), 
-          urgencyColors.iconText 
+          urgencyColors.iconBg.replace('bg-', 'bg-opacity-50 bg-'),
+          urgencyColors.iconText
         )}>
           {suggestion.urgency}
         </span>
       </div>
       <p className="text-sm mb-3">{suggestion.description || "No specific description available."}</p>
       <div className="text-xs opacity-85 flex justify-between items-center text-gray-600 dark:text-zinc-400 mb-3">
-          <span>
-              <span className="font-medium">{suggestion.company}</span> &bull; {suggestion.position}
-              {suggestion.date && <span> &bull; Sent: {formatDate(suggestion.date)}</span>}
+        <span>
+          <span className="font-medium">{suggestion.company}</span> &bull; {suggestion.position}
+          {suggestion.date && <span> &bull; Sent: {formatDate(suggestion.date)}</span>}
+        </span>
+        {suggestion.followedUpAt && (
+          <span className="text-green-600 dark:text-green-400 ml-2">
+            (Followed up {formatDate(suggestion.followedUpAt)})
           </span>
-          {suggestion.followedUpAt && (
-              <span className="text-green-600 dark:text-green-400 ml-2">
-                  (Followed up {formatDate(suggestion.followedUpAt)})
-              </span>
-          )}
-          {daysSinceLastActivity !== null && daysSinceLastActivity > 10 && !suggestion.responded && !suggestion.followedUp && (
-              <span className="text-red-500 dark:text-red-400 ml-auto font-semibold">
-                  Overdue!
-              </span>
-          )}
+        )}
+        {daysSinceLastActivity !== null && daysSinceLastActivity > 10 && !suggestion.responded && !suggestion.followedUp && (
+          <span className="text-red-500 dark:text-red-400 ml-auto font-semibold">
+            Overdue!
+          </span>
+        )}
       </div>
       <div className="flex items-center justify-between">
         <label className="flex items-center space-x-2 cursor-pointer text-sm text-gray-700 dark:text-zinc-300">
@@ -292,14 +292,14 @@ function Dashboard({
   markFollowedUp,
   updateRespondedState,
   openMisclassificationModal,
-  userPlan, 
+  userPlan,
   openPremiumModal
 }) {
   console.log("DEBUG Dashboard.jsx: Received categorizedEmails prop:", categorizedEmails); // ADDED LOG
 
   const getCount = useCallback((category) => {
     const count = (categorizedEmails[category] || categorizedEmails[category.charAt(0).toUpperCase() + category.slice(1)] || []).length;
-    console.log(`Count for ${category}:`, count); 
+    console.log(`Count for ${category}:`, count);
     return count;
   }, [categorizedEmails]);
 
@@ -327,7 +327,7 @@ function Dashboard({
   }, [categorizedEmails.applied, categorizedEmails.Applied]);
 
   const successRate = useMemo(() => totalInterviewsAndOffers > 0 ? Math.round((offersCount / totalInterviewsAndOffers) * 100) : 0, [offersCount, totalInterviewsAndOffers]);
-  
+
   const categories = useMemo(() => [
     { id: "applied", title: "Applied", count: appliedCount, icon: FileText, description: "Applications sent" },
     { id: "interviewed", title: "Interviewed", count: interviewedCount, icon: Calendar, description: "Interview invitations" },
@@ -335,7 +335,7 @@ function Dashboard({
     { id: "rejected", "title": "Rejected", count: rejectedCount, icon: X, description: "Applications declined" }
   ], [appliedCount, interviewedCount, offersCount, rejectedCount, irrelevantCount]);
 
-  const recentEmails = useMemo(() => allRelevantEmails 
+  const recentEmails = useMemo(() => allRelevantEmails
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5), [allRelevantEmails]);
 
@@ -470,59 +470,59 @@ function Dashboard({
             </div>
           ) : (
             <div className="text-center py-12 space-y-4 relative">
-                <div className="absolute inset-0 bg-gray-100 dark:bg-zinc-800 opacity-90 rounded-lg flex flex-col items-center justify-center p-8 z-10">
-                    <Lock className="h-12 w-12 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
-                    <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">Premium Feature</h3>
-                    <p className="text-gray-600 dark:text-gray-400 text-sm max-w-xs mx-auto">
-                        Get AI-powered follow-up suggestions based on your application timeline
-                    </p>
-                    <button
-                        onClick={openPremiumModal}
-                        className="mt-6 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg rounded-full px-6 py-3 transition-all duration-300 flex items-center justify-center"
-                    >
-                        <Crown className="h-4 w-4 mr-2" />
-                        Upgrade to Premium
-                    </button>
-                    <p className="text-xs text-gray-500 dark:text-zinc-400 mt-2">
-                        Unlock smart follow-up reminders, application analytics, and more
-                    </p>
-                </div>
-                <div className="blur-sm pointer-events-none">
-                    <div className="space-y-4">
-                        <div className="p-4 rounded-lg border bg-gray-50 dark:bg-zinc-700 border-gray-200 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">
-                            <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                    <div className="flex items-center space-x-2 mb-2">
-                                        <Send className="h-4 w-4" />
-                                        <h3 className="font-medium">Mock Follow-up 1</h3>
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 ml-2">medium</span>
-                                    </div>
-                                    <p className="text-sm mb-2">This is a mock description for a follow-up.</p>
-                                    <div className="text-xs opacity-75">
-                                        <span className="font-medium">Company A</span> &bull; Position X &bull; 5 days ago
-                                    </div>
-                                </div>
-                                <button className="py-1 px-3 text-sm rounded-md border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">Take Action</button>
-                            </div>
+              <div className="absolute inset-0 bg-gray-100 dark:bg-zinc-800 opacity-90 rounded-lg flex flex-col items-center justify-center p-8 z-10">
+                <Lock className="h-12 w-12 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
+                <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">Premium Feature</h3>
+                <p className="text-gray-600 dark:text-gray-400 text-sm max-w-xs mx-auto">
+                  Get AI-powered follow-up suggestions based on your application timeline
+                </p>
+                <button
+                  onClick={openPremiumModal}
+                  className="mt-6 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg rounded-full px-6 py-3 transition-all duration-300 flex items-center justify-center"
+                >
+                  <Crown className="h-4 w-4 mr-2" />
+                  Upgrade to Premium
+                </button>
+                <p className="text-xs text-gray-500 dark:text-zinc-400 mt-2">
+                  Unlock smart follow-up reminders, application analytics, and more
+                </p>
+              </div>
+              <div className="blur-sm pointer-events-none">
+                <div className="space-y-4">
+                  <div className="p-4 rounded-lg border bg-gray-50 dark:bg-zinc-700 border-gray-200 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <Send className="h-4 w-4" />
+                          <h3 className="font-medium">Mock Follow-up 1</h3>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 ml-2">medium</span>
                         </div>
-                        <div className="p-4 rounded-lg border bg-gray-50 dark:bg-zinc-700 border-gray-200 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">
-                            <div className="flex items-start justify-between">
-                                <div className="flex-1">
-                                    <div className="flex items-center space-x-2 mb-2">
-                                        <MessageSquare className="h-4 w-4" />
-                                        <h3 className="font-medium">Mock Follow-up 2</h3>
-                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 ml-2">high</span>
-                                    </div>
-                                    <p className="text-sm mb-2">Another mock description for a thank you note.</p>
-                                    <div className="text-xs opacity-75">
-                                        <span className="font-medium">Company B</span> &bull; Position Y &bull; 12 days ago
-                                    </div>
-                                </div>
-                                <button className="py-1 px-3 text-sm rounded-md border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">Take Action</button>
-                            </div>
+                        <p className="text-sm mb-2">This is a mock description for a follow-up.</p>
+                        <div className="text-xs opacity-75">
+                          <span className="font-medium">Company A</span> &bull; Position X &bull; 5 days ago
                         </div>
+                      </div>
+                      <button className="py-1 px-3 text-sm rounded-md border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">Take Action</button>
                     </div>
+                  </div>
+                  <div className="p-4 rounded-lg border bg-gray-50 dark:bg-zinc-700 border-gray-200 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <MessageSquare className="h-4 w-4" />
+                          <h3 className="font-medium">Mock Follow-up 2</h3>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 ml-2">high</span>
+                        </div>
+                        <p className="text-sm mb-2">Another mock description for a thank you note.</p>
+                        <div className="text-xs opacity-75">
+                          <span className="font-medium">Company B</span> &bull; Position Y &bull; 12 days ago
+                        </div>
+                      </div>
+                      <button className="py-1 px-3 text-sm rounded-md border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">Take Action</button>
+                    </div>
+                  </div>
                 </div>
+              </div>
             </div>
           )}
         </div>

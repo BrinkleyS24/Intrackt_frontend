@@ -82,8 +82,9 @@ export function useEmails(userEmail, userId, CONFIG) {
   useEffect(() => {
     const handleEmailsSynced = (msg) => {
       if (msg.type === 'EMAILS_SYNCED') { 
-        console.log("✅ Intrackt: EMAILS_SYNCED message received, ending sync state.");
-        setIsSyncing(false); 
+  const stillSyncing = typeof msg.syncInProgress === 'boolean' ? msg.syncInProgress : false;
+  console.log("✅ Intrackt: EMAILS_SYNCED message received.", { stillSyncing });
+  setIsSyncing(stillSyncing);
         if (msg.success) {
           setCategorizedEmails(msg.categorizedEmails);
           calculateUnreadCounts(msg.categorizedEmails);
@@ -391,16 +392,6 @@ export function useEmails(userEmail, userId, CONFIG) {
       setLoadingEmails(false);
     }
   }, [userEmail, fetchStoredEmails]);
-
-  /**
-   * Effect hook to fetch stored emails when `userEmail` or `userId` changes.
-   * This ensures data is loaded once the user is authenticated.
-   */
-  useEffect(() => {
-    if (userEmail && userId) {
-      fetchStoredEmails();
-    }
-  }, [userEmail, userId, fetchStoredEmails]);
 
   // Returns all states and functions provided by this hook
   return {
