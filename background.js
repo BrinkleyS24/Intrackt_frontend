@@ -100,7 +100,14 @@ async function apiFetch(endpoint, options = {}) {
   }
 
 
-  const url = `${CONFIG_ENDPOINTS.BACKEND_BASE_URL}${endpoint}`;
+  // Build URL with optional query params support
+  let url = `${CONFIG_ENDPOINTS.BACKEND_BASE_URL}${endpoint}`;
+  if (options.query && typeof options.query === 'object') {
+    const qs = new URLSearchParams(options.query).toString();
+    if (qs) {
+      url += (url.includes('?') ? '&' : '?') + qs;
+    }
+  }
   console.log(`📡 Intrackt: Making API call to: ${url} with method: ${options.method || 'GET'}`);
 
   try {
