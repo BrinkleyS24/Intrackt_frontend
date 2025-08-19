@@ -614,35 +614,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'MARK_SINGLE_EMAIL_AS_READ':
         try {
           const { emailId } = msg.payload;
-          const user = auth.currentUser;
 
-          // **FIX**: Simplified and more robust guard clauses.
-          // We only need the current user's UID to authorize the request on the backend.
-          if (!user || !user.uid) {
-            // This is the likely source of the original silent error.
-            throw new Error("User not authenticated.");
-          }
+          // Wait for auth to initialize before checking user/token state
+          await authReadyPromise;
+
           if (!emailId) {
             throw new Error("Email ID was not provided.");
           }
 
-          // **FIX**: The only job is to call the backend. No more manual cache updates.
-          // The backend is the source of truth.
+          // Call the backend; apiFetch will attach a fresh ID token if the user is logged in.
+          // The backend derives the user from the token, so userId in the body is not required.
           const response = await apiFetch('/api/emails/mark-as-read', {
             method: 'POST',
-            body: {
-              emailId,
-              userId: user.uid // The backend uses the token, but sending it is fine.
-            }
+            body: { emailId }
           });
 
-          // Simply pass the backend's response back to the frontend.
           sendResponse(response);
 
         } catch (error) {
           console.error("❌ Intrackt Background: Error in MARK_SINGLE_EMAIL_AS_READ:", error);
-          // The error will now be correctly sent to the frontend thanks to our fix in emailService.js
-          sendResponse({ success: false, error: error.message });
+          const message = error?.message || 'Unknown error';
+          // Provide a clearer signal for auth issues so UI can prompt login
+          if (message.includes('401') || message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('session expired')) {
+            sendResponse({ success: false, error: 'auth-required' });
+          } else {
+            sendResponse({ success: false, error: message });
+          }
         }
         break;
 
