@@ -153,12 +153,25 @@ function App() {
       if (!email.is_read) {
         markEmailAsRead(email.id);
       }
+      // Build full thread for preview
+      const threadId = email.thread_id || email.threadId || email.thread;
+      const allEmails = [
+        ...(categorizedEmails.applied || []),
+        ...(categorizedEmails.interviewed || []),
+        ...(categorizedEmails.offers || []),
+        ...(categorizedEmails.rejected || []),
+        ...(categorizedEmails.irrelevant || []),
+      ];
+      const threadMessages = allEmails
+        .filter(e => (e.thread_id || e.threadId || e.thread) === threadId)
+        .sort((a, b) => new Date(b.date) - new Date(a.date)); // newest -> oldest
+
       // Remember the current category before showing the preview
       setCategoryBeforePreview(selectedCategory);
-      setSelectedEmail(email);
+      setSelectedEmail({ ...email, threadMessages });
       setSelectedCategory('emailPreview');
     }
-  }, [selectedCategory, markEmailAsRead]);
+  }, [selectedCategory, markEmailAsRead, categorizedEmails]);
 
   const handleBackToCategory = useCallback(() => {
     setSelectedEmail(null);

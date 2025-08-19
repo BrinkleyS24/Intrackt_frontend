@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 
 import { cn } from '../utils/cn'; // For conditional class joining
+import { countUniqueThreads } from '../utils/grouping';
 import { formatDate, getCategoryBadgeColor, getCategoryColor, differenceInDays, getTimeSinceOldestPending, getCategoryTitle } from '../utils/uiHelpers';
 import { showNotification } from './Notification'; // For toasts
 
@@ -298,8 +299,9 @@ function Dashboard({
   console.log("DEBUG Dashboard.jsx: Received categorizedEmails prop:", categorizedEmails); // ADDED LOG
 
   const getCount = useCallback((category) => {
-    const count = (categorizedEmails[category] || categorizedEmails[category.charAt(0).toUpperCase() + category.slice(1)] || []).length;
-    console.log(`Count for ${category}:`, count);
+    const list = (categorizedEmails[category] || categorizedEmails[category.charAt(0).toUpperCase() + category.slice(1)] || []);
+    const count = countUniqueThreads(list);
+    console.log(`Thread count for ${category}:`, count);
     return count;
   }, [categorizedEmails]);
 
@@ -316,7 +318,7 @@ function Dashboard({
     return relevantEmails;
   }, [categorizedEmails]);
 
-  const totalApplications = useMemo(() => allRelevantEmails.length, [allRelevantEmails]);
+  const totalApplications = useMemo(() => countUniqueThreads(allRelevantEmails), [allRelevantEmails]);
   const totalInterviewsAndOffers = useMemo(() => interviewedCount + offersCount, [interviewedCount, offersCount]);
   const responseRate = useMemo(() => totalApplications > 0 ? Math.round((totalInterviewsAndOffers / totalApplications) * 100) : 0, [totalInterviewsAndOffers, totalApplications]);
 

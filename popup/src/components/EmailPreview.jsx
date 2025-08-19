@@ -1,7 +1,7 @@
 /**
  * Enhanced EmailPreview Component with Gmail-like email display
  */
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Building2, Calendar, Clock, ExternalLink, Reply, Archive, Flag, Crown, X } from "lucide-react";
 import { cn } from '../utils/cn';
 import { showNotification } from './Notification';
@@ -289,6 +289,23 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
     return null;
   }
 
+  const threadArr = Array.isArray(email.threadMessages) && email.threadMessages.length > 0
+    ? email.threadMessages
+    : [email];
+
+  const [activeIdx, setActiveIdx] = useState(0);
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [email?.thread_id, email?.id]);
+
+  const scrollToIdx = (i) => {
+    const el = document.getElementById(`msg-${i}`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setActiveIdx(i);
+    }
+  };
+
   const getCategoryColor = (category) => {
     const colors = {
       applied: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -314,21 +331,20 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
     });
   };
 
-  const getEmailBodyContent = () => {
-    // Priority 1: Use HTML body for rich formatting
-    if (email.html_body) {
-      const decodedHTML = decodeEmailContent(email.html_body);
+  // Render a single email message body (html or plain)
+  const renderSingleMessage = (msg) => {
+    if (msg?.html_body) {
+      const decodedHTML = decodeEmailContent(msg.html_body);
       const styledHTML = sanitizeAndStyleEmailHTML(decodedHTML);
-      
       if (styledHTML && styledHTML.trim()) {
         return (
-          <div 
+          <div
             className="email-content-html bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-5 shadow-sm"
             style={{
               fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
               fontSize: '14px',
               lineHeight: '1.6',
-              minHeight: '200px',
+              minHeight: '120px',
               overflow: 'hidden',
               wordWrap: 'break-word'
             }}
@@ -337,22 +353,19 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
         );
       }
     }
-    
-    // Priority 2: Format plain text nicely
-    if (email.body) {
-      const decodedText = decodeEmailContent(email.body);
+    if (msg?.body) {
+      const decodedText = decodeEmailContent(msg.body);
       const cleanedText = cleanPlainTextEmail(decodedText);
       const formattedText = formatPlainTextEmail(cleanedText);
-      
       if (formattedText && formattedText.trim()) {
         return (
-          <div 
+          <div
             className="email-content-text bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-700 rounded-lg p-5 shadow-sm text-gray-700 dark:text-zinc-300"
             style={{
               fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
               fontSize: '14px',
               lineHeight: '1.6',
-              minHeight: '200px',
+              minHeight: '120px',
               wordWrap: 'break-word'
             }}
             dangerouslySetInnerHTML={{ __html: formattedText }}
@@ -360,11 +373,44 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
         );
       }
     }
-    
-    // Fallback
     return (
-      <div className="bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg p-10 text-center text-gray-500 dark:text-zinc-400 italic">
+      <div className="bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg p-6 text-center text-gray-500 dark:text-zinc-400 italic">
         Email content could not be displayed properly.
+      </div>
+    );
+  };
+
+  // Render conversation with clear separators
+  const getEmailBodyContent = () => {
+    const thread = Array.isArray(email.threadMessages) && email.threadMessages.length > 0
+      ? email.threadMessages
+      : [email];
+
+    return (
+      <div className="space-y-6">
+        {thread.map((msg, idx) => (
+          <div key={msg.id || `${msg.thread_id || msg.threadId || 'msg'}-${idx}`} className="relative" id={`msg-${idx}`}>
+            {idx > 0 && (
+              <div className="flex items-center my-2 text-[10px] uppercase tracking-wide text-gray-400 dark:text-zinc-500 select-none">
+                <div className="flex-1 border-t border-dashed border-gray-300 dark:border-zinc-700"></div>
+                <span className="mx-2">Older message</span>
+                <div className="flex-1 border-t border-dashed border-gray-300 dark:border-zinc-700"></div>
+              </div>
+            )}
+            <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg p-3 border border-gray-200 dark:border-zinc-700">
+              <div className="flex items-center justify-between mb-2 text-xs text-gray-600 dark:text-zinc-400">
+                <div className="truncate">
+                  <span className="font-medium">From:</span> {msg.from || 'Unknown'}
+                </div>
+                <div className="flex items-center space-x-1">
+                  <Clock className="h-3 w-3" />
+                  <span>{formatDate(msg.date)}</span>
+                </div>
+              </div>
+              {renderSingleMessage(msg)}
+            </div>
+          </div>
+        ))}
       </div>
     );
   };
@@ -423,6 +469,28 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
         </DialogHeader>
 
         <DialogContent className="space-y-4">
+          {/* Thread Navigator (sticky) */}
+          {threadArr.length > 1 && (
+            <div className="sticky top-0 z-10 bg-white/80 dark:bg-zinc-800/80 backdrop-blur px-2 py-2 rounded-md border border-gray-200 dark:border-zinc-700 flex items-center justify-between">
+              <div className="text-xs text-gray-600 dark:text-zinc-400">
+                {threadArr.length} messages • Newest at top
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => scrollToIdx(Math.max(0, activeIdx - 1))}>Prev</Button>
+                <Button variant="outline" size="sm" onClick={() => scrollToIdx(Math.min(threadArr.length - 1, activeIdx + 1))}>Next</Button>
+                <div className="hidden sm:flex items-center gap-1 ml-2">
+                  {threadArr.map((_, i) => (
+                    <button
+                      key={i}
+                      title={`Jump to message ${i + 1}`}
+                      className={`h-2.5 w-2.5 rounded-full ${i === activeIdx ? 'bg-blue-500' : 'bg-gray-300 dark:bg-zinc-600'} hover:bg-blue-400 dark:hover:bg-blue-500`}
+                      onClick={() => scrollToIdx(i)}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
           {/* Email Header Info */}
           <div className="space-y-2">
             <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-zinc-400">
