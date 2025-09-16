@@ -21,8 +21,6 @@ export function groupEmailsByThread(emails) {
     const messageCount = g.emails.length;
     const latest = g.latest || g.emails[0];
     const earliest = g.earliest || g.emails[0];
-    const company = (g.emails.find(e => !!e.company)?.company) || earliest?.company || latest?.company || null;
-    const position = (g.emails.find(e => !!e.position)?.position) || earliest?.position || latest?.position || null;
     const subject = latest?.subject || earliest?.subject || '(No subject)';
     const preview = latest?.html_body || latest?.body || '';
     groups.push({
@@ -31,8 +29,6 @@ export function groupEmailsByThread(emails) {
       subject,
       date: latest?.date,
       from: latest?.from,
-      company,
-      position,
       is_read: unreadCount === 0,
       messageCount,
       unreadCount,

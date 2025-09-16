@@ -284,7 +284,7 @@ const DialogTitle = ({ children, className }) => (
 );
 
 // Main EmailPreview Component
-export default function EmailPreview({ email, onBack, onReply, onArchive, onOpenMisclassificationModal, userPlan, openPremiumModal }) {
+export default function EmailPreview({ email, onBack, onReply, onArchive, onOpenMisclassificationModal, userPlan, openPremiumModal, loadingEmails }) {
   if (!email) {
     return null;
   }
@@ -415,9 +415,50 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
     );
   };
 
-  const handleReplyClick = () => {
-    showNotification("Reply feature coming soon!", "info");
-    console.log("Reply clicked for email:", email.subject);
+  // Reply form state
+  const [showReplyForm, setShowReplyForm] = useState(false);
+  const [replyRecipient, setReplyRecipient] = useState(() => {
+    // Use the 'from' of the most recent message (index 0 in sorted thread)
+    const first = threadArr[0];
+    if (first?.from) {
+      // Extract email inside angle brackets if present
+      const match = first.from.match(/<([^>]+)>/);
+      return match ? match[1] : first.from;
+    }
+    return '';
+  });
+  const [replySubject, setReplySubject] = useState(() => {
+    const subj = email.subject || '';
+    return subj.toLowerCase().startsWith('re:') ? subj : `Re: ${subj}`;
+  });
+  const [replyBody, setReplyBody] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const toggleReplyForm = () => {
+    // If user is not premium block (UI overlay already encourages upgrade, but double-check)
+    if (userPlan !== 'premium') {
+      openPremiumModal && openPremiumModal();
+      return;
+    }
+    setShowReplyForm(v => !v);
+  };
+
+  const handleReplySubmit = async (e) => {
+    e.preventDefault();
+    if (!replyRecipient || !replySubject || !replyBody.trim()) {
+      showNotification('Please fill in recipient, subject and message body.', 'warning');
+      return;
+    }
+    try {
+      setSending(true);
+      await onReply(email.thread_id || email.threadId || email.thread, replyRecipient.trim(), replySubject.trim(), replyBody.trim());
+      setReplyBody('');
+      setShowReplyForm(false);
+    } catch (err) {
+      // onReply handles its own notifications
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleArchiveClick = async () => {
@@ -505,33 +546,13 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
             </div>
           </div>
 
-          {/* Job Details */}
-          <Card className="bg-gray-50 dark:bg-zinc-700 border-gray-200 dark:border-zinc-600">
-            <CardContent className="p-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex items-center space-x-2">
-                  <Building2 className="h-4 w-4 text-gray-500 dark:text-zinc-400" />
-                  <div>
-                    <p className="text-xs text-gray-500 dark:text-zinc-400">Company</p>
-                    <p className="font-medium text-gray-900 dark:text-white">{email.company || "N/A"}</p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Calendar className="h-4 w-4 text-gray-500 dark:text-zinc-400" />
-                  <div>
-                    <p className="text-xs text-gray-500 dark:text-zinc-400">Position</p>
-                    <p className="font-medium text-gray-900 dark:text-white">{email.position || "N/A"}</p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          {/* Job Details removed: company/position extraction disabled */}
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" className="flex items-center space-x-1" onClick={handleReplyClick}>
+            <Button size="sm" className="flex items-center space-x-1" onClick={toggleReplyForm} disabled={sending || loadingEmails}>
               <Reply className="h-4 w-4" />
-              <span>Reply</span>
+              <span>{showReplyForm ? 'Close Reply' : 'Reply'}</span>
             </Button>
             <Button variant="outline" size="sm" className="flex items-center space-x-1" onClick={handleArchiveClick}>
               <Archive className="h-4 w-4" />
@@ -546,6 +567,60 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
               <span>Open in Gmail</span>
             </Button>
           </div>
+
+          {/* Reply Form */}
+          {showReplyForm && userPlan === 'premium' && (
+            <div className="border border-blue-200 dark:border-blue-700 rounded-lg p-4 bg-blue-50 dark:bg-zinc-700/40 space-y-3">
+              <h4 className="text-sm font-semibold flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                <Reply className="h-4 w-4" />
+                Compose Reply
+              </h4>
+              <form onSubmit={handleReplySubmit} className="space-y-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-zinc-400">To</label>
+                  <input
+                    type="email"
+                    value={replyRecipient}
+                    onChange={(e) => setReplyRecipient(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-zinc-400">Subject</label>
+                  <input
+                    type="text"
+                    value={replySubject}
+                    onChange={(e) => setReplySubject(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-medium uppercase tracking-wide text-gray-600 dark:text-zinc-400">Message</label>
+                  <textarea
+                    value={replyBody}
+                    onChange={(e) => setReplyBody(e.target.value)}
+                    rows={5}
+                    placeholder="Write your reply..."
+                    className="w-full resize-y rounded-md border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="submit"
+                    size="sm"
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    disabled={sending || loadingEmails}
+                  >
+                    {sending || loadingEmails ? 'Sending...' : 'Send Reply'}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setShowReplyForm(false)} disabled={sending}>Cancel</Button>
+                </div>
+              </form>
+            </div>
+          )}
 
           {/* Gmail-Style Email Content */}
           <div className="border-t border-gray-200 dark:border-zinc-700 pt-4">

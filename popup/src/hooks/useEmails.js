@@ -12,7 +12,8 @@ import {
   reportMisclassificationService,
   undoMisclassificationService,
   sendEmailReplyService,
-  markEmailAsReadService
+  markEmailAsReadService,
+  markEmailsAsReadService
 } from '../services/emailService';
 import { showNotification } from '../components/Notification';
 import { getCategoryTitle } from '../utils/uiHelpers';
@@ -41,6 +42,9 @@ export function useEmails(userEmail, userId, CONFIG) {
   const [undoToastVisible, setUndoToastVisible] = useState(false);
   // Ref to store the timeout ID for the misclassification undo toast
   const misclassificationTimerRef = useRef(null);
+
+  // Generic loading flag replacing prior undefined setLoadingEmails usage
+  const [loadingEmails, setLoadingEmails] = useState(false);
 
   // State to store unread counts for each email category
   const [unreadCounts, setUnreadCounts] = useState({
@@ -214,8 +218,6 @@ export function useEmails(userEmail, userId, CONFIG) {
       const matchesSearch = searchQuery
         ? (email.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
           email.body?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          email.company?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          email.position?.toLowerCase().includes(searchQuery.toLowerCase()) ||
           email.from?.toLowerCase().includes(searchQuery.toLowerCase()))
         : true;
 
@@ -287,7 +289,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       return;
     }
 
-    setLoadingEmails(true);
+  setLoadingEmails(true);
     try {
       const result = await reportMisclassificationService(reportPayload);
       if (result.success) {
@@ -312,7 +314,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       console.error("❌ Intrackt: Error reporting misclassification:", error);
       showNotification("Error reporting misclassification.", "error");
     } finally {
-      setLoadingEmails(false);
+  setLoadingEmails(false);
     }
   }, [fetchStoredEmails]);
 
@@ -326,7 +328,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       return;
     }
 
-    setLoadingEmails(true);
+  setLoadingEmails(true);
     try {
       // Clear any existing undo timer and hide toast immediately
       if (misclassificationTimerRef.current) {
@@ -347,7 +349,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       console.error("❌ Intrackt: Error undoing misclassification:", error);
       showNotification("Error undoing misclassification.", "error");
     } finally {
-      setLoadingEmails(false);
+  setLoadingEmails(false);
     }
   }, [lastMisclassifiedEmail, fetchStoredEmails]);
 
@@ -361,14 +363,18 @@ export function useEmails(userEmail, userId, CONFIG) {
       if (result.success) {
         showNotification("Email reply sent successfully!", "success");
         await fetchStoredEmails();
+      } else if (result.needsReauth) {
+        showNotification("Re-auth required to send email. Please log out and sign in again to grant permissions.", "warning");
+      } else if (result.fallback) {
+        showNotification("Temporary send fallback used; message may not appear in Gmail Sent.", "warning");
       } else {
-        showNotification(`Failed to send email reply: ${result.error}`, "error");
+        showNotification(`Failed to send email reply: ${result.error || 'Unknown error'}`, "error");
       }
     } catch (error) {
       console.error("❌ Intrackt: Error sending email reply:", error);
       showNotification("Error sending email reply.", "error");
     } finally {
-      setLoadingEmails(false);
+  setLoadingEmails(false);
     }
   }, [userEmail, userId, fetchStoredEmails]);
 
@@ -389,9 +395,24 @@ export function useEmails(userEmail, userId, CONFIG) {
       console.error("❌ Intrackt: Error archiving email:", error);
       showNotification("Error archiving email.", "error");
     } finally {
-      setLoadingEmails(false);
+  setLoadingEmails(false);
     }
   }, [userEmail, fetchStoredEmails]);
+
+  // Mark all emails in a category as read (UI-first, then persist via background)
+  const markEmailsAsReadForCategory = useCallback(async (category) => {
+    if (!category) return;
+    const prev = JSON.parse(JSON.stringify(categorizedEmails));
+    const next = { ...categorizedEmails };
+    next[category] = (next[category] || []).map(e => ({ ...e, is_read: true }));
+    setCategorizedEmails(next);
+    try {
+      await markEmailsAsReadService(category, userId);
+    } catch (e) {
+      setCategorizedEmails(prev);
+      showNotification('Failed to mark all as read.', 'error');
+    }
+  }, [categorizedEmails, userId]);
 
   // Returns all states and functions provided by this hook
   return {
@@ -411,8 +432,10 @@ export function useEmails(userEmail, userId, CONFIG) {
     undoToastVisible,
     setUndoToastVisible,
     unreadCounts,
+  markEmailsAsReadForCategory,
     markEmailAsRead,
     initialLoading,
-    isSyncing
+  isSyncing,
+  loadingEmails
   };
 }

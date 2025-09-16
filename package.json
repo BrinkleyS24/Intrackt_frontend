@@ -4,7 +4,8 @@
   "description": "Tracks job application statuses directly from your inbox using React.",
   "scripts": {
     "start": "parcel watch popup/public/index.html --dist-dir popup/dist --public-url ./",
-    "build": "parcel build popup/public/index.html background.js --dist-dir popup/dist --no-source-maps --public-url ./"
+  "build": "parcel build popup/public/index.html background.js --dist-dir popup/dist --no-source-maps --public-url ./",
+  "package": "npm run build && powershell -Command Compress-Archive -Path manifest.json,icons,popup/dist,background.js -DestinationPath intrackt-extension-v$env:EXT_VERSION.zip"
   },
   "keywords": [],
   "author": "",

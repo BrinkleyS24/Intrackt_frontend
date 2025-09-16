@@ -47,7 +47,9 @@ const StatCard = ({ icon: Icon, title, value, subtitle, bgColorClasses, textColo
  */
 const CategorySummaryCard = ({ categoryKey, counts, onCategorySelect }) => {
   const categoryTitle = getCategoryTitle(categoryKey);
-  const count = (counts[categoryKey] || counts[categoryKey.charAt(0).toUpperCase() + categoryKey.slice(1)] || []).length;
+  // Use unique thread count for consistency across UI
+  const list = (counts[categoryKey] || counts[categoryKey.charAt(0).toUpperCase() + categoryKey.slice(1)] || []);
+  const count = countUniqueThreads(list);
 
   let IconComponent;
   let iconBgColorClass = '';
@@ -134,9 +136,6 @@ function DashboardEmailCard({ email, onEmailSelect, onOpenMisclassificationModal
         </span>
       </div>
       <h3 className="text-base font-semibold truncate text-gray-900 dark:text-white">{email.subject}</h3>
-      <p className="text-sm text-gray-600 dark:text-zinc-300 truncate">
-        {email.company || "N/A"} &bull; {email.position || "N/A"}
-      </p>
       <p className="text-xs text-gray-500 dark:text-zinc-400 mt-1">{email.from}</p>
 
       <button
@@ -254,8 +253,7 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
       <p className="text-sm mb-3">{suggestion.description || "No specific description available."}</p>
       <div className="text-xs opacity-85 flex justify-between items-center text-gray-600 dark:text-zinc-400 mb-3">
         <span>
-          <span className="font-medium">{suggestion.company}</span> &bull; {suggestion.position}
-          {suggestion.date && <span> &bull; Sent: {formatDate(suggestion.date)}</span>}
+          {suggestion.date && <span>Sent: {formatDate(suggestion.date)}</span>}
         </span>
         {suggestion.followedUpAt && (
           <span className="text-green-600 dark:text-green-400 ml-2">
@@ -294,7 +292,8 @@ function Dashboard({
   updateRespondedState,
   openMisclassificationModal,
   userPlan,
-  openPremiumModal
+  openPremiumModal,
+  quotaData
 }) {
   console.log("DEBUG Dashboard.jsx: Received categorizedEmails prop:", categorizedEmails); // ADDED LOG
 
@@ -318,7 +317,18 @@ function Dashboard({
     return relevantEmails;
   }, [categorizedEmails]);
 
-  const totalApplications = useMemo(() => countUniqueThreads(allRelevantEmails), [allRelevantEmails]);
+  // Prefer backend-provided total (DB-driven) when available; fallback to local unique thread count
+  const totalApplications = useMemo(() => {
+    const localTotal = countUniqueThreads(allRelevantEmails);
+    const backendTotal = (typeof quotaData?.totalProcessed === 'number' && !Number.isNaN(quotaData.totalProcessed))
+      ? quotaData.totalProcessed
+      : null;
+    if (backendTotal === null) return localTotal;
+    if (backendTotal !== localTotal) {
+      console.log("DEBUG Dashboard.jsx: total mismatch (backend vs local)", { backendTotal, localTotal });
+    }
+    return Math.max(backendTotal, localTotal);
+  }, [quotaData, allRelevantEmails]);
   const totalInterviewsAndOffers = useMemo(() => interviewedCount + offersCount, [interviewedCount, offersCount]);
   const responseRate = useMemo(() => totalApplications > 0 ? Math.round((totalInterviewsAndOffers / totalApplications) * 100) : 0, [totalInterviewsAndOffers, totalApplications]);
 
@@ -359,9 +369,9 @@ function Dashboard({
 
 
   return (
-    <div className="min-w-0 bg-gray-50 dark:bg-zinc-900 text-gray-900 dark:text-white">
+  <div className="min-w-0 bg-gray-50 dark:bg-zinc-900 text-gray-900 dark:text-white">
       {/* Dashboard Header with dynamic greeting */}
-      <div className="flex justify-between items-start mb-6">
+  <div className="flex justify-between items-start mb-4">
         <div>
           <h2 className="text-2xl font-bold mb-2">Job Search Dashboard</h2>
           <p className="text-gray-60:0 dark:text-zinc-400">Track your applications and progress</p>
@@ -369,7 +379,7 @@ function Dashboard({
       </div>
 
       {/* Overview Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         <StatCard
           icon={BarChart3}
           title="Total Applications"
@@ -405,7 +415,7 @@ function Dashboard({
       </div>
 
       {/* Category Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
         {categories.map(category => (
           <CategorySummaryCard
             key={category.id}
@@ -416,8 +426,9 @@ function Dashboard({
         ))}
       </div>
 
-      {/* Suggested Follow-Ups Section - Premium Feature */}
-      <div className="card mb-6 p-6 rounded-lg shadow-sm bg-white dark:bg-zinc-800">
+    {/* Suggested Follow-Ups Section - Temporarily Hidden (company extraction removed) */}
+    {false && (
+  <div className="card mb-4 p-5 rounded-lg shadow-sm bg-white dark:bg-zinc-800">
         <div className="border-b border-gray-200 dark:border-zinc-700 pb-4 mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
             Suggested Follow-ups
@@ -500,9 +511,7 @@ function Dashboard({
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 ml-2">medium</span>
                         </div>
                         <p className="text-sm mb-2">This is a mock description for a follow-up.</p>
-                        <div className="text-xs opacity-75">
-                          <span className="font-medium">Company A</span> &bull; Position X &bull; 5 days ago
-                        </div>
+                        <div className="text-xs opacity-75">Sent 5 days ago</div>
                       </div>
                       <button className="py-1 px-3 text-sm rounded-md border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">Take Action</button>
                     </div>
@@ -516,9 +525,7 @@ function Dashboard({
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 ml-2">high</span>
                         </div>
                         <p className="text-sm mb-2">Another mock description for a thank you note.</p>
-                        <div className="text-xs opacity-75">
-                          <span className="font-medium">Company B</span> &bull; Position Y &bull; 12 days ago
-                        </div>
+                        <div className="text-xs opacity-75">Sent 12 days ago</div>
                       </div>
                       <button className="py-1 px-3 text-sm rounded-md border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">Take Action</button>
                     </div>
@@ -528,10 +535,11 @@ function Dashboard({
             </div>
           )}
         </div>
-      </div>
+  </div>)}
 
-      {/* Recent Activity */}
-      <section className="bg-white dark:bg-zinc-800 p-6 rounded-lg shadow space-y-4">
+    {/* Recent Activity - Temporarily Hidden (depends on removed data features) */}
+    {false && (
+  <section className="bg-white dark:bg-zinc-800 p-5 rounded-lg shadow space-y-3">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Recent Activity</h2>
         {recentEmails.length > 0 ? (
           <div className="overflow-x-auto pb-4 flex space-x-4 px-1">
@@ -547,7 +555,7 @@ function Dashboard({
         ) : (
           <p className="text-gray-500 dark:text-zinc-400 text-center py-8">No recent activity. Start applying for jobs!</p>
         )}
-      </section>
+  </section>)}
     </div>
   );
 }

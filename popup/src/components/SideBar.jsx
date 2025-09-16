@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Mail, BarChart3, FileText, Calendar, Gift, X, Home, LogOut, RefreshCw } from "lucide-react";
 import { cn } from "../utils/cn";
 import { EmailQuotaIndicator } from "./EmailQuotaIndicator";
+import { countUniqueThreads } from "../utils/grouping";
 
 /**
  * @typedef {Object} Email
@@ -44,7 +45,8 @@ export function Sidebar({
   onUpgradeClick
 }) {
   const getEmailCount = (category) => {
-    return categorizedEmails[category]?.length || 0;
+    const list = categorizedEmails[category] || [];
+    return countUniqueThreads(list);
   };
 
   const menuItems = [
@@ -58,7 +60,7 @@ export function Sidebar({
   return (
     <div className="flex flex-col h-full bg-white dark:bg-zinc-800">
       {/* Header Section - More Compact */}
-      <div className="p-4 border-b border-gray-200 dark:border-zinc-700 flex-shrink-0">
+      <div className="p-4 border-b border-gray-200 dark:border-zinc-700 flex-shrink-0 sticky top-0 z-10 bg-white dark:bg-zinc-800">
         <div className="flex items-center space-x-3">
           <div className="flex-shrink-0">
             <Mail className="h-7 w-7 text-blue-600 dark:text-blue-400" />
@@ -72,12 +74,13 @@ export function Sidebar({
                 Syncing…
               </div>
             )}
+            {/* Backfill inline status removed */}
           </div>
         </div>
       </div>
       
-      {/* Navigation Section - More Space */}
-      <div className="flex-1 overflow-y-auto py-2">
+  {/* Navigation Section - Scrolls if needed */}
+  <div className="flex-1 py-2 overflow-y-auto">
         <div className="px-3">
           <nav className="space-y-2">
             {menuItems.map((item) => (
@@ -146,6 +149,7 @@ export function Sidebar({
         
         {/* Action Buttons - Compact */}
         <div className="p-3 space-y-1">
+          {/* Backfill controls removed */}
           <button
             className="w-full text-left px-3 py-2 flex items-center rounded-md text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-zinc-700/50 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 text-sm"
             onClick={onRefresh}

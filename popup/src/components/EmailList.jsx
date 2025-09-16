@@ -6,11 +6,11 @@
 
 import React, { useMemo } from 'react';
 import { cn } from '../utils/cn';
-import { formatDate, getCategoryBadgeColor, getCategoryTitle } from '../utils/uiHelpers';
+import { formatDate, getCategoryTitle } from '../utils/uiHelpers';
 import { groupEmailsByThread, countUniqueThreads } from '../utils/grouping';
 
 // Import Lucide React Icons directly
-import { Calendar, Building2 } from 'lucide-react'; // Ensure Building2 is imported
+// Icons not used here; keep list minimal
 
 /**
  * Strips HTML tags from a string to return plain text.
@@ -81,15 +81,8 @@ function EmailList({ emails, category, selectedEmail, onEmailSelect, totalEmails
                   </div>
                   <p className="text-sm text-gray-500 dark:text-zinc-400 mt-1 truncate">{email.sender || email.from}</p>
 
-                  {/* Company & Position */}
+                  {/* Thread meta */}
                   <div className="flex items-center space-x-4 text-xs mt-2">
-                    <div className="flex items-center space-x-1 text-gray-600 dark:text-zinc-300">
-                      <Building2 className="h-3 w-3" /> {/* Use Lucide Building2 icon */}
-                      <span>{group.company || email.company || 'N/A'}</span>
-                    </div>
-                    <span className="text-gray-400 dark:text-zinc-500">•</span>
-                    <span className="text-gray-600 dark:text-zinc-300">{group.position || email.position || 'N/A'}</span>
-                    <span className="text-gray-400 dark:text-zinc-500">•</span>
                     <span className="text-gray-600 dark:text-zinc-300">{group.messageCount} messages</span>
                     {group.unreadCount > 0 && (
                       <span className="ml-1 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200">

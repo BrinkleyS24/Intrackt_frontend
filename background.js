@@ -19,24 +19,28 @@ const auth = getAuth(app);
 // --- Constants ---
 const SYNC_INTERVAL_MINUTES = 15; // How often to sync emails
 const UNDO_TIMEOUT_MS = 10000; // 10 seconds for undo toast
+// Watchdog to detect unusually long-running sync locks
+const STUCK_LOCK_THRESHOLD_MIN = 15; // minutes a sync may run before considered stuck
+const WATCHDOG_INTERVAL_MIN = 5; // how often to check for stuck syncs
 
 // Define your backend endpoints.
 const CONFIG_ENDPOINTS = {
-  // BACKEND_BASE_URL: 'https://gmail-tracker-backend-215378038667.us-central1.run.app', // Your production backend URL
-  BACKEND_BASE_URL: 'http://localhost:3000', // Your local development backend URL
+  BACKEND_BASE_URL: 'http://localhost:3000', // Production backend URL (default)
+  // To develop locally, temporarily replace with: 'http://localhost:3000'
   AUTH_URL: '/api/auth/auth-url',
   AUTH_TOKEN: '/api/auth/token',
   SYNC_EMAILS: '/api/emails',
   FETCH_STORED_EMAILS: '/api/emails/stored-emails', // This endpoint is not used by background script directly for fetching
   FOLLOWUP_NEEDED: '/api/emails/followup-needed',
   SYNC_STATUS: '/api/emails/sync-status',
+  // Backfill endpoints removed
   // CORRECTED: Changed endpoint to match backend route /misclassification
   REPORT_MISCLASSIFICATION: '/api/emails/misclassification',
   // CORRECTED: Changed endpoint to match backend route /undo-misclassification
   UNDO_MISCLASSIFICATION: '/api/emails/undo-misclassification',
   FETCH_USER_PLAN: '/api/user',
   UPDATE_USER_PLAN: '/api/user/update-plan',
-  SEND_REPLY: '/api/emails/send-reply',
+  SEND_REPLY: '/api/emails/send-reply', // Legacy backend stub (kept for fallback / logging)
   ARCHIVE_EMAIL: '/api/emails/archive', // Ensure this matches your backend's archive endpoint
 };
 
@@ -54,6 +58,11 @@ let lastSyncStartTs = 0;
 
 // --- Helper Functions ---
 
+function capitalizeFirst(s) {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 /**
  * Generic fetch wrapper for backend API calls.
  * Automatically adds authorization header if a Firebase user is logged in.
@@ -65,6 +74,16 @@ let lastSyncStartTs = 0;
 async function apiFetch(endpoint, options = {}) {
   // Wait for authentication to be ready before proceeding
   await authReadyPromise;
+
+  // Dynamic backend override (development aid): if chrome.storage.local has DEV_BACKEND, use it.
+  try {
+    const { DEV_BACKEND } = await chrome.storage.local.get(['DEV_BACKEND']);
+    if (DEV_BACKEND && typeof DEV_BACKEND === 'string') {
+      CONFIG_ENDPOINTS.BACKEND_BASE_URL = DEV_BACKEND;
+    }
+  } catch (_) {
+    // Non-fatal; ignore storage errors.
+  }
 
   const user = auth.currentUser;
   const headers = {
@@ -184,6 +203,41 @@ async function pollSyncStatusAndRefresh(maxSeconds = 60, intervalMs = 2000) {
 }
 
 /**
+ * Watchdog: checks whether a sync has been in-progress for too long and notifies UI.
+ * Non-fatal: best-effort and silent on errors.
+ */
+async function checkSyncWatchdog() {
+  try {
+    const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
+    if (!status?.success || !status?.sync?.inProgress) return;
+
+    // Try several possible timestamp fields for when the sync/lock started
+    const startedIso = status.sync.startedAt
+      || status.sync.lockAcquiredAt
+      || status.sync.lock?.acquiredAt
+      || status.sync.lock?.since
+      || status.sync.started
+      || status.sync.started_at
+      || status.sync.lastSyncAt; // fallback if nothing else
+
+    const startedMs = startedIso ? new Date(startedIso).getTime() : Date.now();
+    const mins = (Date.now() - startedMs) / 60000;
+
+    if (mins >= STUCK_LOCK_THRESHOLD_MIN) {
+      // Let the UI know the sync might be stuck; include snapshot for context
+      chrome.runtime.sendMessage({
+        type: 'SYNC_STUCK',
+        minutesInProgress: Math.round(mins),
+        thresholdMinutes: STUCK_LOCK_THRESHOLD_MIN,
+        sync: status.sync,
+      });
+    }
+  } catch (e) {
+    console.warn('Intrackt Background: watchdog check failed:', e?.message);
+  }
+}
+
+/**
  * Sends an email reply using the Gmail API (via backend).
  * @param {string} threadId - The ID of the email thread to reply to.
  * @param {string} to - Recipient email address.
@@ -193,21 +247,15 @@ async function pollSyncStatusAndRefresh(maxSeconds = 60, intervalMs = 2000) {
  * @param {string} userId - The Firebase UID of the user.
  * @returns {Promise<object>} Result of the send operation.
  */
-async function sendGmailReply(threadId, to, subject, body, userEmail, userId) { // Added userId param
+async function sendGmailReply(threadId, to, subject, body, userEmail, userId) { // Now always use backend implementation
   const user = auth.currentUser;
-  if (!user) {
-    throw new Error("User not authenticated for sending email.");
-  }
-  try {
-    const response = await apiFetch(CONFIG_ENDPOINTS.SEND_REPLY, { // Use configured endpoint
-      method: 'POST',
-      body: { threadId, to, subject, body, userEmail, userId } // Pass userId to backend
-    });
-    return response;
-  } catch (error) {
-    console.error("❌ Intrackt: Error sending Gmail reply via backend:", error);
-    throw error;
-  }
+  if (!user) throw new Error('User not authenticated for sending email.');
+  // Call backend route which handles refresh token + Gmail API; keeps logic centralized
+  const resp = await apiFetch(CONFIG_ENDPOINTS.SEND_REPLY, {
+    method: 'POST',
+    body: { threadId, to, subject, body, userEmail, userId }
+  });
+  return resp; // { success, gmailMessageId?, threadId?, needsReauth? }
 }
 
 /**
@@ -250,7 +298,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
   try {
     const response = await apiFetch(CONFIG_ENDPOINTS.SYNC_EMAILS, {
       method: 'POST',
-      body: { userEmail, userId, fullRefresh }
+    body: { userEmail, userId, fullRefresh, email: userEmail }
     });
 
     if (response.success && response.categorizedEmails) {
@@ -293,8 +341,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
 
 
 // --- Chrome Runtime Message Listener (for popup/content script communication) ---
-// This listener MUST be at the top level of the service worker script
-// to ensure it's registered immediately upon activation.
+// Registered immediately upon activation.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   console.log(`📩 Intrackt Background: Received message type: ${msg.type}`);
 
@@ -324,81 +371,69 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     switch (msg.type) {
       case 'LOGIN_GOOGLE_OAUTH':
         try {
-          // Step 1: Get the authorization URL from your backend
           const redirectUriForBackend = chrome.identity.getRedirectURL();
 
+          // Step 1: Get auth URL from backend
           const authUrlResponse = await apiFetch(CONFIG_ENDPOINTS.AUTH_URL, {
             method: 'GET',
             headers: { 'Content-Type': 'application/json' },
             query: { redirect_uri: redirectUriForBackend }
           });
-
           if (!authUrlResponse.success || !authUrlResponse.url) {
-            throw new Error(authUrlResponse.error || "Failed to get auth URL from backend.");
+            throw new Error(authUrlResponse.error || 'Failed to get auth URL from backend.');
           }
 
-          // Step 2: Launch Chrome's interactive web auth flow
-          const finalAuthUrl = authUrlResponse.url;
-          console.log(`DEBUG: Attempting to launch Web Auth Flow with URL: ${finalAuthUrl}`); // ADDED LOG
+            const finalAuthUrl = authUrlResponse.url;
+          console.log(`DEBUG: Attempting to launch Web Auth Flow with URL: ${finalAuthUrl}`);
           const authRedirectUrl = await new Promise((resolve, reject) => {
-            chrome.identity.launchWebAuthFlow(
-              {
-                url: finalAuthUrl,
-                interactive: true
-              },
-              (responseUrl) => {
-                if (chrome.runtime.lastError) {
-                  return reject(new Error(chrome.runtime.lastError.message));
-                }
-                if (!responseUrl) {
-                  return reject(new Error("OAuth flow cancelled or failed."));
-                }
-                resolve(responseUrl);
+            chrome.identity.launchWebAuthFlow({
+              url: finalAuthUrl,
+              interactive: true
+            }, (responseUrl) => {
+              if (chrome.runtime.lastError) {
+                return reject(new Error(chrome.runtime.lastError.message));
               }
-            );
+              if (!responseUrl) {
+                return reject(new Error('OAuth flow cancelled or failed.'));
+              }
+              resolve(responseUrl);
+            });
           });
 
-          // Extract the authorization code from the response URL
+          // Step 2: Extract authorization code
           const urlParams = new URLSearchParams(new URL(authRedirectUrl).search);
           const code = urlParams.get('code');
-
           if (!code) {
-            throw new Error("Authorization code not found in redirect URL.");
+            throw new Error('Authorization code not found in redirect URL.');
           }
 
-          // Step 3: Exchange the code for tokens via your backend
+          // Step 3: Exchange code for tokens
           const tokenResponse = await apiFetch(CONFIG_ENDPOINTS.AUTH_TOKEN, {
             method: 'POST',
-            body: {
-              code: code,
-              redirect_uri: redirectUriForBackend
-            }
+            body: { code, redirect_uri: redirectUriForBackend }
+          });
+          if (!tokenResponse.success || !tokenResponse.firebaseToken) {
+            throw new Error(tokenResponse.error || 'Failed to exchange code for Firebase token.');
+          }
+
+          // Step 4: Sign in to Firebase with custom token
+          const userCredential = await signInWithCustomToken(auth, tokenResponse.firebaseToken);
+          const user = userCredential.user;
+          console.log('✅ Intrackt Background: Successfully signed in to Firebase with custom token.');
+
+          await chrome.storage.local.set({
+            userEmail: user.email,
+            userName: tokenResponse.userName || user.email,
+            userId: user.uid,
+            userPlan: tokenResponse.userPlan || 'free'
           });
 
-          if (tokenResponse.success && tokenResponse.firebaseToken) {
-            // Step 4: Sign in to Firebase with the custom token from your backend
-            const userCredential = await signInWithCustomToken(auth, tokenResponse.firebaseToken);
-            const user = userCredential.user;
-            console.log("✅ Intrackt Background: Successfully signed in to Firebase with custom token.");
+          // Force full refresh on login
+          await triggerEmailSync(user.email, user.uid, true);
 
-            // Store user info and plan in local storage
-            await chrome.storage.local.set({
-              userEmail: user.email,
-              userName: tokenResponse.userName || user.email, // Use userName from backend if available
-              userId: user.uid,
-              userPlan: tokenResponse.userPlan || 'free' // Use userPlan from backend if available
-            });
-
-            // Trigger an immediate email sync after successful login
-            // This will fetch and cache emails, and notify the popup
-            await triggerEmailSync(user.email, user.uid, true); // Force full refresh on login
-
-            sendResponse({ success: true, userEmail: user.email, userName: tokenResponse.userName, userPlan: tokenResponse.userPlan, userId: user.uid });
-          } else {
-            throw new Error(tokenResponse.error || "Failed to exchange code for Firebase token.");
-          }
+          sendResponse({ success: true, userEmail: user.email, userName: tokenResponse.userName, userPlan: tokenResponse.userPlan, userId: user.uid });
         } catch (error) {
-          console.error("❌ Intrackt Background: Error during Google OAuth login:", error);
+          console.error('❌ Intrackt Background: Error during Google OAuth login:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -419,16 +454,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try {
           const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_USER_PLAN, {
             method: 'POST',
-            body: { email: currentUserEmail, userId: currentUserId } // Always use cached info
+            body: { email: currentUserEmail, userEmail: currentUserEmail, userId: currentUserId }
           });
           if (response.success) {
-            await chrome.storage.local.set({ userPlan: response.plan }); // Cache the plan
+            await chrome.storage.local.set({ userPlan: response.plan });
             sendResponse({ success: true, plan: response.plan });
           } else {
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error("❌ Intrackt Background: Error fetching user plan:", error);
+          console.error('❌ Intrackt Background: Error fetching user plan:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -438,14 +473,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const { newPlan } = msg;
           const response = await apiFetch(CONFIG_ENDPOINTS.UPDATE_USER_PLAN, {
             method: 'POST',
-            body: { newPlan, userEmail: currentUserEmail, userId: currentUserId } // Always use cached info
+            body: { newPlan, userEmail: currentUserEmail, email: currentUserEmail, userId: currentUserId }
           });
           if (response.success) {
-            await chrome.storage.local.set({ userPlan: newPlan }); // Cache the updated plan
+            await chrome.storage.local.set({ userPlan: newPlan });
           }
           sendResponse(response);
         } catch (error) {
-          console.error("❌ Intrackt Background: Error updating user plan:", error);
+          console.error('❌ Intrackt Background: Error updating user plan:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -467,20 +502,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
+  // Backfill handlers removed
+
       case 'FETCH_QUOTA_DATA':
         try {
           const response = await apiFetch(CONFIG_ENDPOINTS.SYNC_EMAILS, {
             method: 'POST',
-            body: { userEmail: currentUserEmail, userId: currentUserId, fetchOnlyQuota: true } // Always use cached info
+            body: { userEmail: currentUserEmail, email: currentUserEmail, userId: currentUserId, fetchOnlyQuota: true }
           });
           if (response.success && response.quota) {
-            await chrome.storage.local.set({ quotaData: response.quota }); // Cache the quota data
+            await chrome.storage.local.set({ quotaData: response.quota });
             sendResponse({ success: true, quota: response.quota });
           } else {
-            sendResponse({ success: false, error: response.error || "Quota data not found in response." });
+            sendResponse({ success: false, error: response.error || 'Quota data not found in response.' });
           }
         } catch (error) {
-          console.error("❌ Intrackt Background: Error fetching quota data:", error);
+          console.error('❌ Intrackt Background: Error fetching quota data:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -489,16 +526,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try {
           const response = await apiFetch(CONFIG_ENDPOINTS.FOLLOWUP_NEEDED, {
             method: 'POST',
-            body: { userEmail: currentUserEmail, userId: currentUserId } // Always use cached info
+            body: { userEmail: currentUserEmail, email: currentUserEmail, userId: currentUserId }
           });
           if (response.success && response.suggestions) {
-            await chrome.storage.local.set({ followUpSuggestions: response.suggestions }); // Cache suggestions
+            await chrome.storage.local.set({ followUpSuggestions: response.suggestions });
             sendResponse({ success: true, suggestions: response.suggestions });
           } else {
-            sendResponse({ success: false, error: response.error || "Follow-up suggestions not found." });
+            sendResponse({ success: false, error: response.error || 'Follow-up suggestions not found.' });
           }
         } catch (error) {
-          console.error("❌ Intrackt Background: Error fetching follow-up suggestions:", error);
+          console.error('❌ Intrackt Background: Error fetching follow-up suggestions:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -506,11 +543,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'SEND_EMAIL_REPLY':
         try {
           const { threadId, recipient, subject, body } = msg;
-          const result = await sendGmailReply(threadId, recipient, subject, body, currentUserEmail, currentUserId); // Always use cached info
-          await triggerEmailSync(currentUserEmail, currentUserId, false); // Trigger sync after reply
-          sendResponse({ success: true, message: "Email sent successfully!", result });
+          const sendResult = await sendGmailReply(threadId, recipient, subject, body, currentUserEmail, currentUserId);
+          if (sendResult.success) {
+            await triggerEmailSync(currentUserEmail, currentUserId, false);
+            sendResponse({ success: true, gmailMessageId: sendResult.gmailMessageId, threadId: sendResult.threadId });
+          } else {
+            sendResponse({ success: false, error: sendResult.error, needsReauth: sendResult.needsReauth });
+          }
         } catch (error) {
-          console.error("❌ Intrackt Background: Error sending email reply:", error);
+          console.error('❌ Intrackt Background: Error sending email reply:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -519,7 +560,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try {
           const response = await apiFetch(CONFIG_ENDPOINTS.ARCHIVE_EMAIL, {
             method: 'POST',
-            body: { threadId: msg.threadId, userEmail: currentUserEmail, userId: currentUserId } // Always use cached info
+            body: { threadId: msg.threadId, userEmail: currentUserEmail, email: currentUserEmail, userId: currentUserId }
           });
           if (response.success) {
             await triggerEmailSync(currentUserEmail, currentUserId, false); // Trigger sync after archive
@@ -536,6 +577,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const reportData = {
             ...msg.emailData, // Contains emailId, threadId, originalCategory, correctedCategory, emailSubject, emailBody
             userEmail: currentUserEmail, // Override with cached info
+            email: currentUserEmail, // Legacy field for backward compatibility
             userId: currentUserId // Override with cached info
           };
           const response = await apiFetch(CONFIG_ENDPOINTS.REPORT_MISCLASSIFICATION, {
@@ -576,6 +618,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const undoData = {
             ...msg.undoData, // Contains emailId, threadId, originalCategory, misclassifiedIntoCategory
             userEmail: currentUserEmail, // Override with cached info
+            email: currentUserEmail, // Legacy field for backward compatibility
             userId: currentUserId // Override with cached info
           };
           const response = await apiFetch(CONFIG_ENDPOINTS.UNDO_MISCLASSIFICATION, {
@@ -653,6 +696,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             return;
           }
 
+          // First persist change on backend (new batch endpoint)
+          try {
+            await apiFetch(`/api/emails/mark-as-read-category`, {
+              method: 'POST',
+              body: { category: capitalizeFirst(category) }
+            });
+          } catch (persistErr) {
+            console.warn('Intrackt Background: Backend mark-as-read-category failed, aborting local update:', persistErr?.message);
+            sendResponse({ success: false, error: persistErr.message });
+            return;
+          }
+
           // Fetch current emails from local storage to update their read status
           const currentEmails = await chrome.storage.local.get([
             'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails'
@@ -660,7 +715,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           const updatedCategoryEmails = (currentEmails[`${category}Emails`] || []).map(email => ({
             ...email,
-            isRead: true // Mark all emails in this category as read
+            // Align with UI state which uses `is_read`
+            is_read: true
           }));
 
           // Save updated emails back to local storage
@@ -718,9 +774,20 @@ setPersistence(auth, indexedDBLocalPersistence)
           } catch (error) {
             console.error("❌ Intrackt Background: Network/communication error fetching user plan during auth state change:", error);
           }
-          // After a user logs in (or re-authenticates), trigger an initial email sync
-          // This ensures the cache is populated immediately.
-          await triggerEmailSync(user.email, user.uid, false); // No full refresh needed, just update
+          // After a user logs in (or re-authenticates), decide whether to do a full refresh
+          // If last sync is stale (> 24h) or unknown, force full refresh to catch up
+          let shouldFull = true;
+          try {
+            const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
+            const last = status?.sync?.lastSyncAt ? new Date(status.sync.lastSyncAt) : null;
+            if (last && (Date.now() - last.getTime()) < 24 * 60 * 60 * 1000) {
+              shouldFull = false;
+            }
+          } catch (e) {
+            // If status fetch fails, err on the side of full refresh
+            shouldFull = true;
+          }
+          await triggerEmailSync(user.email, user.uid, shouldFull);
         } else {
           console.log("Intrackt Background: Anonymous user detected. Not fetching plan or syncing emails.");
         }
@@ -757,6 +824,7 @@ setPersistence(auth, indexedDBLocalPersistence)
 
 // --- Chrome Alarms (for scheduled sync) ---
 chrome.alarms.create('syncEmails', { periodInMinutes: SYNC_INTERVAL_MINUTES });
+chrome.alarms.create('syncWatchdog', { periodInMinutes: WATCHDOG_INTERVAL_MIN });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'syncEmails') {
@@ -777,5 +845,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     } else {
       console.log('Intrackt: Skipping email sync for unauthenticated or anonymous user.');
     }
+  } else if (alarm.name === 'syncWatchdog') {
+    // Periodic stuck-lock check
+    await checkSyncWatchdog();
   }
 });

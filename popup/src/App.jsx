@@ -24,6 +24,7 @@ import { CONFIG } from './utils/constants';
 import { Crown, Briefcase } from 'lucide-react';
 
 function App() {
+  // Default to dashboard; a stored preference may override after auth is ready
   const [selectedCategory, setSelectedCategory] = useState('dashboard');
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [isMisclassificationModalOpen, setIsMisclassificationModalOpen] = useState(false);
@@ -65,6 +66,7 @@ function App() {
     markEmailAsRead,
     initialLoading,
     isSyncing,
+  loadingEmails,
   } = useEmails(userEmail, userId, CONFIG);
 
   const {
@@ -76,6 +78,21 @@ function App() {
   } = useFollowUps(userEmail, userId, userPlan);
 
   const isLoadingApp = loadingAuth || initialLoading || loadingSuggestions;
+
+ // Load last selected category from storage once auth is ready
+ useEffect(() => {
+    const restoreSelectedCategory = async () => {
+      try {
+        const { intracktSelectedCategory } = await chrome.storage?.local?.get('intracktSelectedCategory') || {};
+        if (intracktSelectedCategory) {
+          setSelectedCategory(intracktSelectedCategory);
+        }
+      } catch (e) {
+        // Non-fatal: storage may be unavailable in some contexts
+      }
+    };
+    if (isAuthReady) restoreSelectedCategory();
+  }, [isAuthReady]);
 
  useEffect(() => {
     const initialDataFetch = async () => {
@@ -145,6 +162,12 @@ function App() {
     setSelectedCategory(category);
     setSelectedEmail(null);
     setCurrentPage(1);
+    // Persist preference
+    try {
+      chrome.storage?.local?.set({ intracktSelectedCategory: category });
+    } catch (e) {
+      // ignore
+    }
   }, []);
 
   const handleEmailSelect = useCallback((email) => {
@@ -216,7 +239,7 @@ function App() {
       case 'dashboard':
         return <Dashboard {...{ categorizedEmails, onCategorySelect: handleCategoryChange, onEmailSelect: handleEmailSelect, openMisclassificationModal, followUpSuggestions, loadingSuggestions, markFollowedUp, updateRespondedState, userPlan, openPremiumModal, quotaData }} />;
       case 'emailPreview':
-        return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, openPremiumModal }} />;
+  return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, openPremiumModal, loadingEmails }} />;
       default:
         const emailsForCategory = categorizedEmails[selectedCategory] || [];
         const paginatedEmails = emailsForCategory.slice((currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE, currentPage * CONFIG.PAGINATION.PAGE_SIZE);
@@ -277,11 +300,11 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-100 dark:bg-zinc-900 text-gray-900 dark:text-white font-inter">
+    <div className="flex h-screen overflow-hidden bg-gray-100 dark:bg-zinc-900 text-gray-900 dark:text-white font-inter">
       {isLoadingApp && <LoadingOverlay message="Loading data..." />}
       <Notification />
 
-      <div className="w-64 h-full flex flex-col border-r border-gray-200 dark:border-zinc-700">
+  <div className="w-64 h-screen flex flex-col border-r border-gray-200 dark:border-zinc-700">
         <Sidebar
           selectedCategory={selectedCategory}
           onCategoryChange={handleCategoryChange}
@@ -296,10 +319,10 @@ function App() {
         />
       </div>
 
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+  <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         <header className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
           <h1 id="welcome-header" className="text-xl font-semibold text-gray-900 dark:text-white truncate">
-            Welcome, {userName || userEmail}!
+            {`Welcome, ${userName || userEmail}!`}
           </h1>
           <div className="flex items-center space-x-2 flex-shrink-0">
             {userPlan === 'free' && (
@@ -316,7 +339,7 @@ function App() {
 
         {quotaData && <QuotaBanner quota={quotaData} userPlan={userPlan} onUpgradeClick={openPremiumModal} />}
 
-        <div className="flex-1 overflow-y-auto">
+  <div className="flex-1">
           <div className="p-6">
             {renderMainContent()}
           </div>

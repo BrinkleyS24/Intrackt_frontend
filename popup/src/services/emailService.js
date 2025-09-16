@@ -103,7 +103,11 @@ export async function sendEmailReplyService(threadId, recipient, subject, body, 
       body: body,
       userEmail: userEmail
     });
-    return response;
+    // Normalize legacy + new formats
+    if (response.success) {
+      return { success: true, gmailMessageId: response.gmailMessageId, threadId: response.threadId };
+    }
+    return response; // may contain fallback flag or error
   } catch (error) {
     console.error("❌ Intrackt: Error sending SEND_EMAIL_REPLY message to background:", error);
     return { success: false, error: error.message };
@@ -217,3 +221,5 @@ export async function markEmailAsReadService(emailId) {
     throw error;
   }
 }
+
+// Backfill services removed
