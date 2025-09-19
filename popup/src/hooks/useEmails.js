@@ -57,6 +57,7 @@ export function useEmails(userEmail, userId, CONFIG) {
 
   /**
    * Calculates and updates the unread counts for all email categories.
+   * Counts unread threads instead of individual unread emails for consistency.
    */
   const calculateUnreadCounts = useCallback((emails) => {
     const counts = {
@@ -67,7 +68,15 @@ export function useEmails(userEmail, userId, CONFIG) {
       irrelevant: 0,
     };
     Object.keys(emails).forEach(category => {
-      counts[category] = emails[category].filter(email => !email.is_read).length;
+      // Group emails by thread and count threads that have at least one unread email
+      const threadsWithUnread = new Set();
+      emails[category].forEach(email => {
+        if (!email.is_read) {
+          const threadId = email.thread_id || email.threadId || email.thread || email.id;
+          threadsWithUnread.add(threadId);
+        }
+      });
+      counts[category] = threadsWithUnread.size;
     });
     setUnreadCounts(counts);
   }, []);
@@ -87,13 +96,13 @@ export function useEmails(userEmail, userId, CONFIG) {
     const handleEmailsSynced = (msg) => {
       if (msg.type === 'EMAILS_SYNCED') { 
   const stillSyncing = typeof msg.syncInProgress === 'boolean' ? msg.syncInProgress : false;
-  console.log("✅ Intrackt: EMAILS_SYNCED message received.", { stillSyncing });
+  console.log("✅ AppMailia AI: EMAILS_SYNCED message received.", { stillSyncing });
   setIsSyncing(stillSyncing);
         if (msg.success) {
           setCategorizedEmails(msg.categorizedEmails);
           calculateUnreadCounts(msg.categorizedEmails);
         } else {
-          console.error("❌ Intrackt: Email sync failed:", msg.error);
+          console.error("❌ AppMailia AI: Email sync failed:", msg.error);
           showNotification(`Email sync failed: ${msg.error}`, 'error');
         }
       }
@@ -149,7 +158,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       // Call the actual backend service to persist the change.
       await markEmailAsReadService(emailId);
     } catch (error) {
-      console.error("❌ Intrackt: Failed to mark email as read on the server:", error);
+      console.error("❌ AppMailia AI: Failed to mark email as read on the server:", error);
       showNotification("Failed to update email read status.", "error");
       // Revert on failure, which will also re-trigger the useEffect to fix counts.
       setCategorizedEmails(originalEmails);
@@ -168,7 +177,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       setCategorizedEmails(stored);
       calculateUnreadCounts(stored);
     } catch (error) {
-      console.error("❌ Intrackt: Error fetching stored emails:", error);
+      console.error("❌ AppMailia AI: Error fetching stored emails:", error);
       showNotification("Failed to load stored emails.", "error");
     } finally {
       // This will remove the main loading overlay, revealing the stored emails.
@@ -189,7 +198,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         setIsSyncing(false);
       }
     } catch (error) {
-      console.error("❌ Intrackt: Error requesting new email sync:", error);
+      console.error("❌ AppMailia AI: Error requesting new email sync:", error);
       showNotification(`Failed to request email sync: ${error.message}`, "error");
       setIsSyncing(false);
     }
@@ -285,7 +294,7 @@ export function useEmails(userEmail, userId, CONFIG) {
 
     if (!reportPayload.emailId || !reportPayload.threadId || !reportPayload.originalCategory || !reportPayload.correctedCategory) {
       showNotification("Missing critical email data for misclassification report.", "error");
-      console.error("❌ Intrackt: Missing critical email data for misclassification report:", reportPayload);
+      console.error("❌ AppMailia AI: Missing critical email data for misclassification report:", reportPayload);
       return;
     }
 
@@ -311,7 +320,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to report misclassification: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ Intrackt: Error reporting misclassification:", error);
+      console.error("❌ AppMailia AI: Error reporting misclassification:", error);
       showNotification("Error reporting misclassification.", "error");
     } finally {
   setLoadingEmails(false);
@@ -346,7 +355,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to undo misclassification: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ Intrackt: Error undoing misclassification:", error);
+      console.error("❌ AppMailia AI: Error undoing misclassification:", error);
       showNotification("Error undoing misclassification.", "error");
     } finally {
   setLoadingEmails(false);
@@ -371,7 +380,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to send email reply: ${result.error || 'Unknown error'}`, "error");
       }
     } catch (error) {
-      console.error("❌ Intrackt: Error sending email reply:", error);
+      console.error("❌ AppMailia AI: Error sending email reply:", error);
       showNotification("Error sending email reply.", "error");
     } finally {
   setLoadingEmails(false);
@@ -392,7 +401,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to archive email: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ Intrackt: Error archiving email:", error);
+      console.error("❌ AppMailia AI: Error archiving email:", error);
       showNotification("Error archiving email.", "error");
     } finally {
   setLoadingEmails(false);

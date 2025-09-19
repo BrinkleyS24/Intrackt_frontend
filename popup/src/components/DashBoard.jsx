@@ -310,6 +310,15 @@ function Dashboard({
   const rejectedCount = useMemo(() => getCount('rejected'), [getCount]);
   const irrelevantCount = useMemo(() => getCount('irrelevant'), [getCount]);
 
+  // Debug logging for calculations
+  console.log("Dashboard calculations:", {
+    appliedCount,
+    interviewedCount,
+    offersCount,
+    rejectedCount,
+    irrelevantCount
+  });
+
 
   const allRelevantEmails = useMemo(() => {
     const relevantEmails = Object.values(categorizedEmails).flat()
@@ -330,7 +339,16 @@ function Dashboard({
     return Math.max(backendTotal, localTotal);
   }, [quotaData, allRelevantEmails]);
   const totalInterviewsAndOffers = useMemo(() => interviewedCount + offersCount, [interviewedCount, offersCount]);
-  const responseRate = useMemo(() => totalApplications > 0 ? Math.round((totalInterviewsAndOffers / totalApplications) * 100) : 0, [totalInterviewsAndOffers, totalApplications]);
+  const responseRate = useMemo(() => {
+    const rate = totalApplications > 0 ? Math.round((totalInterviewsAndOffers / totalApplications) * 100) : 0;
+    console.log("Response Rate calculation:", {
+      totalInterviewsAndOffers,
+      totalApplications,
+      rate,
+      formula: `${totalInterviewsAndOffers} / ${totalApplications} = ${rate}%`
+    });
+    return rate;
+  }, [totalInterviewsAndOffers, totalApplications]);
 
   const newApplicationsThisWeek = useMemo(() => {
     const sevenDaysAgo = new Date();
@@ -338,7 +356,17 @@ function Dashboard({
     return (categorizedEmails.applied || categorizedEmails.Applied || []).filter(email => new Date(email.date) >= sevenDaysAgo).length;
   }, [categorizedEmails.applied, categorizedEmails.Applied]);
 
-  const successRate = useMemo(() => totalInterviewsAndOffers > 0 ? Math.round((offersCount / totalInterviewsAndOffers) * 100) : 0, [offersCount, totalInterviewsAndOffers]);
+  // Success Rate: percentage of total applications that resulted in offers
+  const successRate = useMemo(() => {
+    const rate = totalApplications > 0 ? Math.round((offersCount / totalApplications) * 100) : 0;
+    console.log("Success Rate calculation:", {
+      offersCount,
+      totalApplications,
+      rate,
+      formula: `${offersCount} / ${totalApplications} = ${rate}%`
+    });
+    return rate;
+  }, [offersCount, totalApplications]);
 
   const categories = useMemo(() => [
     { id: "applied", title: "Applied", count: appliedCount, icon: FileText, description: "Applications sent" },

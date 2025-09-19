@@ -19,6 +19,7 @@ import Modals from './components/Modals';
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
 import { useFollowUps } from './hooks/useFollowUps';
+import { countUniqueThreads } from './utils/grouping';
 
 import { CONFIG } from './utils/constants';
 import { Crown, Briefcase } from 'lucide-react';
@@ -243,8 +244,8 @@ function App() {
       default:
         const emailsForCategory = categorizedEmails[selectedCategory] || [];
         const paginatedEmails = emailsForCategory.slice((currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE, currentPage * CONFIG.PAGINATION.PAGE_SIZE);
-        const totalEmailsInCurrentCategory = emailsForCategory.length;
-        const totalPages = Math.ceil(totalEmailsInCurrentCategory / CONFIG.PAGINATION.PAGE_SIZE);
+        const totalThreadsInCurrentCategory = countUniqueThreads(emailsForCategory);
+        const totalPages = Math.ceil(emailsForCategory.length / CONFIG.PAGINATION.PAGE_SIZE);
         return (
           <>
             <EmailList
@@ -255,14 +256,14 @@ function App() {
               isFilteredView={isFilteredView}
               filteredEmails={filteredEmails}
               appliedFilters={appliedFilters}
-              totalEmails={totalEmailsInCurrentCategory}
+              totalEmails={totalThreadsInCurrentCategory}
             />
             {totalPages > 1 && (
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}
                 onPageChange={setCurrentPage}
-                totalEmails={totalEmailsInCurrentCategory}
+                totalEmails={emailsForCategory.length}
                 pageSize={CONFIG.PAGINATION.PAGE_SIZE}
               />
             )}

@@ -2,7 +2,11 @@
  * @file popup/src/services/emailService.js
  * @description Centralized service for interacting with email data,
  * primarily through the background script to fetch from the backend
- * and manage local storage caching.
+ * a    return response;
+  } catch (error) {
+    console.error("❌ AppMailia AI: Error sending SEND_EMAIL_REPLY message to background:", error);
+    return { success: false, error: error.message };
+  }nage local storage caching.
  */
 
 import { sendMessageToBackground } from '../utils/chromeMessaging';
@@ -30,10 +34,10 @@ export async function fetchStoredEmailsService() {
       rejected: result.rejectedEmails || [],
     };
 
-    console.log("✅ Intrackt: Fetched stored emails from local storage:", categorizedEmails);
+    console.log("✅ AppMailia AI: Fetched stored emails from local storage:", categorizedEmails);
     return categorizedEmails;
   } catch (error) {
-    console.error("❌ Intrackt: Error fetching stored emails from local storage:", error);
+    console.error("❌ AppMailia AI: Error fetching stored emails from local storage:", error);
     // Return empty categories on error to prevent UI breakage
     return { applied: [], interviewed: [], offers: [], rejected: [], irrelevant: [] };
   }
@@ -50,7 +54,7 @@ export async function fetchStoredEmailsService() {
 export async function fetchNewEmailsService(userEmail, userId, fullRefresh = false) {
   try {
     if (!userEmail || !userId) {
-      console.error('❌ Intrackt: User email or ID not provided for fetchNewEmailsService.');
+      console.error('❌ AppMailia AI: User email or ID not provided for fetchNewEmailsService.');
       return { success: false, error: 'User email or ID missing.' };
     }
 
@@ -65,18 +69,18 @@ export async function fetchNewEmailsService(userEmail, userId, fullRefresh = fal
     if (response.success) {
       // The background script is responsible for saving to chrome.storage.local.
       // We just return the response here, which should contain the updated data.
-      console.log("✅ Intrackt: New emails fetched and local storage updated by background.", response);
+      console.log("✅ AppMailia AI: New emails fetched and local storage updated by background.", response);
       return {
         success: true,
         categorizedEmails: response.categorizedEmails, // Updated emails from backend
         quota: response.quota // Quota data from backend
       };
     } else {
-      console.error("❌ Intrackt: Failed to retrieve new emails from background:", response.error);
+      console.error("❌ AppMailia AI: Failed to retrieve new emails from background:", response.error);
       return { success: false, error: response.error };
     }
   } catch (error) {
-    console.error("❌ Intrackt: Error sending FETCH_NEW_EMAILS message to background:", error);
+    console.error("❌ AppMailia AI: Error sending FETCH_NEW_EMAILS message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -130,7 +134,7 @@ export async function reportMisclassificationService(reportPayload) {
     });
     return response;
   } catch (error) {
-    console.error("❌ Intrackt: Error sending REPORT_MISCLASSIFICATION message to background:", error);
+    console.error("❌ AppMailia AI: Error sending REPORT_MISCLASSIFICATION message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -150,7 +154,7 @@ export async function undoMisclassificationService(undoData) {
     });
     return response;
   } catch (error) {
-    console.error("❌ Intrackt: Error sending UNDO_MISCLASSIFICATION message to background:", error);
+    console.error("❌ AppMailia AI: Error sending UNDO_MISCLASSIFICATION message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -172,7 +176,7 @@ export async function archiveEmailService(threadId, userEmail) {
     });
     return response;
   } catch (error) {
-    console.error("❌ Intrackt: Error sending ARCHIVE_EMAIL message to background:", error);
+    console.error("❌ AppMailia AI: Error sending ARCHIVE_EMAIL message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -194,7 +198,7 @@ export async function markEmailsAsReadService(category, userId) {
     });
     return response;
   } catch (error) {
-    console.error("❌ Intrackt: Error sending MARK_AS_READ message to background:", error);
+    console.error("❌ AppMailia AI: Error sending MARK_AS_READ message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -217,7 +221,7 @@ export async function markEmailAsReadService(emailId) {
     return response;
   } catch (error) {
     // Log the error and re-throw it so the UI layer can handle it (e.g., show a notification).
-    console.error("❌ Intrackt: Error in markEmailAsReadService:", error);
+    console.error("❌ AppMailia AI: Error in markEmailAsReadService:", error);
     throw error;
   }
 }

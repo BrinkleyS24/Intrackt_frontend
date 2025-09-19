@@ -1,6 +1,6 @@
 /**
  * @file background.js
- * @description This script handles background tasks for the Intrackt extension,
+ * @description This script handles background tasks for the AppMailia AI extension,
  * including email synchronization, user authentication, and misclassification reporting.
  * It operates as a service worker, listening for alarms and messages from the popup.
  */
@@ -95,12 +95,12 @@ async function apiFetch(endpoint, options = {}) {
     try {
       const idToken = await user.getIdToken(true); // Pass true to force refresh
       headers['Authorization'] = `Bearer ${idToken}`;
-      console.log(`✅ Intrackt: Attached fresh ID token for user: ${user.uid}`);
+      console.log(`✅ AppMailia AI: Attached fresh ID token for user: ${user.uid}`);
     } catch (error) {
-      console.error("❌ Intrackt: Failed to get fresh Firebase ID token:", error);
+      console.error("❌ AppMailia AI: Failed to get fresh Firebase ID token:", error);
       
       if (error.code === 'auth/user-token-expired' || error.code === 'auth/invalid-user-token') {
-        console.warn("Intrackt: Unrecoverable auth token error. Forcing user logout.");
+        console.warn("AppMailia AI: Unrecoverable auth token error. Forcing user logout.");
 
         await signOut(auth);
 
@@ -113,9 +113,9 @@ async function apiFetch(endpoint, options = {}) {
       }
     }
   } else if (user && user.isAnonymous) {
-    console.log("Intrackt: Anonymous user, skipping ID token attachment.");
+    console.log("AppMailia AI: Anonymous user, skipping ID token attachment.");
   } else {
-    console.log("Intrackt: No authenticated user, skipping ID token attachment.");
+    console.log("AppMailia AI: No authenticated user, skipping ID token attachment.");
   }
 
 
@@ -127,7 +127,7 @@ async function apiFetch(endpoint, options = {}) {
       url += (url.includes('?') ? '&' : '?') + qs;
     }
   }
-  console.log(`📡 Intrackt: Making API call to: ${url} with method: ${options.method || 'GET'}`);
+  console.log(`📡 AppMailia AI: Making API call to: ${url} with method: ${options.method || 'GET'}`);
 
   try {
     const response = await fetch(url, {
@@ -139,15 +139,15 @@ async function apiFetch(endpoint, options = {}) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`❌ Intrackt: API Error ${response.status} from ${url}:`, errorText);
+      console.error(`❌ AppMailia AI: API Error ${response.status} from ${url}:`, errorText);
       throw new Error(`Backend error: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
-    console.log(`✅ Intrackt: API call to ${url} successful. Response:`, data);
+    console.log(`✅ AppMailia AI: API call to ${url} successful. Response:`, data);
     return data;
   } catch (error) {
-    console.error(`❌ Intrackt: Network or parsing error for ${url}:`, error);
+    console.error(`❌ AppMailia AI: Network or parsing error for ${url}:`, error);
     throw new Error(`Network or server error: ${error.message}`);
   }
 }
@@ -173,7 +173,7 @@ async function refreshStoredEmailsCache(syncInProgress = undefined) {
       });
     }
   } catch (e) {
-    console.warn('Intrackt Background: refreshStoredEmailsCache failed:', e?.message);
+    console.warn('AppMailia AI Background: refreshStoredEmailsCache failed:', e?.message);
   }
 }
 
@@ -196,7 +196,7 @@ async function pollSyncStatusAndRefresh(maxSeconds = 60, intervalMs = 2000) {
         }
       }
     } catch (e) {
-      console.warn('Intrackt Background: sync-status polling error:', e?.message);
+      console.warn('AppMailia AI Background: sync-status polling error:', e?.message);
     }
     await new Promise(r => setTimeout(r, intervalMs));
   }
@@ -233,7 +233,7 @@ async function checkSyncWatchdog() {
       });
     }
   } catch (e) {
-    console.warn('Intrackt Background: watchdog check failed:', e?.message);
+    console.warn('AppMailia AI Background: watchdog check failed:', e?.message);
   }
 }
 
@@ -269,7 +269,7 @@ async function sendGmailReply(threadId, to, subject, body, userEmail, userId) { 
 async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
   // Ensure userEmail and userId are provided before making the API call
   if (!userEmail || !userId) {
-    console.error('❌ Intrackt Background: Cannot trigger email sync, userEmail or userId is missing.');
+    console.error('❌ AppMailia AI Background: Cannot trigger email sync, userEmail or userId is missing.');
     return { success: false, error: 'User email or ID missing for sync.' };
   }
 
@@ -310,7 +310,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         rejectedEmails: response.categorizedEmails.rejected || [],
         quotaData: response.quota || null // Also cache quota data
       });
-      console.log('✅ Intrackt Background: Emails and quota cached successfully in local storage.');
+      console.log('✅ AppMailia AI Background: Emails and quota cached successfully in local storage.');
 
       // Notify the popup that emails have been synced and cached
       chrome.runtime.sendMessage({
@@ -324,15 +324,15 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
 
       // If backend indicates a background sync is in progress, start polling without blocking
       if (response.sync?.inProgress) {
-        pollSyncStatusAndRefresh().catch(e => console.warn('Intrackt Background: polling failed:', e?.message));
+        pollSyncStatusAndRefresh().catch(e => console.warn('AppMailia AI Background: polling failed:', e?.message));
       }
       return { success: true, categorizedEmails: response.categorizedEmails, quota: response.quota };
     } else {
-      console.error('❌ Intrackt Background: Backend sync failed or returned no emails:', response.error);
+      console.error('❌ AppMailia AI Background: Backend sync failed or returned no emails:', response.error);
       return { success: false, error: response.error || "Backend sync failed or returned no emails." };
     }
   } catch (error) {
-    console.error('❌ Intrackt Background: Error during email sync:', error);
+    console.error('❌ AppMailia AI Background: Error during email sync:', error);
     return { success: false, error: error.message };
   } finally {
     syncInFlight = false;
@@ -343,7 +343,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
 // --- Chrome Runtime Message Listener (for popup/content script communication) ---
 // Registered immediately upon activation.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  console.log(`📩 Intrackt Background: Received message type: ${msg.type}`);
+  console.log(`📩 AppMailia AI Background: Received message type: ${msg.type}`);
 
   // Use an async IIFE to allow await inside the listener
   (async () => {
@@ -363,7 +363,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // For any message type *other than* LOGIN_GOOGLE_OAUTH, we expect user info to be present.
     // If not, we respond with an error.
     if (!isUserAuthenticated && !hasCachedUserInfo && msg.type !== 'LOGIN_GOOGLE_OAUTH') {
-      console.warn(`Intrackt Background: User not authenticated or user info not cached for message type: ${msg.type}.`);
+      console.warn(`AppMailia AI Background: User not authenticated or user info not cached for message type: ${msg.type}.`);
       sendResponse({ success: false, error: "User not authenticated or user info not available." });
       return;
     }
@@ -419,7 +419,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // Step 4: Sign in to Firebase with custom token
           const userCredential = await signInWithCustomToken(auth, tokenResponse.firebaseToken);
           const user = userCredential.user;
-          console.log('✅ Intrackt Background: Successfully signed in to Firebase with custom token.');
+          console.log('✅ AppMailia AI Background: Successfully signed in to Firebase with custom token.');
 
           await chrome.storage.local.set({
             userEmail: user.email,
@@ -433,7 +433,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse({ success: true, userEmail: user.email, userName: tokenResponse.userName, userPlan: tokenResponse.userPlan, userId: user.uid });
         } catch (error) {
-          console.error('❌ Intrackt Background: Error during Google OAuth login:', error);
+          console.error('❌ AppMailia AI Background: Error during Google OAuth login:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -441,11 +441,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'LOGOUT':
         try {
           await signOut(auth);
-          console.log("✅ Intrackt Background: User signed out from Firebase.");
+          console.log("✅ AppMailia AI Background: User signed out from Firebase.");
           // onAuthStateChanged listener will handle clearing storage.
           sendResponse({ success: true });
         } catch (error) {
-          console.error("❌ Intrackt Background: Error during logout:", error);
+          console.error("❌ AppMailia AI Background: Error during logout:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -463,7 +463,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ Intrackt Background: Error fetching user plan:', error);
+          console.error('❌ AppMailia AI Background: Error fetching user plan:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -480,14 +480,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse(response);
         } catch (error) {
-          console.error('❌ Intrackt Background: Error updating user plan:', error);
+          console.error('❌ AppMailia AI Background: Error updating user plan:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
 
       case 'FETCH_STORED_EMAILS':
         // This message is now primarily handled by the popup reading directly from chrome.storage.local.
-        console.warn("Intrackt Background: Received FETCH_STORED_EMAILS, but popup should read directly from local storage.");
+        console.warn("AppMailia AI Background: Received FETCH_STORED_EMAILS, but popup should read directly from local storage.");
         sendResponse({ success: true, message: "Handled by popup's direct storage access." });
         break;
 
@@ -497,7 +497,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const syncResult = await triggerEmailSync(currentUserEmail, currentUserId, msg.fullRefresh);
           sendResponse(syncResult); // Send back { success: true, categorizedEmails: {...}, quota: {...} }
         } catch (error) {
-          console.error("❌ Intrackt Background: Error fetching new emails:", error);
+          console.error("❌ AppMailia AI Background: Error fetching new emails:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -517,7 +517,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: response.error || 'Quota data not found in response.' });
           }
         } catch (error) {
-          console.error('❌ Intrackt Background: Error fetching quota data:', error);
+          console.error('❌ AppMailia AI Background: Error fetching quota data:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -535,7 +535,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: response.error || 'Follow-up suggestions not found.' });
           }
         } catch (error) {
-          console.error('❌ Intrackt Background: Error fetching follow-up suggestions:', error);
+          console.error('❌ AppMailia AI Background: Error fetching follow-up suggestions:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -551,7 +551,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: sendResult.error, needsReauth: sendResult.needsReauth });
           }
         } catch (error) {
-          console.error('❌ Intrackt Background: Error sending email reply:', error);
+          console.error('❌ AppMailia AI Background: Error sending email reply:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -567,7 +567,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse(response);
         } catch (error) {
-          console.error("❌ Intrackt Background: Error archiving email:", error);
+          console.error("❌ AppMailia AI Background: Error archiving email:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -602,7 +602,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse(response);
         } catch (error) {
-          console.error("❌ Intrackt Background: Error reporting misclassification:", error);
+          console.error("❌ AppMailia AI Background: Error reporting misclassification:", error);
           // Notify popup of network/communication error
           chrome.runtime.sendMessage({
             type: 'SHOW_NOTIFICATION',
@@ -643,7 +643,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse(response);
         } catch (error) {
-          console.error("❌ Intrackt Background: Error undoing misclassification:", error);
+          console.error("❌ AppMailia AI Background: Error undoing misclassification:", error);
           // Notify popup of network/communication error
           chrome.runtime.sendMessage({
             type: 'SHOW_NOTIFICATION',
@@ -675,7 +675,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(response);
 
         } catch (error) {
-          console.error("❌ Intrackt Background: Error in MARK_SINGLE_EMAIL_AS_READ:", error);
+          console.error("❌ AppMailia AI Background: Error in MARK_SINGLE_EMAIL_AS_READ:", error);
           const message = error?.message || 'Unknown error';
           // Provide a clearer signal for auth issues so UI can prompt login
           if (message.includes('401') || message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('session expired')) {
@@ -703,7 +703,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               body: { category: capitalizeFirst(category) }
             });
           } catch (persistErr) {
-            console.warn('Intrackt Background: Backend mark-as-read-category failed, aborting local update:', persistErr?.message);
+            console.warn('AppMailia AI Background: Backend mark-as-read-category failed, aborting local update:', persistErr?.message);
             sendResponse({ success: false, error: persistErr.message });
             return;
           }
@@ -721,17 +721,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           // Save updated emails back to local storage
           await chrome.storage.local.set({ [`${category}Emails`]: updatedCategoryEmails });
-          console.log(`✅ Intrackt Background: Marked emails in category '${category}' as read in local storage.`);
+          console.log(`✅ AppMailia AI Background: Marked emails in category '${category}' as read in local storage.`);
 
           sendResponse({ success: true, message: `Emails in ${category} marked as read.` });
         } catch (error) {
-          console.error("❌ Intrackt Background: Error marking emails as read:", error);
+          console.error("❌ AppMailia AI Background: Error marking emails as read:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
 
       default:
-        console.warn('Intrackt: Unhandled message type:', msg.type);
+        console.warn('AppMailia AI: Unhandled message type:', msg.type);
         sendResponse({ success: false, error: 'Unhandled message type.' });
     }
   })(); // End of async IIFE
@@ -744,13 +744,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // --- Configure Firebase Auth Persistence ---
 setPersistence(auth, indexedDBLocalPersistence)
   .then(() => {
-    console.log("✅ Intrackt Background: Firebase Auth persistence set to IndexedDB.");
+    console.log("✅ AppMailia AI Background: Firebase Auth persistence set to IndexedDB.");
     onAuthStateChanged(auth, async (user) => {
       // Resolve the authReadyPromise once the initial auth state is determined
       authReadyResolve();
 
       if (user) {
-        console.log("✅ Intrackt Background: Auth State Changed - User logged in:", user.email, "UID:", user.uid);
+        console.log("✅ AppMailia AI Background: Auth State Changed - User logged in:", user.email, "UID:", user.uid);
         // Ensure userEmail and userId are immediately available in local storage
         await chrome.storage.local.set({
           userEmail: user.email,
@@ -767,12 +767,12 @@ setPersistence(auth, indexedDBLocalPersistence)
             });
             if (response.success) {
               await chrome.storage.local.set({ userPlan: response.plan });
-              console.log("✅ Intrackt Background: User plan fetched and stored:", response.plan);
+              console.log("✅ AppMailia AI Background: User plan fetched and stored:", response.plan);
             } else {
-              console.error("❌ Intrackt Background: Failed to fetch user plan during auth state change:", response.error);
+              console.error("❌ AppMailia AI Background: Failed to fetch user plan during auth state change:", response.error);
             }
           } catch (error) {
-            console.error("❌ Intrackt Background: Network/communication error fetching user plan during auth state change:", error);
+            console.error("❌ AppMailia AI Background: Network/communication error fetching user plan during auth state change:", error);
           }
           // After a user logs in (or re-authenticates), decide whether to do a full refresh
           // If last sync is stale (> 24h) or unknown, force full refresh to catch up
@@ -789,10 +789,10 @@ setPersistence(auth, indexedDBLocalPersistence)
           }
           await triggerEmailSync(user.email, user.uid, shouldFull);
         } else {
-          console.log("Intrackt Background: Anonymous user detected. Not fetching plan or syncing emails.");
+          console.log("AppMailia AI Background: Anonymous user detected. Not fetching plan or syncing emails.");
         }
       } else {
-        console.log("✅ Intrackt Background: Auth State Changed - User logged out.");
+        console.log("✅ AppMailia AI Background: Auth State Changed - User logged out.");
         await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']); // Clear all cached data on logout
       }
       // Notify the popup that auth state is ready (after all initial processing)
@@ -800,21 +800,21 @@ setPersistence(auth, indexedDBLocalPersistence)
     });
   })
   .catch((error) => {
-    console.error("❌ Intrackt Background: Error setting Firebase Auth persistence:", error);
+    console.error("❌ AppMailia AI Background: Error setting Firebase Auth persistence:", error);
     // Even if persistence fails, still listen for auth state changes
     onAuthStateChanged(auth, async (user) => {
       // Resolve the authReadyPromise even if persistence setup failed
       authReadyResolve();
 
       if (user) {
-        console.log("Intrackt Background: Auth State Changed (without persistence) - User logged in:", user.email);
+        console.log("AppMailia AI Background: Auth State Changed (without persistence) - User logged in:", user.email);
         await chrome.storage.local.set({ userEmail: user.email, userName: user.displayName || user.email, userId: user.uid });
         // Still try to sync emails even if persistence failed
         if (!user.isAnonymous) {
           await triggerEmailSync(user.email, user.uid, false);
         }
       } else {
-        console.log("Intrackt Background: Auth State Changed (without persistence) - User logged out.");
+        console.log("AppMailia AI Background: Auth State Changed (without persistence) - User logged out.");
         await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']);
       }
       chrome.runtime.sendMessage({ type: 'AUTH_READY', success: true, loggedOut: !user });
@@ -828,7 +828,7 @@ chrome.alarms.create('syncWatchdog', { periodInMinutes: WATCHDOG_INTERVAL_MIN })
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'syncEmails') {
-    console.log('⏰ Intrackt: Syncing emails via alarm...');
+    console.log('⏰ AppMailia AI: Syncing emails via alarm...');
     const user = auth.currentUser;
     if (user && !user.isAnonymous) {
       try {
@@ -836,14 +836,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         if (result.userEmail && result.userId) {
           await triggerEmailSync(result.userEmail, result.userId, false); // No full refresh on alarm
         } else {
-          console.warn('Intrackt: User not logged in or user info missing for alarm sync.');
+          console.warn('AppMailia AI: User not logged in or user info missing for alarm sync.');
         }
       } catch (error) {
-        console.error('❌ Intrackt: Error during alarm-triggered email sync:', error);
+        console.error('❌ AppMailia AI: Error during alarm-triggered email sync:', error);
         chrome.runtime.sendMessage({ type: 'EMAILS_SYNCED', success: false, error: error.message });
       }
     } else {
-      console.log('Intrackt: Skipping email sync for unauthenticated or anonymous user.');
+      console.log('AppMailia AI: Skipping email sync for unauthenticated or anonymous user.');
     }
   } else if (alarm.name === 'syncWatchdog') {
     // Periodic stuck-lock check

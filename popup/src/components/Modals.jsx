@@ -74,7 +74,7 @@ function Modals({
           <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl w-full max-w-md p-6 relative">
             <button
               onClick={onCloseMisclassificationModal}
-              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 dark:text-zinc-400 dark:hover:text-zinc-200"
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-zinc-400 dark:hover:text-zinc-200 z-10 p-1"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
@@ -138,7 +138,7 @@ function Modals({
           <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl w-full max-w-md p-6 relative">
             <button
               onClick={onClosePremiumModal}
-              className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 dark:text-zinc-400 dark:hover:text-zinc-200"
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-zinc-400 dark:hover:text-zinc-200 z-10 p-1"
               aria-label="Close"
             >
               <X className="h-5 w-5" />

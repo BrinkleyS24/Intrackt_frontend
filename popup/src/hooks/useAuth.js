@@ -27,9 +27,9 @@ export function useAuth() {
   // This is now the primary source of truth for the popup's UI state.
   const loadCurrentUserStateFromStorage = useCallback(async () => {
     try {
-      console.log("✅ Intrackt: Loading user state from storage...");
+      console.log("✅ AppMailia AI: Loading user state from storage...");
       const result = await chrome.storage.local.get(['userEmail', 'userName', 'userId', 'userPlan']); // Added userId, userPlan
-      console.log("✅ Intrackt: Loaded user state from storage:", result);
+      console.log("✅ AppMailia AI: Loaded user state from storage:", result);
 
       setUserEmail(result.userEmail || null);
       setUserName(result.userName || null);
@@ -40,7 +40,7 @@ export function useAuth() {
       setIsAuthReady(true);
       setLoadingAuth(false);
     } catch (error) {
-      console.error("❌ Intrackt: Error loading user state from storage:", error);
+      console.error("❌ AppMailia AI: Error loading user state from storage:", error);
       setIsAuthReady(true); // Still mark as ready even on error to unblock UI
       setLoadingAuth(false);
     }
@@ -49,7 +49,7 @@ export function useAuth() {
   // Function to fetch quota data from the background script
   const fetchQuotaData = useCallback(async () => {
     if (!userEmail || !userId) {
-      console.warn("Intrackt: Cannot fetch quota data - user not logged in or userId missing.");
+      console.warn("AppMailia AI: Cannot fetch quota data - user not logged in or userId missing.");
       setQuotaData(null); // Clear quota if user is not logged in
       return;
     }
@@ -64,13 +64,13 @@ export function useAuth() {
 
       if (response.success && response.quota) {
         setQuotaData(response.quota);
-        console.log("✅ Intrackt: Quota data fetched:", response.quota);
+        console.log("✅ AppMailia AI: Quota data fetched:", response.quota);
       } else {
-        console.error("❌ Intrackt: Failed to fetch quota data:", response.error);
+        console.error("❌ AppMailia AI: Failed to fetch quota data:", response.error);
         setQuotaData(null); // Clear quota on error
       }
     } catch (error) {
-      console.error("❌ Intrackt: Error fetching quota data:", error);
+      console.error("❌ AppMailia AI: Error fetching quota data:", error);
       setQuotaData(null); // Clear quota on error
     }
   }, [userEmail, userId]); // Depend on userEmail and userId
@@ -128,12 +128,12 @@ export function useAuth() {
         console.log("DEBUG useAuth: Login message sent successfully. Background script will update storage.");
         // The chrome.storage.onChanged listener will pick up updates from background script
       } else {
-        console.error("❌ Intrackt: Error during Google OAuth login process:", response.error);
+        console.error("❌ AppMailia AI: Error during Google OAuth login process:", response.error);
         showNotification(`Login failed: ${response.error}`, "error");
         setLoadingAuth(false); // Stop loading on error
       }
     } catch (error) {
-      console.error("❌ Intrackt: Error during Google OAuth login process:", error);
+      console.error("❌ AppMailia AI: Error during Google OAuth login process:", error);
       showNotification(`Login failed: ${error.message || "Network error during login."}`, "error");
       setLoadingAuth(false); // Stop loading on error
     }
@@ -158,7 +158,7 @@ export function useAuth() {
         showNotification("Logged out successfully!", "info");
         // State will be cleared by chrome.storage.onChanged listener
       } catch (error) {
-        console.error("❌ Intrackt: Error during logout:", error);
+        console.error("❌ AppMailia AI: Error during logout:", error);
         showNotification(`Logout failed: ${error.message}`, "error");
       }
     }, []),

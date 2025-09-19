@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Intrackt - Job Tracker",
+  "name": "AppMailia AI - Job Tracker",
   "version": "1.1.0",
   "description": "Effortlessly track your job applications directly from Gmail.",
   "icons": {
@@ -41,6 +41,6 @@
     "type": "module"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://www.googleapis.com https://accounts.google.com https://gmail-tracker-backend-215378038667.us-central1.run.app https://securetoken.googleapis.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://www.googleapis.com https://accounts.google.com https://gmail-tracker-backend-215378038667.us-central1.run.app https://securetoken.googleapis.com https://identitytoolkit.googleapis.com http://localhost:3000;"
   }
 }
