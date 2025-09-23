@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Crown, 
@@ -69,6 +70,7 @@ export function SubscriptionManager({ onBack, userPlan }) {
   const [cancelLoading, setCancelLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   useEffect(() => {
     loadSubscriptionData();
@@ -81,8 +83,24 @@ export function SubscriptionManager({ onBack, userPlan }) {
     try {
       if (window.subscriptionService) {
         const response = await window.subscriptionService.getSubscriptionStatus();
+        
         if (response.success) {
           setSubscriptionData(response.subscription);
+          
+          // Sync local storage with actual subscription status
+          const actualPlan = response.subscription.plan || 'free';
+          const actualStatus = response.subscription.status || 'inactive';
+          
+          // Update local storage to match backend reality
+          await chrome.storage.local.set({ 
+            userPlan: actualPlan,
+            subscriptionStatus: actualStatus
+          });
+          
+          // Update parent component's state if user plan changed
+          if (userPlan !== actualPlan) {
+            console.log(`Subscription plan corrected: ${userPlan} → ${actualPlan}`);
+          }
         } else {
           setError(response.error || 'Failed to load subscription data');
         }
@@ -119,20 +137,52 @@ export function SubscriptionManager({ onBack, userPlan }) {
     }
   };
 
-  const handleUpdatePaymentMethod = async () => {
+  const handleUpdatePaymentMethod = () => {
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentMethodConfirm = async () => {
     try {
-      if (window.subscriptionService) {
-        await window.subscriptionService.openManageSubscription();
+      setLoading(true);
+      setError(null);
+
+      // Create a setup intent for payment method update
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: 'CREATE_SETUP_INTENT' }, resolve);
+      });
+
+      if (response.success) {
+        // Open Stripe-hosted payment method update page
+        const updateUrl = `https://checkout.stripe.com/pay/${response.client_secret}`;
+        chrome.tabs.create({ url: updateUrl });
+        setShowPaymentModal(false);
+      } else {
+        setError(response.error || 'Failed to create payment update session');
       }
-    } catch (error) {
-      setError('Failed to open payment method update');
-      console.error('Error opening payment method update:', error);
+    } catch (err) {
+      setError(err.message || 'Failed to update payment method');
+    } finally {
+      setLoading(false);
     }
   };
 
   const formatDate = (timestamp) => {
     if (!timestamp) return 'N/A';
-    return new Date(timestamp * 1000).toLocaleDateString('en-US', {
+    
+    // Handle both Date objects and timestamp numbers
+    let date;
+    if (timestamp instanceof Date) {
+      date = timestamp;
+    } else if (typeof timestamp === 'string') {
+      date = new Date(timestamp);
+    } else if (typeof timestamp === 'number') {
+      // Unix timestamp (seconds)
+      date = new Date(timestamp * 1000);
+    } else {
+      return 'N/A';
+    }
+    
+    return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -196,7 +246,7 @@ export function SubscriptionManager({ onBack, userPlan }) {
     );
   }
 
-  if (userPlan !== 'premium' || !subscriptionData) {
+  if (!subscriptionData || subscriptionData.plan !== 'premium' || subscriptionData.status !== 'active') {
     return (
       <div className="p-6 space-y-4">
         <div className="flex items-center space-x-3">
@@ -291,7 +341,7 @@ export function SubscriptionManager({ onBack, userPlan }) {
           )}
           
           <Button variant="outline" size="sm" onClick={handleUpdatePaymentMethod}>
-            <ExternalLink className="h-4 w-4 mr-2" />
+            <CreditCard className="h-4 w-4 mr-2" />
             Update Payment Method
           </Button>
         </div>
@@ -305,8 +355,23 @@ export function SubscriptionManager({ onBack, userPlan }) {
           <div className="flex justify-between items-center">
             <span className="text-sm font-medium">Plan Price</span>
             <span className="text-sm">
-              ${subscriptionData.plan_amount ? (subscriptionData.plan_amount / 100).toFixed(2) : 'N/A'} / 
-              {subscriptionData.interval || 'month'}
+              {(() => {
+                // Try different possible field names for the amount
+                const amount = subscriptionData.plan_amount || 
+                              subscriptionData.amount || 
+                              subscriptionData.price || 
+                              subscriptionData.cost;
+                
+                if (amount && typeof amount === 'number') {
+                  return `$${(amount / 100).toFixed(2)}`;
+                } else if (amount && typeof amount === 'string') {
+                  // Handle if it's already a string like "$9.99"
+                  return amount.startsWith('$') ? amount : `$${amount}`;
+                }
+                
+                // Default fallback for premium plan
+                return '$9.99';
+              })()} / {subscriptionData.interval || subscriptionData.billing_cycle || 'month'}
             </span>
           </div>
           
@@ -322,11 +387,21 @@ export function SubscriptionManager({ onBack, userPlan }) {
 
       {/* Cancel Confirmation Modal */}
       {showCancelConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <Card className="max-w-md mx-4">
-            <div className="flex items-center space-x-3 mb-4">
-              <AlertCircle className="h-6 w-6 text-red-600" />
-              <h3 className="text-lg font-semibold">Cancel Subscription</h3>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-md w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <AlertCircle className="h-6 w-6 text-red-600" />
+                <h3 className="text-lg font-semibold">Cancel Subscription</h3>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setShowCancelConfirm(false)}
+                disabled={cancelLoading}
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
             
             <p className="text-gray-600 dark:text-gray-400 mb-6">
@@ -353,6 +428,91 @@ export function SubscriptionManager({ onBack, userPlan }) {
                 disabled={cancelLoading}
               >
                 Keep Subscription
+              </Button>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Payment Method Update Modal */}
+      {showPaymentModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-md w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-3">
+                <CreditCard className="h-6 w-6 text-blue-600" />
+                <h3 className="text-lg font-semibold">Update Payment Method</h3>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setShowPaymentModal(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <div className="flex items-center space-x-2 mb-2">
+                  <AlertCircle className="h-4 w-4 text-blue-600" />
+                  <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                    Secure Payment Method Updates
+                  </h4>
+                </div>
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  To update your payment method, you'll be redirected to a secure Stripe page. 
+                  This ensures your financial information remains protected and encrypted.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">Current Payment Method</h4>
+                <div className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                  <CreditCard className="h-5 w-5 text-gray-400" />
+                  <div>
+                    <p className="text-sm font-medium">•••• •••• •••• {subscriptionData?.last4 || '••••'}</p>
+                    <p className="text-xs text-gray-500">
+                      {subscriptionData?.card_brand ? subscriptionData.card_brand.toUpperCase() : 'Credit Card'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium">Update Options</h4>
+                <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                  <p>• Contact our support team for assistance</p>
+                  <p>• Wait for your next billing cycle to update</p>
+                  <p>• Cancel and re-subscribe with a new payment method</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex space-x-3 mt-6">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowPaymentModal(false)}
+                className="flex-1"
+              >
+                Close
+              </Button>
+              <Button
+                onClick={handlePaymentMethodConfirm}
+                disabled={loading}
+                className="flex-1"
+              >
+                {loading ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Opening...
+                  </>
+                ) : (
+                  <>
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Update Payment Method
+                  </>
+                )}
               </Button>
             </div>
           </Card>

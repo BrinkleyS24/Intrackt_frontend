@@ -353,11 +353,11 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-100 dark:bg-zinc-900 text-gray-900 dark:text-white font-inter">
+    <div className="flex h-[600px] max-h-[600px] overflow-hidden bg-gray-100 dark:bg-zinc-900 text-gray-900 dark:text-white font-inter">
       {isLoadingApp && <LoadingOverlay message="Loading data..." />}
       <Notification />
 
-  <div className="w-64 h-screen flex flex-col border-r border-gray-200 dark:border-zinc-700">
+  <div className="w-64 h-[600px] flex flex-col border-r border-gray-200 dark:border-zinc-700">
         <Sidebar
           selectedCategory={selectedCategory}
           onCategoryChange={handleCategoryChange}

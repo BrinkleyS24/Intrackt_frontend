@@ -81,8 +81,8 @@ export function Sidebar({
         </div>
       </div>
       
-  {/* Navigation Section - Scrolls if needed */}
-  <div className="flex-1 py-2 overflow-y-auto">
+  {/* Navigation Section - Compact spacing */}
+  <div className="py-2 overflow-y-auto">
         <div className="px-3">
           <nav className="space-y-2">
             {menuItems.map((item) => (

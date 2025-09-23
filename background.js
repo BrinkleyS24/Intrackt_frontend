@@ -419,57 +419,6 @@ async function monitorPaymentFlow(tabId, userEmail, userId) {
 }
 
 /**
- * Monitor a Stripe portal tab for changes and refresh subscription status
- * @param {number} tabId - The ID of the portal tab to monitor
- * @param {string} userEmail - User's email for status checking
- * @param {string} userId - User's ID for status checking
- * @returns {Promise<object>} Portal result with updated subscription status
- */
-async function monitorPortalFlow(tabId, userEmail, userId) {
-  return new Promise((resolve) => {
-    let pollInterval;
-    let timeoutId;
-    
-    const cleanup = () => {
-      if (pollInterval) clearInterval(pollInterval);
-      if (timeoutId) clearTimeout(timeoutId);
-      chrome.tabs.onRemoved.removeListener(tabRemovedListener);
-    };
-
-    const tabRemovedListener = (removedTabId) => {
-      if (removedTabId === tabId) {
-        console.log('🔧 AppMailia AI Background: Portal tab was closed');
-        cleanup();
-        // Refresh subscription status when portal is closed
-        refreshSubscriptionStatus(userEmail, userId).then(() => {
-          resolve({ success: true, portalClosed: true, subscriptionUpdated: true });
-        });
-      }
-    };
-
-    // Listen for tab closure
-    chrome.tabs.onRemoved.addListener(tabRemovedListener);
-
-    // Poll for subscription status changes while portal is open
-    pollInterval = setInterval(async () => {
-      try {
-        await refreshSubscriptionStatus(userEmail, userId);
-      } catch (error) {
-        console.warn('⚠️ AppMailia AI Background: Error refreshing subscription status during portal flow:', error);
-      }
-    }, 5000); // Check every 5 seconds
-
-    // Timeout after 30 minutes (portal sessions can be longer)
-    timeoutId = setTimeout(() => {
-      console.log('⏰ AppMailia AI Background: Portal flow timed out after 30 minutes');
-      cleanup();
-      chrome.tabs.remove(tabId).catch(() => {}); // Tab might already be closed
-      resolve({ success: true, portalClosed: true, subscriptionUpdated: true });
-    }, 1800000);
-  });
-}
-
-/**
  * Refresh subscription status and update local storage
  * @param {string} userEmail - User's email
  * @param {string} userId - User's ID
@@ -1016,24 +965,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'CREATE_PORTAL_SESSION':
+      case 'CREATE_SETUP_INTENT':
         try {
-          // Create Stripe customer portal session using authenticated endpoint
-          const response = await apiFetch('/api/subscriptions/create-portal-session', {
+          // Create setup intent for payment method update
+          const response = await apiFetch('/api/subscriptions/create-setup-intent', {
             method: 'POST'
           });
           
           if (response.success) {
-            console.log('✅ AppMailia AI Background: Portal session created:', response.url);
-            sendResponse({ success: true, url: response.url });
+            console.log('✅ AppMailia AI Background: Setup intent created:', response.client_secret);
+            sendResponse({ success: true, client_secret: response.client_secret });
           } else {
-            console.error('❌ AppMailia AI Background: Failed to create portal session:', response.error);
+            console.error('❌ AppMailia AI Background: Failed to create setup intent:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error creating portal session:', error);
+          console.error('❌ AppMailia AI Background: Error creating setup intent:', error);
           sendResponse({ success: false, error: error.message });
         }
+        break;
+
+      case 'CREATE_PORTAL_SESSION':
+        // Portal functionality removed - using fully in-extension approach
+        console.log('⚠️ AppMailia AI Background: Portal session creation removed - using in-extension approach');
+        sendResponse({ success: false, error: 'Portal functionality removed for fully in-extension approach' });
         break;
 
       case 'OPEN_PAYMENT_WINDOW':
@@ -1057,23 +1012,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
 
       case 'OPEN_PORTAL_WINDOW':
-        try {
-          const { url } = msg;
-          console.log('🔧 AppMailia AI Background: Opening portal window:', url);
-          
-          // Open Stripe portal in a new tab
-          const tab = await chrome.tabs.create({
-            url: url,
-            active: true
-          });
-
-          // Monitor portal for changes and refresh subscription status
-          const portalResult = await monitorPortalFlow(tab.id, currentUserEmail, currentUserId);
-          sendResponse(portalResult);
-        } catch (error) {
-          console.error('❌ AppMailia AI Background: Error opening portal window:', error);
-          sendResponse({ success: false, error: error.message });
-        }
+        // Portal functionality removed - using fully in-extension approach
+        console.log('⚠️ AppMailia AI Background: Portal window opening removed - using in-extension approach');
+        sendResponse({ success: false, error: 'Portal functionality removed for fully in-extension approach' });
         break;
 
       case 'CANCEL_SUBSCRIPTION':

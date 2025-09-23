@@ -67,45 +67,8 @@ const subscriptionService = {
     });
   },
 
-  async createPortalSession(returnUrl) {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({
-        type: 'CREATE_PORTAL_SESSION', 
-        returnUrl
-      }, (response) => {
-        if (response?.success) {
-          resolve(response);
-        } else {
-          reject(new Error(response?.error || 'Failed to create portal session'));
-        }
-      });
-    });
-  },
-
-  async openManageSubscription(returnUrl = null) {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage({
-        type: 'CREATE_PORTAL_SESSION',
-        returnUrl
-      }, (response) => {
-        if (response?.success && response.url) {
-          // Request background script to open and monitor the portal
-          chrome.runtime.sendMessage({
-            type: 'OPEN_PORTAL_WINDOW',
-            url: response.url
-          }, (portalResult) => {
-            if (portalResult?.success) {
-              resolve(portalResult);
-            } else {
-              reject(new Error(portalResult?.error || 'Portal window failed'));
-            }
-          });
-        } else {
-          reject(new Error(response?.error || 'Failed to create portal session'));
-        }
-      });
-    });
-  }
+  // Portal functionality removed - using fully in-extension approach
+  // Payment method updates will be implemented using Stripe Elements in future version
 };
 
 // Make available globally

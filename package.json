@@ -5,7 +5,7 @@
   "scripts": {
     "start": "parcel watch popup/public/index.html --dist-dir popup/dist --public-url ./",
     "clean": "powershell -Command \"if (Test-Path 'popup/dist') { Remove-Item -Recurse -Force 'popup/dist' }\"",
-    "build": "npm run clean && parcel build popup/public/index.html background.js --dist-dir popup/dist --no-source-maps --public-url ./ && powershell -Command \"Copy-Item manifest.json popup/dist/; if (Test-Path 'icons') { Copy-Item -Recurse icons popup/dist/ }\"",
+    "build": "npm run clean && parcel build popup/public/index.html background.js --dist-dir popup/dist --no-source-maps --public-url ./ && powershell -Command \"Copy-Item manifest.json popup/dist/; if (Test-Path 'icons') { Copy-Item -Recurse icons popup/dist/ }; (Get-Content popup/dist/popup/public/index.html) -replace 'href=public\\.', 'href=../../public.' -replace 'src=public\\.', 'src=../../public.' | Set-Content popup/dist/popup/public/index.html\"",
     "package": "npm run build && powershell -Command Compress-Archive -Path manifest.json,icons,popup/dist,background.js -DestinationPath intrackt-extension-v$env:EXT_VERSION.zip"
   },
   "keywords": [],
