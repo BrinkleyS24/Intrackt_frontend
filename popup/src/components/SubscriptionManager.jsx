@@ -68,6 +68,7 @@ export function SubscriptionManager({ onBack, userPlan }) {
   const [subscriptionData, setSubscriptionData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [resumeLoading, setResumeLoading] = useState(false);
   const [error, setError] = useState(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -137,6 +138,27 @@ export function SubscriptionManager({ onBack, userPlan }) {
     }
   };
 
+  const handleResumeSubscription = async () => {
+    setResumeLoading(true);
+    setError(null);
+    
+    try {
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ type: 'RESUME_SUBSCRIPTION' }, resolve);
+      });
+      
+      if (response.success) {
+        await loadSubscriptionData(); // Refresh data
+      } else {
+        throw new Error(response.error || 'Failed to resume subscription');
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to resume subscription');
+    } finally {
+      setResumeLoading(false);
+    }
+  };
+
   const handleUpdatePaymentMethod = () => {
     setShowPaymentModal(true);
   };
@@ -152,9 +174,9 @@ export function SubscriptionManager({ onBack, userPlan }) {
       });
 
       if (response.success) {
-        // Open Stripe-hosted payment method update page
-        const updateUrl = `https://checkout.stripe.com/pay/${response.client_secret}`;
-        chrome.tabs.create({ url: updateUrl });
+        // For now, show user instructions to contact support
+        // TODO: Implement Stripe Elements integration
+        setError('Payment method updates are currently being implemented. Please contact support for assistance.');
         setShowPaymentModal(false);
       } else {
         setError(response.error || 'Failed to create payment update session');
@@ -339,6 +361,22 @@ export function SubscriptionManager({ onBack, userPlan }) {
               Cancel Subscription
             </Button>
           )}
+
+          {subscriptionData.cancel_at_period_end && subscriptionData.status === 'active' && (
+            <Button 
+              variant="default" 
+              size="sm"
+              onClick={handleResumeSubscription}
+              disabled={resumeLoading}
+            >
+              {resumeLoading ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              {resumeLoading ? 'Resuming...' : 'Resume Subscription'}
+            </Button>
+          )}
           
           <Button variant="outline" size="sm" onClick={handleUpdatePaymentMethod}>
             <CreditCard className="h-4 w-4 mr-2" />
@@ -457,12 +495,12 @@ export function SubscriptionManager({ onBack, userPlan }) {
                 <div className="flex items-center space-x-2 mb-2">
                   <AlertCircle className="h-4 w-4 text-blue-600" />
                   <h4 className="text-sm font-medium text-blue-800 dark:text-blue-200">
-                    Secure Payment Method Updates
+                    Payment Method Updates
                   </h4>
                 </div>
                 <p className="text-sm text-blue-700 dark:text-blue-300">
-                  To update your payment method, you'll be redirected to a secure Stripe page. 
-                  This ensures your financial information remains protected and encrypted.
+                  Payment method updates are currently being implemented. 
+                  Your financial information will be handled securely within the extension.
                 </p>
               </div>
 
@@ -480,10 +518,10 @@ export function SubscriptionManager({ onBack, userPlan }) {
               </div>
 
               <div className="space-y-3">
-                <h4 className="text-sm font-medium">Update Options</h4>
+                <h4 className="text-sm font-medium">Available Options</h4>
                 <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
-                  <p>• Contact our support team for assistance</p>
-                  <p>• Wait for your next billing cycle to update</p>
+                  <p>• Contact our support team for immediate assistance</p>
+                  <p>• In-extension payment updates coming soon</p>
                   <p>• Cancel and re-subscribe with a new payment method</p>
                 </div>
               </div>
@@ -505,12 +543,12 @@ export function SubscriptionManager({ onBack, userPlan }) {
                 {loading ? (
                   <>
                     <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    Opening...
+                    Processing...
                   </>
                 ) : (
                   <>
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Update Payment Method
+                    <CreditCard className="h-4 w-4 mr-2" />
+                    Contact Support
                   </>
                 )}
               </Button>

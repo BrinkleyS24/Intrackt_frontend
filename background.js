@@ -1038,6 +1038,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
+      case 'RESUME_SUBSCRIPTION':
+        try {
+          console.log('🔄 AppMailia AI Background: Resuming subscription');
+          
+          const response = await apiFetch('/api/subscriptions/resume', {
+            method: 'POST'
+          });
+          
+          if (response.success) {
+            console.log('✅ AppMailia AI Background: Subscription resumed successfully');
+            sendResponse({ success: true, subscription: response.subscription });
+          } else {
+            console.error('❌ AppMailia AI Background: Failed to resume subscription:', response.error);
+            sendResponse({ success: false, error: response.error });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error resuming subscription:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
       default:
         console.warn('AppMailia AI: Unhandled message type:', msg.type);
         sendResponse({ success: false, error: 'Unhandled message type.' });
