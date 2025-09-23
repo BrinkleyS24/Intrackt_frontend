@@ -1,5 +1,5 @@
-import React from 'react';
-import { Crown, AlertTriangle, Mail } from "lucide-react";
+import React, { useState, useEffect } from 'react';
+import { Crown, AlertTriangle, Mail, Settings, ExternalLink } from "lucide-react";
 import { useEmailQuota } from '../hooks/useEmailQuota';
 import { cn } from '../utils/cn';
 
@@ -22,15 +22,117 @@ const Button = ({ children, size, ...props }) => {
     return <button className={cn("inline-flex items-center justify-center rounded-md font-medium", sizeClasses)} {...props}>{children}</button>;
 };
 
-export function EmailQuotaIndicator({ userPlan, quotaData, onUpgradeClick }) {
+export function EmailQuotaIndicator({ userPlan, quotaData, onUpgradeClick, onManageSubscription }) {
   const { quota, getWarningMessage, getProgressColor, percentage } = useEmailQuota(quotaData, userPlan);
+  const [subscriptionStatus, setSubscriptionStatus] = useState(null);
+  const [loadingStatus, setLoadingStatus] = useState(false);
 
-  // If the user is premium, show a premium badge instead of the quota bar
+  // Load subscription status for premium users
+  useEffect(() => {
+    if (userPlan === 'premium' && window.subscriptionService) {
+      loadSubscriptionStatus();
+    }
+  }, [userPlan]);
+
+  const loadSubscriptionStatus = async () => {
+    setLoadingStatus(true);
+    try {
+      const status = await window.subscriptionService.getSubscriptionStatus();
+      setSubscriptionStatus(status);
+    } catch (error) {
+      console.error('Error loading subscription status:', error);
+    } finally {
+      setLoadingStatus(false);
+    }
+  };
+
+  const handleManageSubscription = () => {
+    if (onManageSubscription) {
+      onManageSubscription();
+    }
+  };
+
+  // If the user is premium, show a premium badge with management options
   if (userPlan === 'premium') {
     return (
-      <div className="p-3 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-lg shadow-md flex items-center justify-center space-x-2">
-        <Crown className="h-5 w-5" />
-        <span className="font-semibold text-sm">Premium User</span>
+      <div className="space-y-2">
+        <div className="p-3 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-lg shadow-md">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Crown className="h-5 w-5" />
+              <span className="font-semibold text-sm">Premium User</span>
+            </div>
+          </div>
+          
+          {loadingStatus && (
+            <div className="mt-2 text-xs text-purple-100 animate-pulse">
+              Loading subscription details...
+            </div>
+          )}
+          
+          {subscriptionStatus && !loadingStatus && (
+            <div className="mt-2 space-y-1 text-xs text-purple-100">
+              {subscriptionStatus.subscription && (
+                <>
+                  <div className="flex justify-between">
+                    <span>Status:</span>
+                    <span className="capitalize font-medium">
+                      {subscriptionStatus.subscription.status}
+                      {subscriptionStatus.subscription.status === 'canceled' && 
+                       subscriptionStatus.subscription.current_period_end && 
+                       new Date(subscriptionStatus.subscription.current_period_end) > new Date() && 
+                       " (Active until end of period)"}
+                    </span>
+                  </div>
+                  
+                  {subscriptionStatus.subscription.current_period_end && (
+                    <div className="flex justify-between">
+                      <span>
+                        {subscriptionStatus.subscription.status === 'canceled' ? 'Expires:' : 'Renews:'}
+                      </span>
+                      <span className="font-medium">
+                        {new Date(subscriptionStatus.subscription.current_period_end).toLocaleDateString()}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {subscriptionStatus.subscription.items?.data?.[0]?.price && (
+                    <div className="flex justify-between">
+                      <span>Plan:</span>
+                      <span className="font-medium">
+                        ${(subscriptionStatus.subscription.items.data[0].price.unit_amount / 100).toFixed(2)}/
+                        {subscriptionStatus.subscription.items.data[0].price.recurring?.interval || 'month'}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {subscriptionStatus.subscription.cancel_at_period_end && (
+                    <div className="mt-2 p-2 bg-yellow-500 bg-opacity-20 rounded text-yellow-100 text-xs">
+                      ⚠️ Subscription will not renew. You'll maintain premium access until {new Date(subscriptionStatus.subscription.current_period_end).toLocaleDateString()}.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+          
+          {!subscriptionStatus && !loadingStatus && (
+            <div className="mt-2 text-xs text-purple-100">
+              Unable to load subscription details
+            </div>
+          )}
+        </div>
+        
+        <Button
+          size="sm"
+          onClick={handleManageSubscription}
+          disabled={loadingStatus}
+          className="w-full bg-gray-100 dark:bg-zinc-700 text-gray-700 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-600 rounded-md transition-all duration-200 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Settings className="h-3 w-3 mr-1" />
+          Manage Subscription
+          <ExternalLink className="h-3 w-3 ml-1" />
+        </Button>
       </div>
     );
   }

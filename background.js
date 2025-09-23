@@ -340,6 +340,168 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
 }
 
 
+/**
+ * Monitor a payment tab for completion or cancellation
+ * @param {number} tabId - The ID of the payment tab to monitor
+ * @param {string} userEmail - User's email for status checking
+ * @param {string} userId - User's ID for status checking
+ * @returns {Promise<object>} Payment result with completion status
+ */
+async function monitorPaymentFlow(tabId, userEmail, userId) {
+  return new Promise((resolve) => {
+    let pollInterval;
+    let timeoutId;
+    
+    const cleanup = () => {
+      if (pollInterval) clearInterval(pollInterval);
+      if (timeoutId) clearTimeout(timeoutId);
+      chrome.tabs.onUpdated.removeListener(tabUpdateListener);
+      chrome.tabs.onRemoved.removeListener(tabRemovedListener);
+    };
+
+    const tabUpdateListener = (updatedTabId, changeInfo, tab) => {
+      if (updatedTabId === tabId && changeInfo.url) {
+        console.log('🔄 AppMailia AI Background: Payment tab URL changed to:', changeInfo.url);
+        
+        // Check if we've returned to success or cancel URLs
+        if (changeInfo.url.includes('success') || changeInfo.url.includes('dashboard.stripe.com/success')) {
+          console.log('✅ AppMailia AI Background: Payment completed successfully');
+          cleanup();
+          chrome.tabs.remove(tabId);
+          resolve({ success: true, sessionCompleted: true, plan: 'premium' });
+        } else if (changeInfo.url.includes('cancel') || changeInfo.url.includes('dashboard.stripe.com/cancel')) {
+          console.log('❌ AppMailia AI Background: Payment cancelled');
+          cleanup();
+          chrome.tabs.remove(tabId);
+          resolve({ success: true, cancelled: true });
+        }
+      }
+    };
+
+    const tabRemovedListener = (removedTabId) => {
+      if (removedTabId === tabId) {
+        console.log('🪟 AppMailia AI Background: Payment tab was closed');
+        cleanup();
+        resolve({ success: true, cancelled: true });
+      }
+    };
+
+    // Listen for tab updates and removals
+    chrome.tabs.onUpdated.addListener(tabUpdateListener);
+    chrome.tabs.onRemoved.addListener(tabRemovedListener);
+
+    // Poll for payment status updates by checking subscription status
+    pollInterval = setInterval(async () => {
+      try {
+        const statusResponse = await apiFetch('/api/subscriptions/status', {
+          method: 'GET'
+        });
+        
+        if (statusResponse?.success && statusResponse.subscription?.status === 'active') {
+          console.log('✅ AppMailia AI Background: Subscription detected as active during payment flow');
+          cleanup();
+          chrome.tabs.remove(tabId).catch(() => {}); // Tab might already be closed
+          resolve({ success: true, sessionCompleted: true, plan: 'premium' });
+        }
+      } catch (error) {
+        console.warn('⚠️ AppMailia AI Background: Error checking subscription status during payment flow:', error);
+      }
+    }, 3000); // Check every 3 seconds
+
+    // Timeout after 10 minutes
+    timeoutId = setTimeout(() => {
+      console.log('⏰ AppMailia AI Background: Payment flow timed out after 10 minutes');
+      cleanup();
+      chrome.tabs.remove(tabId).catch(() => {}); // Tab might already be closed
+      resolve({ success: true, cancelled: true });
+    }, 600000);
+  });
+}
+
+/**
+ * Monitor a Stripe portal tab for changes and refresh subscription status
+ * @param {number} tabId - The ID of the portal tab to monitor
+ * @param {string} userEmail - User's email for status checking
+ * @param {string} userId - User's ID for status checking
+ * @returns {Promise<object>} Portal result with updated subscription status
+ */
+async function monitorPortalFlow(tabId, userEmail, userId) {
+  return new Promise((resolve) => {
+    let pollInterval;
+    let timeoutId;
+    
+    const cleanup = () => {
+      if (pollInterval) clearInterval(pollInterval);
+      if (timeoutId) clearTimeout(timeoutId);
+      chrome.tabs.onRemoved.removeListener(tabRemovedListener);
+    };
+
+    const tabRemovedListener = (removedTabId) => {
+      if (removedTabId === tabId) {
+        console.log('🔧 AppMailia AI Background: Portal tab was closed');
+        cleanup();
+        // Refresh subscription status when portal is closed
+        refreshSubscriptionStatus(userEmail, userId).then(() => {
+          resolve({ success: true, portalClosed: true, subscriptionUpdated: true });
+        });
+      }
+    };
+
+    // Listen for tab closure
+    chrome.tabs.onRemoved.addListener(tabRemovedListener);
+
+    // Poll for subscription status changes while portal is open
+    pollInterval = setInterval(async () => {
+      try {
+        await refreshSubscriptionStatus(userEmail, userId);
+      } catch (error) {
+        console.warn('⚠️ AppMailia AI Background: Error refreshing subscription status during portal flow:', error);
+      }
+    }, 5000); // Check every 5 seconds
+
+    // Timeout after 30 minutes (portal sessions can be longer)
+    timeoutId = setTimeout(() => {
+      console.log('⏰ AppMailia AI Background: Portal flow timed out after 30 minutes');
+      cleanup();
+      chrome.tabs.remove(tabId).catch(() => {}); // Tab might already be closed
+      resolve({ success: true, portalClosed: true, subscriptionUpdated: true });
+    }, 1800000);
+  });
+}
+
+/**
+ * Refresh subscription status and update local storage
+ * @param {string} userEmail - User's email
+ * @param {string} userId - User's ID
+ */
+async function refreshSubscriptionStatus(userEmail, userId) {
+  try {
+    const statusResponse = await apiFetch('/api/subscriptions/status', {
+      method: 'GET'
+    });
+    
+    if (statusResponse?.success && statusResponse.subscription) {
+      const subscription = statusResponse.subscription;
+      console.log('🔄 AppMailia AI Background: Subscription status updated:', subscription);
+      
+      // Update local storage with new subscription info
+      await chrome.storage.local.set({
+        userPlan: subscription.plan,
+        subscriptionStatus: subscription.status,
+        subscriptionDetails: subscription
+      });
+      
+      // Notify popup of subscription changes
+      chrome.runtime.sendMessage({
+        type: 'SUBSCRIPTION_UPDATED',
+        subscription: subscription
+      });
+    }
+  } catch (error) {
+    console.error('❌ AppMailia AI Background: Error refreshing subscription status:', error);
+  }
+}
+
 // --- Chrome Runtime Message Listener (for popup/content script communication) ---
 // Registered immediately upon activation.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -726,6 +888,211 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ success: true, message: `Emails in ${category} marked as read.` });
         } catch (error) {
           console.error("❌ AppMailia AI Background: Error marking emails as read:", error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'GET_CURRENT_USER':
+        try {
+          const user = auth.currentUser;
+          if (user && !user.isAnonymous) {
+            sendResponse({ 
+              success: true, 
+              user: {
+                uid: user.uid,
+                email: user.email,
+                displayName: user.displayName
+              }
+            });
+          } else {
+            sendResponse({ success: false, user: null });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error getting current user:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'GET_ID_TOKEN':
+        try {
+          const user = auth.currentUser;
+          if (user && !user.isAnonymous) {
+            const token = await user.getIdToken();
+            sendResponse({ success: true, token });
+          } else {
+            sendResponse({ success: false, error: 'User not authenticated' });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error getting ID token:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'PAYMENT_SUCCESS':
+        try {
+          // Add a delay to allow webhook processing to complete
+          console.log('🔄 AppMailia AI Background: Waiting 3 seconds for webhook processing...');
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // Refresh user plan data after successful payment
+          const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_USER_PLAN, {
+            method: 'POST',
+            body: { email: currentUserEmail, userEmail: currentUserEmail, userId: currentUserId }
+          });
+          
+          if (response.success) {
+            await chrome.storage.local.set({ userPlan: response.plan });
+            console.log('✅ AppMailia AI Background: User plan refreshed after payment:', response.plan);
+            sendResponse({ success: true, plan: response.plan });
+          } else {
+            console.error('❌ AppMailia AI Background: Failed to refresh user plan after payment:', response.error);
+            sendResponse({ success: false, error: response.error });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error refreshing user plan after payment:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'CHECK_PAYMENT_STATUS':
+        try {
+          // Check current user payment status from backend
+          const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_USER_PLAN, {
+            method: 'POST',
+            body: { email: msg.userEmail, userEmail: msg.userEmail, userId: msg.userId }
+          });
+          
+          if (response.success) {
+            console.log('✅ AppMailia AI Background: Payment status checked:', response.plan);
+            sendResponse({ success: true, plan: response.plan });
+          } else {
+            console.error('❌ AppMailia AI Background: Failed to check payment status:', response.error);
+            sendResponse({ success: false, error: response.error });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error checking payment status:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'CHECK_SUBSCRIPTION_STATUS':
+        try {
+          // Check subscription status using authenticated endpoint
+          const response = await apiFetch('/api/subscriptions/status', {
+            method: 'GET'
+          });
+          
+          if (response.success) {
+            console.log('✅ AppMailia AI Background: Subscription status checked:', response.subscription);
+            sendResponse({ success: true, subscription: response.subscription });
+          } else {
+            console.error('❌ AppMailia AI Background: Failed to check subscription status:', response.error);
+            sendResponse({ success: false, error: response.error });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error checking subscription status:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'CREATE_CHECKOUT_SESSION':
+        try {
+          // Create Stripe checkout session using authenticated endpoint
+          const response = await apiFetch('/api/subscriptions/create-checkout-session', {
+            method: 'POST',
+            body: { priceId: msg.priceId }
+          });
+          
+          if (response.success) {
+            console.log('✅ AppMailia AI Background: Checkout session created:', response.url);
+            sendResponse({ success: true, url: response.url });
+          } else {
+            console.error('❌ AppMailia AI Background: Failed to create checkout session:', response.error);
+            sendResponse({ success: false, error: response.error });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error creating checkout session:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'CREATE_PORTAL_SESSION':
+        try {
+          // Create Stripe customer portal session using authenticated endpoint
+          const response = await apiFetch('/api/subscriptions/create-portal-session', {
+            method: 'POST'
+          });
+          
+          if (response.success) {
+            console.log('✅ AppMailia AI Background: Portal session created:', response.url);
+            sendResponse({ success: true, url: response.url });
+          } else {
+            console.error('❌ AppMailia AI Background: Failed to create portal session:', response.error);
+            sendResponse({ success: false, error: response.error });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error creating portal session:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'OPEN_PAYMENT_WINDOW':
+        try {
+          const { url } = msg;
+          console.log('🪟 AppMailia AI Background: Opening payment window:', url);
+          
+          // Open Stripe checkout in a new tab
+          const tab = await chrome.tabs.create({
+            url: url,
+            active: true
+          });
+
+          // Monitor payment flow and respond when complete
+          const paymentResult = await monitorPaymentFlow(tab.id, currentUserEmail, currentUserId);
+          sendResponse(paymentResult);
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error opening payment window:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'OPEN_PORTAL_WINDOW':
+        try {
+          const { url } = msg;
+          console.log('🔧 AppMailia AI Background: Opening portal window:', url);
+          
+          // Open Stripe portal in a new tab
+          const tab = await chrome.tabs.create({
+            url: url,
+            active: true
+          });
+
+          // Monitor portal for changes and refresh subscription status
+          const portalResult = await monitorPortalFlow(tab.id, currentUserEmail, currentUserId);
+          sendResponse(portalResult);
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error opening portal window:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'CANCEL_SUBSCRIPTION':
+        try {
+          console.log('🗑️ AppMailia AI Background: Canceling subscription');
+          
+          const response = await apiFetch('/api/subscriptions/cancel', {
+            method: 'POST'
+          });
+          
+          if (response.success) {
+            console.log('✅ AppMailia AI Background: Subscription canceled successfully');
+            sendResponse({ success: true, subscription: response.subscription });
+          } else {
+            console.error('❌ AppMailia AI Background: Failed to cancel subscription:', response.error);
+            sendResponse({ success: false, error: response.error });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error canceling subscription:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;

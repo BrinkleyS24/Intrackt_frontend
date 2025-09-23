@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mail, BarChart3, FileText, Calendar, Gift, X, Home, LogOut, RefreshCw } from "lucide-react";
+import { Mail, BarChart3, FileText, Calendar, Gift, X, Home, LogOut, RefreshCw, Settings } from "lucide-react";
 import { cn } from "../utils/cn";
 import { EmailQuotaIndicator } from "./EmailQuotaIndicator";
 import { countUniqueThreads } from "../utils/grouping";
@@ -27,6 +27,7 @@ import { countUniqueThreads } from "../utils/grouping";
  * @property {string} userPlan
  * @property {object | null} quotaData
  * @property {() => void} onUpgradeClick
+ * @property {() => void} onManageSubscription
  */
 
 const Button = ({ children, ...props }) => <button {...props}>{children}</button>;
@@ -42,7 +43,8 @@ export function Sidebar({
   isLoadingEmails,
   userPlan,
   quotaData,
-  onUpgradeClick
+  onUpgradeClick,
+  onManageSubscription
 }) {
   const getEmailCount = (category) => {
     const list = categorizedEmails[category] || [];
@@ -91,7 +93,7 @@ export function Sidebar({
                   "group relative",
                   selectedCategory === item.id
                     ? "bg-blue-500 text-white shadow-sm"
-                    : "text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-zinc-700/50"
+                    : "text-gray-900 hover:bg-gray-50 dark:text-gray-100 dark:hover:bg-zinc-700/50"
                 )}
                 onClick={() => onCategoryChange(item.id)}
               >
@@ -107,7 +109,7 @@ export function Sidebar({
                       "text-xs px-2 py-0.5 rounded-full font-medium",
                       selectedCategory === item.id
                         ? "bg-white/20 text-white"
-                        : "bg-gray-100 text-gray-600 dark:bg-zinc-700 dark:text-zinc-300"
+                        : "bg-gray-200 text-gray-800 dark:bg-zinc-600 dark:text-zinc-100"
                     )}>
                       {item.count}
                     </span>
@@ -144,6 +146,7 @@ export function Sidebar({
             userPlan={userPlan}
             quotaData={quotaData}
             onUpgradeClick={onUpgradeClick}
+            onManageSubscription={onManageSubscription}
           />
         </div>
         

@@ -13,7 +13,10 @@ import { showNotification } from '../components/Notification';
 // REMOVED: import { onAuthStateChanged } from 'firebase/auth'; // No longer needed here
 
 // The 'auth' instance is no longer passed as a parameter.
-export function useAuth() {
+// useAuth.js
+import { useState, useCallback, useEffect } from 'react';
+
+export const useAuth = (onPaymentStatusChange) => {
   const [userEmail, setUserEmail] = useState(null);
   const [userName, setUserName] = useState(null);
   const [userPlan, setUserPlan] = useState('free');
@@ -22,6 +25,50 @@ export function useAuth() {
   const [quotaData, setQuotaData] = useState(null); // New state for quota data
   const [loadingAuth, setLoadingAuth] = useState(true); // Indicate if auth state is still loading (INITIALIZED TO TRUE)
   const isLoggedIn = !!userEmail; // Derived state
+
+  // Function to check payment status from backend (using authenticated subscription status)
+  const checkPaymentStatus = useCallback(async () => {
+    console.log('🔍 checkPaymentStatus called with userEmail:', userEmail, 'userId:', userId);
+    if (!userEmail || !userId) {
+      console.log('❌ checkPaymentStatus: Missing userEmail or userId, skipping');
+      return;
+    }
+    
+    try {
+      console.log('🔍 Checking subscription status from authenticated backend endpoint...');
+      const response = await sendMessageToBackground({
+        type: 'CHECK_SUBSCRIPTION_STATUS',
+        userEmail: userEmail,
+        userId: userId
+      });
+      
+      console.log('📨 Backend subscription response:', response);
+      
+      if (response.success && response.subscription) {
+        const currentPlan = response.subscription.plan;
+        console.log('🔍 Current subscription plan:', currentPlan, 'vs stored plan:', userPlan);
+        
+        if (currentPlan && currentPlan !== userPlan) {
+          console.log('💳 Subscription status updated:', currentPlan);
+          const previousPlan = userPlan;
+          setUserPlan(currentPlan);
+          // Update storage to persist the change
+          await chrome.storage.local.set({ userPlan: currentPlan });
+          showNotification('Payment confirmed! Premium features unlocked.', 'success');
+          
+          // Close premium modal if user upgraded from free to premium
+          if (previousPlan === 'free' && currentPlan === 'premium' && onPaymentStatusChange) {
+            console.log('🎉 Payment upgrade detected! Closing premium modal...');
+            onPaymentStatusChange(currentPlan, previousPlan);
+          }
+        } else if (response.success) {
+          console.log('✅ Subscription status checked, no change needed. Current plan:', currentPlan);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error checking subscription status:', error);
+    }
+  }, [userEmail, userId, userPlan, showNotification]);
 
   // Function to load and update current user state from chrome.storage.local
   // This is now the primary source of truth for the popup's UI state.
@@ -35,6 +82,12 @@ export function useAuth() {
       setUserName(result.userName || null);
       setUserId(result.userId || null); // Set userId from storage
       setUserPlan(result.userPlan || 'free'); // Set userPlan from storage, default to 'free'
+      
+      console.log('📊 Current user state after storage load:', {
+        userEmail: result.userEmail,
+        userPlan: result.userPlan || 'free',
+        userId: result.userId
+      });
 
       // Mark auth as ready once initial state is loaded from storage
       setIsAuthReady(true);
@@ -83,6 +136,19 @@ export function useAuth() {
     loadCurrentUserStateFromStorage();
   }, [loadCurrentUserStateFromStorage]);
 
+  // Check payment status when popup opens and user is logged in
+  useEffect(() => {
+    console.log('🔍 DEBUG: Payment check effect triggered - userEmail:', userEmail, 'userId:', userId, 'isAuthReady:', isAuthReady);
+    // Check payment status if we have user credentials (don't wait for full auth ready)
+    if (userEmail && userId) {
+      console.log('✅ DEBUG: User credentials available, checking payment status...');
+      console.log("🔍 Checking for payment updates...");
+      checkPaymentStatus();
+    } else {
+      console.log('❌ DEBUG: Missing user credentials for payment check');
+    }
+  }, [userEmail, userId, checkPaymentStatus]);
+
 
   // Listen for changes in chrome.storage.local and update state
   // This listener ensures the UI state in the popup stays synchronized
@@ -90,19 +156,29 @@ export function useAuth() {
   useEffect(() => {
     const handleStorageChange = (changes, namespace) => {
       if (namespace === 'local') {
+        console.log('🔍 Storage change detected:', changes);
         // Only trigger a re-load if relevant auth/user data changes
         if (changes.userEmail || changes.userName || changes.userPlan || changes.userId) { // Added userId
-          console.log("DEBUG useAuth: Detected storage change in user data. Re-loading state.");
+          console.log("🔄 Detected storage change in user data. Re-loading state.");
+          console.log('Previous userPlan:', changes.userPlan?.oldValue, '→ New userPlan:', changes.userPlan?.newValue);
           loadCurrentUserStateFromStorage(); // Re-load state from storage
         }
       }
     };
 
+    // Also listen for custom userPlanUpdated events for immediate UI refresh
+    const handleUserPlanUpdate = (event) => {
+      console.log('🎯 Received userPlanUpdated event:', event.detail);
+      loadCurrentUserStateFromStorage();
+    };
+
     chrome.storage.onChanged.addListener(handleStorageChange);
+    window.addEventListener('userPlanUpdated', handleUserPlanUpdate);
 
     return () => {
-      console.log("DEBUG useAuth: Cleaning up chrome.storage.onChanged listener.");
+      console.log("DEBUG useAuth: Cleaning up listeners.");
       chrome.storage.onChanged.removeListener(handleStorageChange);
+      window.removeEventListener('userPlanUpdated', handleUserPlanUpdate);
     };
   }, [loadCurrentUserStateFromStorage]);
 
@@ -150,6 +226,7 @@ export function useAuth() {
     quotaData,
     fetchUserPlan: fetchUserPlanFromService, // Expose service function directly
     fetchQuotaData, // Expose the memoized fetchQuotaData
+    reloadUserState: loadCurrentUserStateFromStorage, // Expose reload function for immediate refresh
     loginGoogleOAuth, // Expose the login function
     logout: useCallback(async () => {
       console.log("DEBUG useAuth: Initiating logout process.");

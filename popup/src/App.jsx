@@ -15,6 +15,7 @@ import { Notification, showNotification } from './components/Notification';
 import QuotaBanner from './components/QuotaBanner';
 import Pagination from './components/Pagination';
 import Modals from './components/Modals';
+import { SubscriptionManager } from './components/SubscriptionManager';
 
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
@@ -31,8 +32,17 @@ function App() {
   const [isMisclassificationModalOpen, setIsMisclassificationModalOpen] = useState(false);
   const [emailToMisclassify, setEmailToMisclassify] = useState(null);
   const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
+  const [isSubscriptionManagerOpen, setIsSubscriptionManagerOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [categoryBeforePreview, setCategoryBeforePreview] = useState('dashboard');
+
+  // Callback to handle payment status changes (for auto-closing premium modal)
+  const handlePaymentStatusChange = useCallback((newPlan, previousPlan) => {
+    if (previousPlan === 'free' && newPlan === 'premium') {
+      console.log('🎉 Auto-closing premium modal after successful payment upgrade');
+      setIsPremiumModalOpen(false);
+    }
+  }, []);
 
   const {
     userEmail,
@@ -46,8 +56,9 @@ function App() {
     fetchUserPlan,
     fetchQuotaData,
     quotaData,
-    loadingAuth
-  } = useAuth();
+    loadingAuth,
+    reloadUserState
+  } = useAuth(handlePaymentStatusChange);
   const {
     categorizedEmails,
     fetchStoredEmails,
@@ -94,6 +105,14 @@ function App() {
     };
     if (isAuthReady) restoreSelectedCategory();
   }, [isAuthReady]);
+
+  // Expose reloadUserState globally for immediate UI refresh after payments
+  useEffect(() => {
+    window.reloadUserState = reloadUserState;
+    return () => {
+      delete window.reloadUserState;
+    };
+  }, [reloadUserState]);
 
  useEffect(() => {
     const initialDataFetch = async () => {
@@ -145,6 +164,31 @@ function App() {
     chrome.runtime.onMessage.addListener(handleForceLogout);
     return () => chrome.runtime.onMessage.removeListener(handleForceLogout);
   }, []);
+
+  // Listen for subscription updates from background script
+  useEffect(() => {
+    const handleSubscriptionUpdate = (message) => {
+      if (message.type === 'SUBSCRIPTION_UPDATED' && message.subscription) {
+        console.log('📋 App.jsx: Subscription status updated:', message.subscription);
+        
+        // Update user plan state
+        setUserPlan(message.subscription.plan);
+        
+        // Show notification about subscription change
+        if (message.subscription.plan === 'premium') {
+          showNotification('Subscription activated! Premium features unlocked.', 'success');
+        } else if (message.subscription.cancel_at_period_end) {
+          showNotification('Subscription will cancel at the end of the billing period.', 'info');
+        }
+        
+        // Refresh user state
+        reloadUserState();
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handleSubscriptionUpdate);
+    return () => chrome.runtime.onMessage.removeListener(handleSubscriptionUpdate);
+  }, [showNotification, reloadUserState]);
 
   const handleRefresh = useCallback(async () => {
     if (!userEmail || !userId) return;
@@ -235,6 +279,14 @@ function App() {
   const openPremiumModal = useCallback(() => setIsPremiumModalOpen(true), []);
   const closePremiumModal = useCallback(() => setIsPremiumModalOpen(false), []);
 
+  const handleManageSubscription = useCallback(() => {
+    setIsSubscriptionManagerOpen(true);
+  }, []);
+
+  const closeSubscriptionManager = useCallback(() => {
+    setIsSubscriptionManagerOpen(false);
+  }, []);
+
   const renderMainContent = () => {
     switch (selectedCategory) {
       case 'dashboard':
@@ -317,6 +369,7 @@ function App() {
           userPlan={userPlan}
           quotaData={quotaData}
           onUpgradeClick={openPremiumModal}
+          onManageSubscription={handleManageSubscription}
         />
       </div>
 
@@ -342,7 +395,14 @@ function App() {
 
   <div className="flex-1">
           <div className="p-6">
-            {renderMainContent()}
+            {isSubscriptionManagerOpen ? (
+              <SubscriptionManager 
+                onBack={closeSubscriptionManager}
+                userPlan={userPlan}
+              />
+            ) : (
+              renderMainContent()
+            )}
           </div>
         </div>
       </main>
@@ -358,32 +418,9 @@ function App() {
         undoMisclassification={undoMisclassification}
         undoToastVisible={undoToastVisible}
         setUndoToastVisible={setUndoToastVisible}
-        onSubscribePremium={async () => {
-          if (!userEmail) {
-            showNotification("No user logged in to upgrade plan.", "error");
-            setIsPremiumModalOpen(false);
-            return;
-          }
-          showNotification("Upgrading to Premium...", "info");
-          setIsPremiumModalOpen(false);
-          try {
-            const response = await chrome.runtime.sendMessage({
-              type: "UPDATE_USER_PLAN",
-              userEmail: userEmail,
-              newPlan: "premium"
-            });
-            if (response.success) {
-              showNotification("🎉 Successfully upgraded to Premium! Please refresh to see changes.", "success");
-              await fetchUserPlan(userEmail);
-              await fetchQuotaData();
-            } else {
-              showNotification(`Failed to upgrade: ${response.error}`, "error");
-              setIsPremiumModalOpen(true);
-            }
-          } catch (error) {
-            showNotification(`Failed to upgrade: ${error.message || "Network error"}`, "error");
-            setIsPremiumModalOpen(true);
-          }
+        onSubscribePremium={() => {
+          // The modal will handle the subscription process directly
+          console.log('Premium modal will handle subscription...');
         }}
       />
     </div>
