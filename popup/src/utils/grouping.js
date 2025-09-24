@@ -74,6 +74,5 @@ export function groupEmailsByThread(emails) {
 
 export function countUniqueThreads(emails) {
   const groupedEmails = groupEmailsByThread(emails);
-  console.log(`Thread grouping: ${emails?.length || 0} emails grouped into ${groupedEmails.length} threads`);
   return groupedEmails.length;
 }

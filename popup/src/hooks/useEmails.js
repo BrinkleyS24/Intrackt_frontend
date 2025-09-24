@@ -45,6 +45,9 @@ export function useEmails(userEmail, userId, CONFIG) {
 
   // Generic loading flag replacing prior undefined setLoadingEmails usage
   const [loadingEmails, setLoadingEmails] = useState(false);
+  
+  // Loading state for marking all emails in a category as read
+  const [markingAllAsRead, setMarkingAllAsRead] = useState(false);
 
   // State to store unread counts for each email category
   const [unreadCounts, setUnreadCounts] = useState({
@@ -96,7 +99,6 @@ export function useEmails(userEmail, userId, CONFIG) {
     const handleEmailsSynced = (msg) => {
       if (msg.type === 'EMAILS_SYNCED') { 
   const stillSyncing = typeof msg.syncInProgress === 'boolean' ? msg.syncInProgress : false;
-  console.log("✅ AppMailia AI: EMAILS_SYNCED message received.", { stillSyncing });
   setIsSyncing(stillSyncing);
         if (msg.success) {
           setCategorizedEmails(msg.categorizedEmails);
@@ -411,15 +413,21 @@ export function useEmails(userEmail, userId, CONFIG) {
   // Mark all emails in a category as read (UI-first, then persist via background)
   const markEmailsAsReadForCategory = useCallback(async (category) => {
     if (!category) return;
+    
+    setMarkingAllAsRead(true);
     const prev = JSON.parse(JSON.stringify(categorizedEmails));
     const next = { ...categorizedEmails };
     next[category] = (next[category] || []).map(e => ({ ...e, is_read: true }));
     setCategorizedEmails(next);
+    
     try {
       await markEmailsAsReadService(category, userId);
+      showNotification(`All emails in ${getCategoryTitle(category)} marked as ready!`, 'success');
     } catch (e) {
       setCategorizedEmails(prev);
       showNotification('Failed to mark all as read.', 'error');
+    } finally {
+      setMarkingAllAsRead(false);
     }
   }, [categorizedEmails, userId]);
 
@@ -441,10 +449,11 @@ export function useEmails(userEmail, userId, CONFIG) {
     undoToastVisible,
     setUndoToastVisible,
     unreadCounts,
-  markEmailsAsReadForCategory,
+    markEmailsAsReadForCategory,
     markEmailAsRead,
     initialLoading,
-  isSyncing,
-  loadingEmails
+    isSyncing,
+    loadingEmails,
+    markingAllAsRead
   };
 }

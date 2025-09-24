@@ -78,7 +78,8 @@ function App() {
     markEmailAsRead,
     initialLoading,
     isSyncing,
-  loadingEmails,
+    loadingEmails,
+    markingAllAsRead
   } = useEmails(userEmail, userId, CONFIG);
 
   const {
@@ -309,6 +310,8 @@ function App() {
               filteredEmails={filteredEmails}
               appliedFilters={appliedFilters}
               totalEmails={totalThreadsInCurrentCategory}
+              onMarkAllAsRead={markEmailsAsReadForCategory}
+              isMarkingAllAsRead={markingAllAsRead}
             />
             {totalPages > 1 && (
               <Pagination

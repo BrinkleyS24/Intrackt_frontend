@@ -100,7 +100,7 @@ export function SubscriptionManager({ onBack, userPlan }) {
           
           // Update parent component's state if user plan changed
           if (userPlan !== actualPlan) {
-            console.log(`Subscription plan corrected: ${userPlan} → ${actualPlan}`);
+            // Plan updated
           }
         } else {
           setError(response.error || 'Failed to load subscription data');

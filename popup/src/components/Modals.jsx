@@ -67,22 +67,17 @@ function Modals({
   };
 
   const handleSubscribeToPlan = async (plan) => {
-    console.log('💳 Starting subscription to plan:', plan);
     setSubscribingToPlan(plan.id);
     try {
       if (window.subscriptionService) {
-        console.log('🔄 Creating checkout session...');
         const result = await window.subscriptionService.createCheckoutSession(plan.priceId);
-        console.log('📋 Checkout session result:', result);
         
         if (result.success) {
           if (result.sessionCompleted) {
-            console.log('✅ Payment successful! Showing notification and refreshing state...');
             showNotification('Payment successful! Welcome to Premium!', 'success');
             onClosePremiumModal();
             // Use sophisticated state refresh instead of crude page reload
             if (window.reloadUserState) {
-              console.log('🔄 Triggering reloadUserState for immediate UI refresh...');
               window.reloadUserState();
             } else {
               console.warn('⚠️ reloadUserState not available, fallback to storage event');
@@ -93,10 +88,8 @@ function Modals({
               window.dispatchEvent(event);
             }
           } else if (result.cancelled) {
-            console.log('❌ Payment cancelled');
             showNotification('Payment cancelled', 'info');
           } else {
-            console.log('⚠️ Payment window closed');
             showNotification('Payment window closed. Please try again if payment was not completed.', 'info');
           }
         } else {
@@ -115,9 +108,8 @@ function Modals({
 
   // Debug log to confirm prop value
   useEffect(() => {
-    console.log("DEBUG Modals.jsx: isMisclassificationModalOpen prop received:", isMisclassificationModalOpen);
     if (isMisclassificationModalOpen && selectedEmailForMisclassification) {
-      console.log("DEBUG Modals.jsx: Email for misclassification:", selectedEmailForMisclassification);
+      // Modal opened with email data for misclassification reporting
     }
   }, [isMisclassificationModalOpen, selectedEmailForMisclassification]);
 

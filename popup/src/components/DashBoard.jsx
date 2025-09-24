@@ -107,11 +107,8 @@ const CategorySummaryCard = ({ categoryKey, counts, onCategorySelect }) => {
  * Uses Lucide React icons for action buttons.
  */
 function DashboardEmailCard({ email, onEmailSelect, onOpenMisclassificationModal }) {
-  console.log("DEBUG DashboardEmailCard: Rendering for email:", email, "onOpenMisclassificationModal prop:", typeof onOpenMisclassificationModal);
-
   const handleMisclassifyClick = (e) => {
     e.stopPropagation();
-    console.log("DEBUG: Misclassification button clicked for email:", email?.email_id);
     if (onOpenMisclassificationModal) {
       onOpenMisclassificationModal(email);
     } else {
@@ -295,12 +292,9 @@ function Dashboard({
   openPremiumModal,
   quotaData
 }) {
-  console.log("DEBUG Dashboard.jsx: Received categorizedEmails prop:", categorizedEmails); // ADDED LOG
-
   const getCount = useCallback((category) => {
     const list = (categorizedEmails[category] || categorizedEmails[category.charAt(0).toUpperCase() + category.slice(1)] || []);
     const count = countUniqueThreads(list);
-    console.log(`Thread count for ${category}:`, count);
     return count;
   }, [categorizedEmails]);
 
@@ -309,15 +303,6 @@ function Dashboard({
   const offersCount = useMemo(() => getCount('offers'), [getCount]);
   const rejectedCount = useMemo(() => getCount('rejected'), [getCount]);
   const irrelevantCount = useMemo(() => getCount('irrelevant'), [getCount]);
-
-  // Debug logging for calculations
-  console.log("Dashboard calculations:", {
-    appliedCount,
-    interviewedCount,
-    offersCount,
-    rejectedCount,
-    irrelevantCount
-  });
 
 
   const allRelevantEmails = useMemo(() => {
@@ -333,21 +318,11 @@ function Dashboard({
       ? quotaData.totalProcessed
       : null;
     if (backendTotal === null) return localTotal;
-    if (backendTotal !== localTotal) {
-      console.log("DEBUG Dashboard.jsx: total mismatch (backend vs local)", { backendTotal, localTotal });
-    }
     return Math.max(backendTotal, localTotal);
   }, [quotaData, allRelevantEmails]);
   const totalInterviewsAndOffers = useMemo(() => interviewedCount + offersCount, [interviewedCount, offersCount]);
   const responseRate = useMemo(() => {
-    const rate = totalApplications > 0 ? Math.round((totalInterviewsAndOffers / totalApplications) * 100) : 0;
-    console.log("Response Rate calculation:", {
-      totalInterviewsAndOffers,
-      totalApplications,
-      rate,
-      formula: `${totalInterviewsAndOffers} / ${totalApplications} = ${rate}%`
-    });
-    return rate;
+    return totalApplications > 0 ? Math.round((totalInterviewsAndOffers / totalApplications) * 100) : 0;
   }, [totalInterviewsAndOffers, totalApplications]);
 
   const newApplicationsThisWeek = useMemo(() => {
@@ -358,14 +333,7 @@ function Dashboard({
 
   // Success Rate: percentage of total applications that resulted in offers
   const successRate = useMemo(() => {
-    const rate = totalApplications > 0 ? Math.round((offersCount / totalApplications) * 100) : 0;
-    console.log("Success Rate calculation:", {
-      offersCount,
-      totalApplications,
-      rate,
-      formula: `${offersCount} / ${totalApplications} = ${rate}%`
-    });
-    return rate;
+    return totalApplications > 0 ? Math.round((offersCount / totalApplications) * 100) : 0;
   }, [offersCount, totalApplications]);
 
   const categories = useMemo(() => [

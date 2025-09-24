@@ -34,7 +34,6 @@ export async function fetchStoredEmailsService() {
       rejected: result.rejectedEmails || [],
     };
 
-    console.log("✅ AppMailia AI: Fetched stored emails from local storage:", categorizedEmails);
     return categorizedEmails;
   } catch (error) {
     console.error("❌ AppMailia AI: Error fetching stored emails from local storage:", error);
@@ -58,7 +57,6 @@ export async function fetchNewEmailsService(userEmail, userId, fullRefresh = fal
       return { success: false, error: 'User email or ID missing.' };
     }
 
-    console.log(`DEBUG emailService: Requesting new emails from background (fullRefresh: ${fullRefresh}).`);
     const response = await sendMessageToBackground({
       type: 'FETCH_NEW_EMAILS', // Message type for background script
       userEmail: userEmail,
@@ -69,7 +67,6 @@ export async function fetchNewEmailsService(userEmail, userId, fullRefresh = fal
     if (response.success) {
       // The background script is responsible for saving to chrome.storage.local.
       // We just return the response here, which should contain the updated data.
-      console.log("✅ AppMailia AI: New emails fetched and local storage updated by background.", response);
       return {
         success: true,
         categorizedEmails: response.categorizedEmails, // Updated emails from backend

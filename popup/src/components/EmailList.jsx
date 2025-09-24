@@ -5,12 +5,10 @@
  */
 
 import React, { useMemo } from 'react';
+import { CheckCheck } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { formatDate, getCategoryTitle } from '../utils/uiHelpers';
 import { groupEmailsByThread, countUniqueThreads } from '../utils/grouping';
-
-// Import Lucide React Icons directly
-// Icons not used here; keep list minimal
 
 /**
  * Strips HTML tags from a string to return plain text.
@@ -27,16 +25,50 @@ const stripHtml = (html) => {
 };
 
 
-function EmailList({ emails, category, selectedEmail, onEmailSelect, totalEmails  }) {
+function EmailList({ 
+  emails, 
+  category, 
+  selectedEmail, 
+  onEmailSelect, 
+  totalEmails,
+  onMarkAllAsRead,
+  isMarkingAllAsRead 
+}) {
   const categoryTitle = getCategoryTitle(category);
   const threadGroups = useMemo(() => groupEmailsByThread(emails), [emails]);
   const displayCount = totalEmails !== undefined ? totalEmails : countUniqueThreads(emails);
+  const hasUnreadEmails = threadGroups.some(group => group.unreadCount > 0);
+
+  const handleMarkAllAsRead = () => {
+    if (onMarkAllAsRead && hasUnreadEmails) {
+      onMarkAllAsRead(category);
+    }
+  };
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-4 min-w-0"> {/* Added min-w-0 */}
-      <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-        {categoryTitle} Emails ({displayCount})
-      </h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+          {categoryTitle} Emails ({displayCount})
+        </h2>
+        {hasUnreadEmails && onMarkAllAsRead && (
+          <button
+            onClick={handleMarkAllAsRead}
+            disabled={isMarkingAllAsRead}
+            className={cn(
+              "inline-flex items-center space-x-1 px-3 py-1.5 text-sm rounded-md",
+              "border border-gray-300 dark:border-zinc-600",
+              "text-gray-700 dark:text-zinc-300",
+              "hover:bg-gray-100 dark:hover:bg-zinc-700",
+              "transition-colors duration-200",
+              "disabled:opacity-50 disabled:cursor-not-allowed"
+            )}
+          >
+            <CheckCheck className="h-4 w-4" />
+            <span>{isMarkingAllAsRead ? 'Marking...' : 'Mark All Ready'}</span>
+          </button>
+        )}
+      </div>
       {threadGroups.length === 0 ? (
         <div className="text-center text-gray-500 dark:text-zinc-400 py-8">
           No emails found in this category.

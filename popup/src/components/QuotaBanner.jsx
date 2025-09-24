@@ -30,7 +30,6 @@ function QuotaBanner({ quota, userPlan, onUpgradeClick }) {
     setDismissed(true);
     try {
       await chrome.storage.local.set({ quotaAlertDismissed: true });
-      console.log("📊 Intrackt: Quota banner dismissed and preference saved.");
     } catch (error) {
       console.error("Error saving quota dismissal status:", error);
       showNotification("Failed to dismiss banner preference.", "error");

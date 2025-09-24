@@ -106,7 +106,6 @@ export const useAuth = (onPaymentStatusChange) => {
       setQuotaData(null); // Clear quota if user is not logged in
       return;
     }
-    console.log("DEBUG useAuth: Fetching quota data from background.");
     try {
       // Send a specific message to background to fetch only quota data
       const response = await sendMessageToBackground({
@@ -117,7 +116,6 @@ export const useAuth = (onPaymentStatusChange) => {
 
       if (response.success && response.quota) {
         setQuotaData(response.quota);
-        console.log("✅ AppMailia AI: Quota data fetched:", response.quota);
       } else {
         console.error("❌ AppMailia AI: Failed to fetch quota data:", response.error);
         setQuotaData(null); // Clear quota on error
@@ -132,20 +130,14 @@ export const useAuth = (onPaymentStatusChange) => {
   // Initial load from storage when the hook mounts.
   // This replaces the Firebase onAuthStateChanged listener in the popup.
   useEffect(() => {
-    console.log("DEBUG useAuth: Initializing user state from storage.");
     loadCurrentUserStateFromStorage();
   }, [loadCurrentUserStateFromStorage]);
 
   // Check payment status when popup opens and user is logged in
   useEffect(() => {
-    console.log('🔍 DEBUG: Payment check effect triggered - userEmail:', userEmail, 'userId:', userId, 'isAuthReady:', isAuthReady);
     // Check payment status if we have user credentials (don't wait for full auth ready)
     if (userEmail && userId) {
-      console.log('✅ DEBUG: User credentials available, checking payment status...');
-      console.log("🔍 Checking for payment updates...");
       checkPaymentStatus();
-    } else {
-      console.log('❌ DEBUG: Missing user credentials for payment check');
     }
   }, [userEmail, userId, checkPaymentStatus]);
 
