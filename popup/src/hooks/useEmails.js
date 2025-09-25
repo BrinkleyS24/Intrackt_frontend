@@ -128,6 +128,11 @@ export function useEmails(userEmail, userId, CONFIG) {
         }
       }
     }
+    // Debug: log computed unreadCounts for visibility during development
+    try {
+      // eslint-disable-next-line no-console
+      console.log('[useEmails] Computed unreadCounts:', counts);
+    } catch (e) {}
     setUnreadCounts(counts);
   }, [categorizedEmails]); // This now correctly depends on the source state.
 

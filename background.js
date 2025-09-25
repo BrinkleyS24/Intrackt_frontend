@@ -63,6 +63,19 @@ function capitalizeFirst(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+// Minimal background logger to centralize and tag messages; easy to disable later
+const bgLogger = {
+  info: (...args) => {
+    try { console.log('[bg][info]', ...args); } catch (_) {}
+  },
+  warn: (...args) => {
+    try { console.warn('[bg][warn]', ...args); } catch (_) {}
+  },
+  error: (...args) => {
+    try { console.error('[bg][error]', ...args); } catch (_) {}
+  }
+};
+
 /**
  * Generic fetch wrapper for backend API calls.
  * Automatically adds authorization header if a Firebase user is logged in.
@@ -91,13 +104,13 @@ async function apiFetch(endpoint, options = {}) {
     ...options.headers,
   };
 
-  if (user && !user.isAnonymous) { // Only attempt to get ID token for non-anonymous users
+    if (user && !user.isAnonymous) { // Only attempt to get ID token for non-anonymous users
     try {
       const idToken = await user.getIdToken(true); // Pass true to force refresh
       headers['Authorization'] = `Bearer ${idToken}`;
-      console.log(`✅ AppMailia AI: Attached fresh ID token for user: ${user.uid}`);
+      bgLogger.info(`Attached fresh ID token for user: ${user.uid}`);
     } catch (error) {
-      console.error("❌ AppMailia AI: Failed to get fresh Firebase ID token:", error);
+      bgLogger.error("Failed to get fresh Firebase ID token:", error);
       
       if (error.code === 'auth/user-token-expired' || error.code === 'auth/invalid-user-token') {
         console.warn("AppMailia AI: Unrecoverable auth token error. Forcing user logout.");
@@ -113,9 +126,9 @@ async function apiFetch(endpoint, options = {}) {
       }
     }
   } else if (user && user.isAnonymous) {
-    console.log("AppMailia AI: Anonymous user, skipping ID token attachment.");
+    bgLogger.info("Anonymous user, skipping ID token attachment.");
   } else {
-    console.log("AppMailia AI: No authenticated user, skipping ID token attachment.");
+    bgLogger.info("No authenticated user, skipping ID token attachment.");
   }
 
 
@@ -127,7 +140,7 @@ async function apiFetch(endpoint, options = {}) {
       url += (url.includes('?') ? '&' : '?') + qs;
     }
   }
-  console.log(`📡 AppMailia AI: Making API call to: ${url} with method: ${options.method || 'GET'}`);
+  bgLogger.info(`API call: ${url} method=${options.method || 'GET'}`);
 
   try {
     const response = await fetch(url, {
@@ -144,7 +157,7 @@ async function apiFetch(endpoint, options = {}) {
     }
 
     const data = await response.json();
-    console.log(`✅ AppMailia AI: API call to ${url} successful. Response:`, data);
+  bgLogger.info(`API success: ${url}`, data);
     return data;
   } catch (error) {
     console.error(`❌ AppMailia AI: Network or parsing error for ${url}:`, error);
@@ -164,6 +177,7 @@ async function refreshStoredEmailsCache(syncInProgress = undefined) {
         interviewedEmails: response.categorizedEmails.interviewed || [],
         offersEmails: response.categorizedEmails.offers || [],
         rejectedEmails: response.categorizedEmails.rejected || [],
+        irrelevantEmails: response.categorizedEmails.irrelevant || [],
       });
       chrome.runtime.sendMessage({
         type: 'EMAILS_SYNCED',
@@ -310,7 +324,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         rejectedEmails: response.categorizedEmails.rejected || [],
         quotaData: response.quota || null // Also cache quota data
       });
-      console.log('✅ AppMailia AI Background: Emails and quota cached successfully in local storage.');
+  bgLogger.info('Emails and quota cached successfully in local storage.');
 
       // Notify the popup that emails have been synced and cached
       chrome.runtime.sendMessage({
@@ -361,16 +375,16 @@ async function monitorPaymentFlow(tabId, userEmail, userId) {
 
     const tabUpdateListener = (updatedTabId, changeInfo, tab) => {
       if (updatedTabId === tabId && changeInfo.url) {
-        console.log('🔄 AppMailia AI Background: Payment tab URL changed to:', changeInfo.url);
+  bgLogger.info('Payment tab URL changed to:', changeInfo.url);
         
         // Check if we've returned to success or cancel URLs
         if (changeInfo.url.includes('success') || changeInfo.url.includes('dashboard.stripe.com/success')) {
-          console.log('✅ AppMailia AI Background: Payment completed successfully');
+          bgLogger.info('Payment completed successfully');
           cleanup();
           chrome.tabs.remove(tabId);
           resolve({ success: true, sessionCompleted: true, plan: 'premium' });
         } else if (changeInfo.url.includes('cancel') || changeInfo.url.includes('dashboard.stripe.com/cancel')) {
-          console.log('❌ AppMailia AI Background: Payment cancelled');
+          bgLogger.info('Payment cancelled');
           cleanup();
           chrome.tabs.remove(tabId);
           resolve({ success: true, cancelled: true });
@@ -380,7 +394,7 @@ async function monitorPaymentFlow(tabId, userEmail, userId) {
 
     const tabRemovedListener = (removedTabId) => {
       if (removedTabId === tabId) {
-        console.log('🪟 AppMailia AI Background: Payment tab was closed');
+  bgLogger.info('Payment tab was closed');
         cleanup();
         resolve({ success: true, cancelled: true });
       }
@@ -398,7 +412,7 @@ async function monitorPaymentFlow(tabId, userEmail, userId) {
         });
         
         if (statusResponse?.success && statusResponse.subscription?.status === 'active') {
-          console.log('✅ AppMailia AI Background: Subscription detected as active during payment flow');
+      bgLogger.info('Subscription detected as active during payment flow');
           cleanup();
           chrome.tabs.remove(tabId).catch(() => {}); // Tab might already be closed
           resolve({ success: true, sessionCompleted: true, plan: 'premium' });
@@ -410,7 +424,7 @@ async function monitorPaymentFlow(tabId, userEmail, userId) {
 
     // Timeout after 10 minutes
     timeoutId = setTimeout(() => {
-      console.log('⏰ AppMailia AI Background: Payment flow timed out after 10 minutes');
+  bgLogger.info('Payment flow timed out after 10 minutes');
       cleanup();
       chrome.tabs.remove(tabId).catch(() => {}); // Tab might already be closed
       resolve({ success: true, cancelled: true });
@@ -431,7 +445,7 @@ async function refreshSubscriptionStatus(userEmail, userId) {
     
     if (statusResponse?.success && statusResponse.subscription) {
       const subscription = statusResponse.subscription;
-      console.log('🔄 AppMailia AI Background: Subscription status updated:', subscription);
+  bgLogger.info('Subscription status updated:', subscription);
       
       // Update local storage with new subscription info
       await chrome.storage.local.set({
@@ -454,7 +468,7 @@ async function refreshSubscriptionStatus(userEmail, userId) {
 // --- Chrome Runtime Message Listener (for popup/content script communication) ---
 // Registered immediately upon activation.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  console.log(`📩 AppMailia AI Background: Received message type: ${msg.type}`);
+  bgLogger.info(`Received message type: ${msg.type}`);
 
   // Use an async IIFE to allow await inside the listener
   (async () => {
@@ -495,7 +509,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
 
             const finalAuthUrl = authUrlResponse.url;
-          console.log(`DEBUG: Attempting to launch Web Auth Flow with URL: ${finalAuthUrl}`);
+          bgLogger.info(`Attempting to launch Web Auth Flow with URL: ${finalAuthUrl}`);
           const authRedirectUrl = await new Promise((resolve, reject) => {
             chrome.identity.launchWebAuthFlow({
               url: finalAuthUrl,
@@ -530,7 +544,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // Step 4: Sign in to Firebase with custom token
           const userCredential = await signInWithCustomToken(auth, tokenResponse.firebaseToken);
           const user = userCredential.user;
-          console.log('✅ AppMailia AI Background: Successfully signed in to Firebase with custom token.');
+          bgLogger.info('Successfully signed in to Firebase with custom token.');
 
           await chrome.storage.local.set({
             userEmail: user.email,
@@ -552,7 +566,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'LOGOUT':
         try {
           await signOut(auth);
-          console.log("✅ AppMailia AI Background: User signed out from Firebase.");
+          bgLogger.info("User signed out from Firebase.");
           // onAuthStateChanged listener will handle clearing storage.
           sendResponse({ success: true });
         } catch (error) {
@@ -821,10 +835,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           // Fetch current emails from local storage to update their read status
           const currentEmails = await chrome.storage.local.get([
-            'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails'
+            'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'
           ]);
 
-          const updatedCategoryEmails = (currentEmails[`${category}Emails`] || []).map(email => ({
+          // Normalize incoming category key to expected storage suffix
+          const storageKey = `${category}Emails`;
+
+          const updatedCategoryEmails = (currentEmails[storageKey] || []).map(email => ({
             ...email,
             // Align with UI state which uses `is_read`
             is_read: true

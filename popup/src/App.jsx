@@ -25,6 +25,13 @@ import { countUniqueThreads } from './utils/grouping';
 import { CONFIG } from './utils/constants';
 import { Crown, Briefcase } from 'lucide-react';
 
+// Small app-scoped logger to centralize popup logs and make them easy to silence
+const appLogger = {
+  info: (...args) => { try { console.log('[app][info]', ...args); } catch (_) {} },
+  warn: (...args) => { try { console.warn('[app][warn]', ...args); } catch (_) {} },
+  error: (...args) => { try { console.error('[app][error]', ...args); } catch (_) {} }
+};
+
 function App() {
   // Default to dashboard; a stored preference may override after auth is ready
   const [selectedCategory, setSelectedCategory] = useState('dashboard');
@@ -39,7 +46,7 @@ function App() {
   // Callback to handle payment status changes (for auto-closing premium modal)
   const handlePaymentStatusChange = useCallback((newPlan, previousPlan) => {
     if (previousPlan === 'free' && newPlan === 'premium') {
-      console.log('🎉 Auto-closing premium modal after successful payment upgrade');
+      appLogger.info('Auto-closing premium modal after successful payment upgrade');
       setIsPremiumModalOpen(false);
     }
   }, []);
@@ -117,8 +124,8 @@ function App() {
 
  useEffect(() => {
     const initialDataFetch = async () => {
-      if (isAuthReady && userEmail && userId) {
-        console.log("✅ App.jsx: Auth ready, initiating single authoritative data fetch.");
+    if (isAuthReady && userEmail && userId) {
+    appLogger.info("Auth ready, initiating single authoritative data fetch.");
         try {
     await fetchStoredEmails();
     // Avoid double-triggering sync here; background starts sync on auth state change
@@ -128,11 +135,20 @@ function App() {
           showNotification("Failed to load initial data.", "error");
         }
       } else {
-        console.log("App.jsx: Skipping initial data fetch. Auth not ready or user info missing.", { isAuthReady, userEmail, userId });
+        appLogger.info("Skipping initial data fetch. Auth not ready or user info missing.", { isAuthReady, userEmail, userId });
       }
     };
     initialDataFetch();
   }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData, loadFollowUpSuggestions]);
+
+  // Debug: log selectedCategory and unreadCounts when they change to diagnose Mark-All-Ready visibility
+  useEffect(() => {
+    try {
+      appLogger.info('Debug: selectedCategory', selectedCategory, 'unreadCounts for category:', (unreadCounts && typeof unreadCounts[selectedCategory] !== 'undefined') ? unreadCounts[selectedCategory] : null);
+    } catch (e) {
+      appLogger.error('Debug log failure', e);
+    }
+  }, [selectedCategory, unreadCounts]);
 
   useEffect(() => {
     const handleBackgroundMessage = (message) => {
@@ -170,7 +186,7 @@ function App() {
   useEffect(() => {
     const handleSubscriptionUpdate = (message) => {
       if (message.type === 'SUBSCRIPTION_UPDATED' && message.subscription) {
-        console.log('📋 App.jsx: Subscription status updated:', message.subscription);
+  appLogger.info('Subscription status updated:', message.subscription);
         
         // Update user plan state
         setUserPlan(message.subscription.plan);
@@ -312,6 +328,7 @@ function App() {
               totalEmails={totalThreadsInCurrentCategory}
               onMarkAllAsRead={markEmailsAsReadForCategory}
               isMarkingAllAsRead={markingAllAsRead}
+              hasUnreadCategory={Boolean(unreadCounts && unreadCounts[selectedCategory])}
             />
             {totalPages > 1 && (
               <Pagination

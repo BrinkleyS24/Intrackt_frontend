@@ -25,6 +25,7 @@ export async function fetchStoredEmailsService() {
       'interviewedEmails',
       'offersEmails',
       'rejectedEmails',
+      'irrelevantEmails',
     ]);
 
     const categorizedEmails = {
@@ -32,6 +33,7 @@ export async function fetchStoredEmailsService() {
       interviewed: result.interviewedEmails || [],
       offers: result.offersEmails || [],
       rejected: result.rejectedEmails || [],
+      irrelevant: result.irrelevantEmails || [],
     };
 
     return categorizedEmails;
