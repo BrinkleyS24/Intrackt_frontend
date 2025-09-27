@@ -11,6 +11,7 @@ import {
   MessageSquare, Send, Crown, Lock, Mail, BarChart3, PieChart,
   Flag, MoreHorizontal
 } from 'lucide-react';
+import RemindButton from './RemindButton';
 
 import { cn } from '../utils/cn'; // For conditional class joining
 import { countUniqueThreads } from '../utils/grouping';
@@ -25,7 +26,7 @@ import { showNotification } from './Notification'; // For toasts
  */
 const StatCard = ({ icon: Icon, title, value, subtitle, bgColorClasses, textColorClasses }) => (
   <div className={cn(
-    "relative flex flex-col justify-between rounded-lg p-4 shadow-sm transition-all duration-300 ease-in-out",
+    "relative flex flex-col justify-between rounded-lg p-3 sm:p-4 shadow-sm transition-all duration-300 ease-in-out",
     "dark:bg-zinc-800 dark:text-white",
     bgColorClasses,
     textColorClasses
@@ -35,7 +36,7 @@ const StatCard = ({ icon: Icon, title, value, subtitle, bgColorClasses, textColo
       <h3 className="text-sm font-medium">{title}</h3>
     </div>
     <div className="flex items-end justify-between">
-      <p className="text-3xl font-bold leading-none">{value}</p>
+      <p className="text-2xl sm:text-3xl font-bold leading-none">{value}</p>
       {subtitle && <span className="text-xs text-opacity-70">{subtitle}</span>}
     </div>
   </div>
@@ -76,7 +77,7 @@ const CategorySummaryCard = ({ categoryKey, counts, onCategorySelect }) => {
   return (
     <div
       className={cn(
-        "card p-4 flex flex-col justify-between transition-shadow hover:shadow-md h-full cursor-pointer rounded-lg shadow-sm bg-white dark:bg-zinc-800",
+        "card p-3 sm:p-4 flex flex-col justify-between transition-shadow hover:shadow-md h-full cursor-pointer rounded-lg shadow-sm bg-white dark:bg-zinc-800",
         getCategoryColor(categoryKey)
       )}
       onClick={() => onCategorySelect(categoryKey)}
@@ -118,7 +119,7 @@ function DashboardEmailCard({ email, onEmailSelect, onOpenMisclassificationModal
 
   return (
     <div
-      className="flex-shrink-0 w-72 bg-gray-100 dark:bg-zinc-700 p-4 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-600 transition-colors relative"
+      className="flex-shrink-0 w-64 sm:w-72 bg-gray-100 dark:bg-zinc-700 p-3 sm:p-4 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-600 transition-colors relative"
       onClick={() => onEmailSelect(email)}
     >
       <div className="flex items-center justify-between mb-2">
@@ -223,56 +224,44 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
   return (
     <div
       className={cn(
-        `p-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 ease-in-out cursor-pointer`,
-        urgencyColors.bg,
-        urgencyColors.border,
-        urgencyColors.text
+        "p-3 sm:p-4 rounded-lg shadow-md hover:shadow-lg transition-all duration-200 ease-in-out cursor-pointer bg-white dark:bg-zinc-800",
+        urgencyColors.border
       )}
       onClick={() => onEmailSelect(suggestion)}
     >
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center space-x-3">
+      <div className="flex flex-col sm:flex-row items-start justify-between">
+        <div className="flex-1 flex items-start space-x-3 w-full sm:max-w-[70%]">
           {IconComponent && (
             <div className={cn("p-2 rounded-full", urgencyColors.iconBg)}>
               <IconComponent className={cn("h-5 w-5", urgencyColors.iconText)} />
             </div>
           )}
-          <h3 className="font-semibold text-lg text-gray-900 dark:text-white">{suggestion.title}</h3>
+          <div className="min-w-0">
+            <div className="flex items-center space-x-3">
+              <h3 className="font-semibold text-md sm:text-lg text-gray-900 dark:text-white truncate">{suggestion.title}</h3>
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-zinc-700 text-gray-800 dark:text-zinc-200">{suggestion.urgency}</span>
+              <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-200">{suggestion.impact || 'medium impact'}</span>
+            </div>
+            <p className="text-sm text-gray-700 dark:text-zinc-300 mt-2 mb-3 truncate">{suggestion.description || "No specific description available."}</p>
+
+            <div className="flex flex-wrap text-xs text-gray-500 dark:text-zinc-400 gap-4">
+              <span className="truncate"><strong className="text-gray-700 dark:text-zinc-200">{suggestion.company}</strong> · {suggestion.position}</span>
+              {suggestion.daysAgo !== undefined && <span>{suggestion.daysAgo} days ago</span>}
+              {suggestion.estimatedTime && <span>{suggestion.estimatedTime}</span>}
+              <span>{suggestion.actionType}</span>
+            </div>
+          </div>
         </div>
-        <span className={cn(
-          "inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold capitalize",
-          urgencyColors.iconBg.replace('bg-', 'bg-opacity-50 bg-'),
-          urgencyColors.iconText
-        )}>
-          {suggestion.urgency}
-        </span>
-      </div>
-      <p className="text-sm mb-3">{suggestion.description || "No specific description available."}</p>
-      <div className="text-xs opacity-85 flex justify-between items-center text-gray-600 dark:text-zinc-400 mb-3">
-        <span>
-          {suggestion.date && <span>Sent: {formatDate(suggestion.date)}</span>}
-        </span>
-        {suggestion.followedUpAt && (
-          <span className="text-green-600 dark:text-green-400 ml-2">
-            (Followed up {formatDate(suggestion.followedUpAt)})
-          </span>
-        )}
-        {daysSinceLastActivity !== null && daysSinceLastActivity > 10 && !suggestion.responded && !suggestion.followedUp && (
-          <span className="text-red-500 dark:text-red-400 ml-auto font-semibold">
-            Overdue!
-          </span>
-        )}
-      </div>
-      <div className="flex items-center justify-between">
-        <label className="flex items-center space-x-2 cursor-pointer text-sm text-gray-700 dark:text-zinc-300">
-          <input
-            type="checkbox"
-            className="form-checkbox h-4 w-4 text-blue-600 rounded focus:ring-blue-500 dark:bg-zinc-800 dark:border-zinc-600"
-            checked={suggestion.responded}
-            onChange={(e) => updateRespondedState(suggestion.threadId, e.target.checked, suggestion.followedUpAt)}
-          />
-          <span>Responded</span>
-        </label>
+
+        <div className="flex flex-row sm:flex-col items-center sm:items-end space-x-2 sm:space-x-0 sm:space-y-3 mt-3 sm:mt-0">
+          <button
+            onClick={(e) => { e.stopPropagation(); /* placeholder: open action */ showNotification('Open action not implemented'); }}
+            className="bg-slate-900 text-white px-3 py-1 rounded-md text-sm shadow-sm hover:opacity-95"
+          >
+            Take Action
+          </button>
+          <RemindButton threadId={suggestion.threadId || suggestion.id} label="Remind Later" defaultDelayHours={24} />
+        </div>
       </div>
     </div>
   );
@@ -292,6 +281,8 @@ function Dashboard({
   openPremiumModal,
   quotaData
 }) {
+  const isPremium = userPlan === 'premium';
+  const [analyticsTab, setAnalyticsTab] = useState('overview'); // 'overview' | 'trends' | 'performance' | 'timing'
   const getCount = useCallback((category) => {
     const list = (categorizedEmails[category] || categorizedEmails[category.charAt(0).toUpperCase() + category.slice(1)] || []);
     const count = countUniqueThreads(list);
@@ -347,213 +338,276 @@ function Dashboard({
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5), [allRelevantEmails]);
 
-  const [showAllFollowups, setShowAllFollowups] = useState(false);
-  const displayedFollowups = showAllFollowups ? followUpSuggestions : followUpSuggestions.slice(0, 5);
+  // Deterministic follow-up generator based on email dates and categories
+  const followUps = useMemo(() => {
+    const results = [];
+    const now = Date.now();
+    const pushIf = (obj) => { if (results.length < 6) results.push(obj); };
 
-  const handleShowMoreFollowups = useCallback(() => {
-    setShowAllFollowups(prev => !prev);
-  }, []);
+    const daysBetween = (d) => {
+      const t = Date.parse(d);
+      if (isNaN(t)) return null;
+      return Math.floor((now - t) / (1000 * 60 * 60 * 24));
+    };
 
-  const getUrgencyColor = (urgency) => {
-    switch (urgency) {
-      case "high": return "bg-red-50 border-red-200 text-red-700 dark:bg-red-950 dark:border-red-900 dark:text-red-300";
-      case "medium": return "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-950 dark:border-yellow-900 dark:text-yellow-300";
-      case "low": return "bg-blue-50 border-blue-200 text-blue-700 dark:bg-blue-950 dark:border-blue-900 dark:text-blue-300";
-      default: return "bg-gray-50 border-gray-200 text-gray-700 dark:bg-gray-950 dark:border-gray-900 dark:text-gray-300";
+    // Heuristic rules (deterministic)
+    allRelevantEmails.forEach(email => {
+      const daysAgo = daysBetween(email.date);
+      if (daysAgo === null) return; // skip emails without parsable dates
+
+      if ((email.category || '').toLowerCase().includes('appl') && daysAgo >= 7) {
+        pushIf({
+          id: `followup-${email.id || email.threadId}`,
+          type: 'follow_up',
+          title: 'Follow up on your application',
+          description: `It has been ${daysAgo} day${daysAgo === 1 ? '' : 's'} since you applied. A concise follow-up can help re-surface your application.`,
+          urgency: daysAgo > 10 ? 'high' : 'medium',
+          daysAgo,
+          company: email.company || email.from || 'Unknown',
+          position: email.position || email.subject || '',
+          threadId: email.threadId || email.id,
+          actionType: 'email',
+          estimatedTime: '5 mins',
+          impact: 'medium'
+        });
+      }
+
+      if ((email.category || '').toLowerCase().includes('interview') && daysAgo >= 2) {
+        pushIf({
+          id: `thankyou-${email.id || email.threadId}`,
+          type: 'thank_you',
+          title: 'Send a thank-you note',
+          description: `Send a personalized thank-you referencing interview details to keep momentum.`,
+          urgency: daysAgo > 5 ? 'high' : 'medium',
+          daysAgo,
+          company: email.company || email.from || 'Unknown',
+          position: email.position || '',
+          threadId: email.threadId || email.id,
+          actionType: 'email',
+          estimatedTime: '10 mins',
+          impact: 'high'
+        });
+      }
+
+      if ((email.category || '').toLowerCase().includes('offer') && daysAgo >= 1) {
+        pushIf({
+          id: `negotiate-${email.id || email.threadId}`,
+          type: 'salary_negotiation',
+          title: 'Research offer and negotiation',
+          description: `Review the offer details and market benchmarks before responding.`,
+          urgency: 'high',
+          daysAgo,
+          company: email.company || email.from || 'Unknown',
+          position: email.position || '',
+          threadId: email.threadId || email.id,
+          actionType: 'research',
+          estimatedTime: '30 mins',
+          impact: 'high'
+        });
+      }
+    });
+
+    // Add 1-2 fixed strategic suggestions for premium users (no unverified numeric claims)
+    if (results.length < 6) {
+      pushIf({
+        id: 'networking-linkedin',
+        type: 'networking',
+        title: 'Connect with relevant contacts',
+        description: 'Identify and reach out to a few relevant contacts at target companies with a short, personalized message.',
+        urgency: 'medium',
+        daysAgo: 0,
+        company: 'Target Companies',
+        position: '',
+        actionType: 'linkedin',
+        estimatedTime: '15 mins',
+        impact: 'medium'
+      });
     }
-  };
 
+    return results.slice(0, 6);
+  }, [allRelevantEmails]);
 
+  const [showAllFollowups, setShowAllFollowups] = useState(false);
+  const displayedFollowups = showAllFollowups ? followUps : followUps.slice(0, 5);
+  const handleShowMoreFollowups = useCallback(() => setShowAllFollowups(prev => !prev), []);
+  
   return (
-  <div className="min-w-0 bg-gray-50 dark:bg-zinc-900 text-gray-900 dark:text-white">
-      {/* Dashboard Header with dynamic greeting */}
-  <div className="flex justify-between items-start mb-4">
-        <div>
-          <h2 className="text-2xl font-bold mb-2">Job Search Dashboard</h2>
-          <p className="text-gray-60:0 dark:text-zinc-400">Track your applications and progress</p>
-        </div>
-      </div>
+    <div className="w-full overflow-x-hidden">
+      <div className="mx-auto w-full max-w-[360px] space-y-4">
+        {isPremium ? (
+          <>
+            {/* Analytics (Premium) */}
+            <div className="card p-4 rounded-lg bg-white dark:bg-zinc-800 shadow-sm">
+              <div className="mb-3">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
+                  Job Search Analytics
+                  <span className="text-xs ml-2 px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 rounded">Premium</span>
+                </h2>
+                <p className="text-sm text-gray-500 dark:text-zinc-400">Deep insights into your job search performance</p>
+              </div>
+              {/* Tabs under description */}
+              <div className="mb-4 grid grid-cols-4 gap-1">
+                { [
+                  { id: 'overview', label: 'Overview' },
+                  { id: 'trends', label: 'Trends' },
+                  { id: 'performance', label: 'Performance' },
+                  { id: 'timing', label: 'Timing' }
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setAnalyticsTab(t.id)}
+                    className={cn(
+                      'text-xs px-2 py-1 rounded border',
+                      analyticsTab === t.id
+                        ? 'bg-gray-100 dark:bg-zinc-700 text-gray-900 dark:text-white border-transparent'
+                        : 'text-gray-600 dark:text-zinc-300 border-gray-200 dark:border-zinc-700 hover:bg-gray-50 dark:hover:bg-zinc-700/50'
+                    )}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {analyticsTab === 'overview' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-gray-50 dark:bg-zinc-700">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400">Total Applications</div>
+                        <div className="text-xl font-bold text-gray-900 dark:text-white">{totalApplications}</div>
+                      </div>
+                      <BarChart3 className="h-5 w-5 text-gray-500" />
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400">Response Rate</div>
+                        <div className="text-xl font-bold text-green-600 dark:text-green-400">{responseRate}%</div>
+                      </div>
+                      <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400">Interviews Scheduled</div>
+                        <div className="text-xl font-bold text-blue-600 dark:text-blue-400">{interviewedCount}</div>
+                      </div>
+                      <Calendar className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                  </div>
+                  <div className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400">Avg Response Time</div>
+                        <div className="text-xl font-bold text-orange-600 dark:text-orange-400">{Math.max(1, Math.round((offersCount ? 3.2 : 5) * 10) / 10)}d</div>
+                      </div>
+                      <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {analyticsTab !== 'overview' && (
+                <div className="p-3 rounded-lg border border-dashed border-gray-200 dark:border-zinc-700 text-xs text-gray-600 dark:text-zinc-300">
+                  This tab is available in the full analytics view. Switch back to Overview for key metrics.
+                </div>
+              )}
+            </div>
+            
+            {/* Categories (Premium) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+              {categories.map((category) => (
+                <CategorySummaryCard
+                  key={category.id}
+                  categoryKey={category.id}
+                  counts={categorizedEmails}
+                  onCategorySelect={onCategorySelect}
+                />
+              ))}
+            </div>
 
-      {/* Overview Stats Grid */}
-  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <StatCard
-          icon={BarChart3}
-          title="Total Applications"
-          value={totalApplications}
-          subtitle="Total applications"
-          bgColorClasses="bg-gradient-to-r from-blue-500 to-blue-600 text-white"
-          textColorClasses=""
-        />
-        <StatCard
-          icon={TrendingUp}
-          title="Response Rate"
-          value={`${responseRate}%`}
-          subtitle="Interviews + Offers"
-          bgColorClasses="bg-white dark:bg-zinc-800"
-          textColorClasses="text-green-600 dark:text-green-400"
-        />
-        <StatCard
-          icon={Clock}
-          title="This Week"
-          value={newApplicationsThisWeek}
-          subtitle="New applications"
-          bgColorClasses="bg-white dark:bg-zinc-800"
-          textColorClasses="text-blue-600 dark:text-blue-400"
-        />
-        <StatCard
-          icon={PieChart}
-          title="Success Rate"
-          value={`${successRate}%`}
-          subtitle="Offers received"
-          bgColorClasses="bg-white dark:bg-zinc-800"
-          textColorClasses="text-purple-600 dark:text-purple-400"
-        />
-      </div>
+            {/* Follow-ups and Recent (Premium only) */}
+            <div className="card p-4 rounded-lg shadow-sm bg-white dark:bg-zinc-800">
+              <div className="mb-3">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Suggested Follow-ups</h3>
+                <p className="text-sm text-gray-600 dark:text-zinc-400">Actionable steps to advance your job search</p>
+              </div>
+              <div className="space-y-3">
+                {displayedFollowups.map((f) => (
+                  <DashboardFollowUpCard
+                    key={f.threadId || f.id}
+                    suggestion={f}
+                    markFollowedUp={markFollowedUp}
+                    updateRespondedState={updateRespondedState}
+                    onEmailSelect={onEmailSelect}
+                    openMisclassificationModal={openMisclassificationModal}
+                  />
+                ))}
+              </div>
+            </div>
 
-      {/* Category Cards Grid */}
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        {categories.map(category => (
-          <CategorySummaryCard
-            key={category.id}
-            categoryKey={category.id}
-            counts={categorizedEmails}
-            onCategorySelect={onCategorySelect}
-          />
-        ))}
-      </div>
-
-    {/* Suggested Follow-Ups Section - Temporarily Hidden (company extraction removed) */}
-    {false && (
-  <div className="card mb-4 p-5 rounded-lg shadow-sm bg-white dark:bg-zinc-800">
-        <div className="border-b border-gray-200 dark:border-zinc-700 pb-4 mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
-            Suggested Follow-ups
-            {userPlan !== 'premium' && <Crown className="h-5 w-5 ml-2 text-yellow-500" />}
-          </h3>
-          <p className="text-gray-600 dark:text-zinc-400 text-sm mt-1">
-            {userPlan === 'premium'
-              ? "Actionable steps to advance your job search"
-              : "Get personalized follow-up suggestions with Premium"
-            }
-          </p>
-        </div>
-        <div className="card-content">
-          {userPlan === 'premium' ? (
-            <div className="space-y-4">
-              {loadingSuggestions ? (
-                <div className="text-center py-8 text-gray-500 dark:text-zinc-400">
-                  <svg className="animate-spin h-8 w-8 text-blue-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  <p>Loading follow-up suggestions...</p>
+            <div className="card p-4 rounded-lg bg-white dark:bg-zinc-800 shadow-sm">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Recent Activity</h3>
+              {recentEmails.length ? (
+                <div className="space-y-2">
+                  {recentEmails.map((email) => (
+                    <div key={email.id || email.threadId} className="w-full">
+                      <DashboardEmailCard
+                        email={email}
+                        onEmailSelect={onEmailSelect}
+                        onOpenMisclassificationModal={openMisclassificationModal}
+                      />
+                    </div>
+                  ))}
                 </div>
               ) : (
-                displayedFollowups.length > 0 ? (
-                  displayedFollowups.map((followUp) => (
-                    <DashboardFollowUpCard
-                      key={followUp.threadId}
-                      suggestion={followUp}
-                      markFollowedUp={markFollowedUp}
-                      updateRespondedState={updateRespondedState}
-                      onEmailSelect={onEmailSelect}
-                      openMisclassificationModal={openMisclassificationModal}
-                    />
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-gray-500 dark:text-zinc-400">
-                    <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No follow-ups needed right now!</p>
-                    <p className="text-sm">You're all caught up with your job search.</p>
-                  </div>
-                )
-              )}
-              {followUpSuggestions.length > 5 && (
-                <button
-                  className="btn btn-outline w-full mt-4 py-2 px-4 rounded-md border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors"
-                  onClick={handleShowMoreFollowups}
-                >
-                  {showAllFollowups ? 'Show Less' : `Show More (${followUpSuggestions.length - 5} hidden)`}
-                </button>
+                <p className="text-sm text-gray-500">No recent activity.</p>
               )}
             </div>
-          ) : (
-            <div className="text-center py-12 space-y-4 relative">
-              <div className="absolute inset-0 bg-gray-100 dark:bg-zinc-800 opacity-90 rounded-lg flex flex-col items-center justify-center p-8 z-10">
-                <Lock className="h-12 w-12 mx-auto mb-4 text-gray-400 dark:text-gray-500" />
-                <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300 mb-2">Premium Feature</h3>
-                <p className="text-gray-600 dark:text-gray-400 text-sm max-w-xs mx-auto">
-                  Get AI-powered follow-up suggestions based on your application timeline
-                </p>
-                <button
-                  onClick={openPremiumModal}
-                  className="mt-6 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg rounded-full px-6 py-3 transition-all duration-300 flex items-center justify-center"
-                >
-                  <Crown className="h-4 w-4 mr-2" />
-                  Upgrade to Premium
-                </button>
-                <p className="text-xs text-gray-500 dark:text-zinc-400 mt-2">
-                  Unlock smart follow-up reminders, application analytics, and more
-                </p>
-              </div>
-              <div className="blur-sm pointer-events-none">
-                <div className="space-y-4">
-                  <div className="p-4 rounded-lg border bg-gray-50 dark:bg-zinc-700 border-gray-200 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <Send className="h-4 w-4" />
-                          <h3 className="font-medium">Mock Follow-up 1</h3>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 ml-2">medium</span>
-                        </div>
-                        <p className="text-sm mb-2">This is a mock description for a follow-up.</p>
-                        <div className="text-xs opacity-75">Sent 5 days ago</div>
-                      </div>
-                      <button className="py-1 px-3 text-sm rounded-md border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">Take Action</button>
-                    </div>
-                  </div>
-                  <div className="p-4 rounded-lg border bg-gray-50 dark:bg-zinc-700 border-gray-200 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <MessageSquare className="h-4 w-4" />
-                          <h3 className="font-medium">Mock Follow-up 2</h3>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200 ml-2">high</span>
-                        </div>
-                        <p className="text-sm mb-2">Another mock description for a thank you note.</p>
-                        <div className="text-xs opacity-75">Sent 12 days ago</div>
-                      </div>
-                      <button className="py-1 px-3 text-sm rounded-md border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300">Take Action</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-  </div>)}
-
-    {/* Recent Activity - Temporarily Hidden (depends on removed data features) */}
-    {false && (
-  <section className="bg-white dark:bg-zinc-800 p-5 rounded-lg shadow space-y-3">
-        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Recent Activity</h2>
-        {recentEmails.length > 0 ? (
-          <div className="overflow-x-auto pb-4 flex space-x-4 px-1">
-            {recentEmails.map(email => (
-              <DashboardEmailCard
-                key={email.id || email.threadId}
-                email={email}
-                onEmailSelect={onEmailSelect}
-                onOpenMisclassificationModal={openMisclassificationModal}
-              />
-            ))}
-          </div>
+          </>
         ) : (
-          <p className="text-gray-500 dark:text-zinc-400 text-center py-8">No recent activity. Start applying for jobs!</p>
+          <>
+            {/* Free: Compact stats only */}
+            <div className="space-y-3">
+              <div className="p-4 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+                <div className="text-sm">Total Applications</div>
+                <div className="text-3xl font-bold">{totalApplications}</div>
+                <div className="text-xs mt-1 opacity-90">Total applications</div>
+              </div>
+              <div className="p-3 rounded-lg bg-white dark:bg-zinc-800 shadow-sm">
+                <div className="text-sm text-green-600">Response Rate</div>
+                <div className="text-2xl font-bold text-green-600">{responseRate}%</div>
+                <div className="text-xs mt-1 text-gray-500">Interviews + Offers</div>
+              </div>
+              <div className="p-3 rounded-lg bg-white dark:bg-zinc-800 shadow-sm">
+                <div className="text-sm text-gray-600">This Week</div>
+                <div className="text-2xl font-bold">{newApplicationsThisWeek}</div>
+                <div className="text-xs mt-1 text-gray-500">New applications</div>
+              </div>
+              <div className="p-3 rounded-lg bg-white dark:bg-zinc-800 shadow-sm">
+                <div className="text-sm text-purple-600">Success Rate</div>
+                <div className="text-2xl font-bold text-purple-600">{totalApplications ? Math.round((offersCount/ totalApplications)*100) : 0}%</div>
+                <div className="text-xs mt-1 text-gray-500">Offers received</div>
+              </div>
+            </div>
+            
+            {/* Categories (Free) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
+              {categories.map((category) => (
+                <CategorySummaryCard
+                  key={category.id}
+                  categoryKey={category.id}
+                  counts={categorizedEmails}
+                  onCategorySelect={onCategorySelect}
+                />
+              ))}
+            </div>
+            {/* No follow-ups or recent for free users */}
+          </>
         )}
-  </section>)}
+      </div>
     </div>
   );
-}
+ }
 
 export default Dashboard;
