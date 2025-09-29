@@ -56,11 +56,36 @@ export function useFollowUps(userEmail, userId, userPlan) { // Accept userPlan a
       console.log("DEBUG useFollowUps: Raw fetched suggestions from service:", fetchedSuggestions);
 
       // Merge with local followedUpMap and respondedMap
-      const mergedSuggestions = fetchedSuggestions.map(suggestion => ({
-        ...suggestion,
-        followedUp: !!followedUpMap[suggestion.threadId],
-        responded: !!respondedMap[suggestion.threadId],
-      }));
+      // Normalize/enrich suggestion objects so the UI has predictable fields
+      const mergedSuggestions = fetchedSuggestions.map(suggestion => {
+        const threadId = suggestion.thread_id || suggestion.threadId || suggestion.thread || suggestion.id || suggestion.email_id || suggestion.emailId;
+        const from = suggestion.from || suggestion.sender || '';
+        const subject = suggestion.subject || suggestion.title || '';
+        const daysAgo = (suggestion.date) ? Math.max(0, Math.round((Date.now() - new Date(suggestion.date).getTime()) / (1000*60*60*24))) : undefined;
+
+        // Heuristic: try to split a "from" into company/position if backend provided structured fields
+        const company = suggestion.company || suggestion.org || (from.includes('@') ? from.split('@')[1] : from);
+        const position = suggestion.position || suggestion.role || suggestion.jobTitle || '';
+
+        // Provide small, safe defaults for fields the Dashboard expects
+        const enriched = {
+          ...suggestion,
+          threadId,
+          id: suggestion.id || threadId,
+          title: suggestion.title || subject || 'Follow up',
+          description: suggestion.description || '',
+          urgency: (suggestion.urgency || suggestion.priority || 'medium'),
+          impact: (suggestion.impact || suggestion.importance || 'medium'),
+          company: company || '',
+          position: position || '',
+          daysAgo,
+          estimatedTime: suggestion.estimatedTime || suggestion.eta || suggestion.estimate || '10 mins',
+          actionType: suggestion.actionType || suggestion.type || 'follow_up',
+          followedUp: !!followedUpMap[threadId],
+          responded: !!respondedMap[threadId],
+        };
+        return enriched;
+      });
 
       // Filter out suggestions that have already been followed up or responded to
       const filteredSuggestions = mergedSuggestions.filter(suggestion =>

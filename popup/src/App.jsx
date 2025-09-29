@@ -377,7 +377,7 @@ function App() {
       {isLoadingApp && <LoadingOverlay message="Loading data..." />}
       <Notification />
 
-  <div className="w-64 h-[600px] flex flex-col border-r border-gray-200 dark:border-zinc-700">
+  <div className="w-56 h-[600px] flex flex-col border-r border-gray-200 dark:border-zinc-700">
         <Sidebar
           selectedCategory={selectedCategory}
           onCategoryChange={handleCategoryChange}
