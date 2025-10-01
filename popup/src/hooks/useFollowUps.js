@@ -66,6 +66,63 @@ export function useFollowUps(userEmail, userId, userPlan) { // Accept userPlan a
         // Heuristic: try to split a "from" into company/position if backend provided structured fields
         const company = suggestion.company || suggestion.org || (from.includes('@') ? from.split('@')[1] : from);
         const position = suggestion.position || suggestion.role || suggestion.jobTitle || '';
+        
+        const actionType = suggestion.actionType || suggestion.type || 'follow_up';
+        const category = (suggestion.category || '').toLowerCase();
+
+        // Calculate urgency based on timing and action type
+        // Color system: Red (high urgency) = 7+ days, Amber (medium) = 3-6 days, Blue (low) = 0-2 days or strategic
+        let urgency = suggestion.urgency || suggestion.priority;
+        if (!urgency) {
+          // Intelligent urgency calculation based on action type
+          switch (actionType) {
+            case 'thank_you':
+              // Thank-you notes are ALWAYS high priority (time-sensitive)
+              urgency = 'high';  // Red: Send within 24-48 hours of interview
+              break;
+            
+            case 'status_check':
+              // Status checks are high priority (you've waited long enough)
+              urgency = 'high';  // Red: Time to check in (7+ days elapsed)
+              break;
+            
+            case 'follow_up':
+              // Regular follow-ups are medium priority (optimal window)
+              urgency = 'medium'; // Amber: Good timing to follow up (3-13 days)
+              break;
+            
+            case 'research':
+              // Research is low priority (strategic, no immediate deadline)
+              urgency = 'low';   // Blue: Prepare while waiting for response (0-6 days)
+              break;
+            
+            case 'networking':
+            case 'portfolio':
+              // Strategic actions are low priority
+              urgency = 'low';   // Blue: Long-term value, no urgency
+              break;
+            
+            default:
+              // Fallback based on days for any unrecognized action types
+              if (daysAgo >= 7) urgency = 'high';
+              else if (daysAgo >= 3) urgency = 'medium';
+              else urgency = 'low';
+          }
+        }
+
+        // Calculate impact based on action type and context
+        let impact = suggestion.impact || suggestion.importance;
+        if (!impact) {
+          if (actionType === 'thank_you' || actionType === 'networking') {
+            impact = 'high'; // Relationship-building has high impact
+          } else if (actionType === 'follow_up' && daysAgo >= 7) {
+            impact = 'high'; // Timely follow-ups boost response rates
+          } else if (actionType === 'research') {
+            impact = 'medium'; // Research helps but isn't immediate
+          } else {
+            impact = 'medium';
+          }
+        }
 
         // Provide small, safe defaults for fields the Dashboard expects
         const enriched = {
@@ -74,13 +131,13 @@ export function useFollowUps(userEmail, userId, userPlan) { // Accept userPlan a
           id: suggestion.id || threadId,
           title: suggestion.title || subject || 'Follow up',
           description: suggestion.description || '',
-          urgency: (suggestion.urgency || suggestion.priority || 'medium'),
-          impact: (suggestion.impact || suggestion.importance || 'medium'),
+          urgency,
+          impact,
           company: company || '',
           position: position || '',
           daysAgo,
           estimatedTime: suggestion.estimatedTime || suggestion.eta || suggestion.estimate || '10 mins',
-          actionType: suggestion.actionType || suggestion.type || 'follow_up',
+          actionType,
           followedUp: !!followedUpMap[threadId],
           responded: !!respondedMap[threadId],
         };
