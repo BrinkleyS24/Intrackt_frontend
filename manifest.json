@@ -45,6 +45,6 @@
     "type": "module"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://www.googleapis.com https://accounts.google.com https://gmail-tracker-backend-215378038667.us-central1.run.app https://securetoken.googleapis.com https://identitytoolkit.googleapis.com http://localhost:3000;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:3000 https://www.googleapis.com https://accounts.google.com https://gmail-tracker-backend-215378038667.us-central1.run.app https://securetoken.googleapis.com https://identitytoolkit.googleapis.com;"
   }
 }

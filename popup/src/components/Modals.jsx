@@ -106,13 +106,6 @@ function Modals({
     }
   };
 
-  // Debug log to confirm prop value
-  useEffect(() => {
-    if (isMisclassificationModalOpen && selectedEmailForMisclassification) {
-      // Modal opened with email data for misclassification reporting
-    }
-  }, [isMisclassificationModalOpen, selectedEmailForMisclassification]);
-
 
   // Logic for the undo toast timer (if needed, otherwise remove)
   const circumference = 2 * Math.PI * 14; // For a radius of 14

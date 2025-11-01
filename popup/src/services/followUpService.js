@@ -15,7 +15,7 @@ export async function getFollowUpStateService() {
     const result = await chrome.storage.local.get({ followedUpMap: {}, respondedMap: {} });
     return result;
   } catch (error) {
-    console.error("❌ Intrackt: Error getting follow-up state from local storage:", error);
+    console.error("❌ AppMailia AI: Error getting follow-up state from local storage:", error);
     return { followedUpMap: {}, respondedMap: {} };
   }
 }
@@ -31,10 +31,9 @@ export async function markFollowedUpService(threadId) {
     const result = await chrome.storage.local.get({ followedUpMap: {} });
     const followedUpMap = { ...result.followedUpMap, [threadId]: now };
     await chrome.storage.local.set({ followedUpMap });
-    console.log(`✅ Intrackt: Thread ${threadId} marked as followed up.`);
     return now;
   } catch (error) {
-    console.error("❌ Intrackt: Error marking followed up in local storage:", error);
+    console.error("❌ AppMailia AI: Error marking followed up in local storage:", error);
     throw error;
   }
 }
@@ -68,10 +67,9 @@ export async function updateRespondedStateService(threadId, isChecked, currentFo
     }
 
     await chrome.storage.local.set({ respondedMap, followedUpMap });
-    console.log(`✅ Intrackt: Responded state for thread ${threadId} updated to ${isChecked}.`);
     return { followedUpAt: followedUpMap[threadId] || null };
   } catch (error) {
-    console.error("❌ Intrackt: Error updating responded state in local storage:", error);
+    console.error("❌ AppMailia AI: Error updating responded state in local storage:", error);
     throw error;
   }
 }
@@ -83,7 +81,7 @@ export async function updateRespondedStateService(threadId, isChecked, currentFo
  */
 export async function fetchFollowUpSuggestionsService(userEmail) {
   if (!userEmail) {
-    console.warn("Intrackt: Cannot fetch follow-up suggestions - no user email.");
+    console.warn("AppMailia AI: Cannot fetch follow-up suggestions - no user email.");
     return [];
   }
   try {
@@ -92,14 +90,13 @@ export async function fetchFollowUpSuggestionsService(userEmail) {
       userEmail: userEmail
     });
     if (response.success && Array.isArray(response.suggestions)) {
-      console.log("✅ Intrackt: Follow-up suggestions fetched:", response.suggestions);
       return response.suggestions;
     } else {
-      console.error("❌ Intrackt: Failed to fetch follow-up suggestions from background:", response.error);
+      console.error("❌ AppMailia AI: Failed to fetch follow-up suggestions from background:", response.error);
       return [];
     }
   } catch (error) {
-    console.error("❌ Intrackt: Error fetching follow-up suggestions:", error);
+    console.error("❌ AppMailia AI: Error fetching follow-up suggestions:", error);
     return [];
   }
 }

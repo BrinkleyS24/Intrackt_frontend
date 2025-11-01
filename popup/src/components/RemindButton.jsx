@@ -48,7 +48,6 @@ function sendMessageSafe(message) {
         });
       } else {
         // Fallback for non-extension contexts
-        console.log('[RemindButton] message', message);
         resolve({ ok: true, emulated: true });
       }
     } catch (e) {
@@ -58,5 +57,5 @@ function sendMessageSafe(message) {
 }
 
 function showSafe(msg, type = 'info') {
-  try { showNotification(msg, type); } catch (_) { console.log('[toast]', type, msg); }
+  try { showNotification(msg, type); } catch (_) {}
 }

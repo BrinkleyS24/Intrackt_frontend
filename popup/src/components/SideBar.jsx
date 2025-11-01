@@ -37,6 +37,7 @@ export function Sidebar({
   selectedCategory,
   onCategoryChange,
   categorizedEmails,
+  categoryTotals, // NEW: Receive accurate totals from backend
   unreadCounts,
   onLogout,
   onRefresh,
@@ -47,6 +48,11 @@ export function Sidebar({
   onManageSubscription
 }) {
   const getEmailCount = (category) => {
+    // PRIORITY: Always use backend totals if available (accurate DB counts)
+    // Fallback to counting local data only during initial load or if backend unavailable
+    if (categoryTotals && categoryTotals[category] !== undefined) {
+      return categoryTotals[category];
+    }
     const list = categorizedEmails[category] || [];
     return countUniqueThreads(list);
   };

@@ -101,7 +101,7 @@ function EmailList({
             "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
             style.badge
           )}>
-            {displayCount} {displayCount === 1 ? 'email' : 'emails'}
+            {displayCount} {displayCount === 1 ? 'conversation' : 'conversations'}
           </span>
         </div>
         {canShowMarkAllButton && (
@@ -145,7 +145,7 @@ function EmailList({
             return (
               <div
                 key={group.threadId}
-                onClick={() => onEmailSelect(email)}
+                onClick={() => onEmailSelect(email, group)}
                 className={cn(
                   "cursor-pointer transition-all duration-150",
                   isSelected ? "ring-2 ring-blue-500 bg-blue-50" : "",

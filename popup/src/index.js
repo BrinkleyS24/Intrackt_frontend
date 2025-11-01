@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
+import ErrorBoundary from './components/ErrorBoundary';
 import './index.css'; // Import the main CSS file (Tailwind output)
 
 // Import subscription service to ensure it's available globally
@@ -9,12 +10,14 @@ import './services/subscriptionService.js';
 // Find the root DOM element where the React app will be mounted
 const container = document.getElementById('root');
 
-// Create a root and render the App component
+// Create a root and render the App component wrapped in ErrorBoundary
 if (container) {
     const root = createRoot(container);
     root.render(
         <React.StrictMode>
-            <App />
+            <ErrorBoundary>
+                <App />
+            </ErrorBoundary>
         </React.StrictMode>
     );
 } else {
@@ -25,8 +28,6 @@ if (container) {
 if (typeof window !== "undefined") {
   window.__REACT_INSTANCE = window.__REACT_INSTANCE || React;
   if (window.__REACT_INSTANCE !== React) {
-    console.error("🚨 Multiple React instances detected!");
-  } else {
-    console.log("✅ Single React instance.");
+    console.error("Multiple React instances detected!");
   }
 }

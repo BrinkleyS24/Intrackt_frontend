@@ -16,6 +16,9 @@ export const CONFIG = {
     UNDO_MISCLASSIFICATION: '/api/emails/undo-misclassification', // Added endpoint for undoing misclassification
     FETCH_USER_PLAN: '/api/user', // Endpoint for fetching user plan and status
     UPDATE_USER_PLAN: '/api/user/update-plan', // Endpoint for updating user plan
+    SUGGESTION_ACTION: '/api/suggestions/action', // Endpoint for marking suggestions as completed
+    SUGGESTION_SNOOZE: '/api/suggestions/snooze', // Endpoint for snoozing suggestions
+    SUGGESTION_STATES: '/api/suggestions/states', // Endpoint for fetching suggestion states
     // Note: SEND_EMAIL_REPLY is handled by the background script directly with Gmail API, not via a specific backend endpoint.
     // Note: QUOTA data is returned as part of the SYNC_EMAILS response, not a separate endpoint.
   },

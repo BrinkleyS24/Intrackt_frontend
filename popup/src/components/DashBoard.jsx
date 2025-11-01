@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { FileText, Calendar, Gift, X, Flag, ArrowUp, ArrowDown, BarChart3, TrendingUp, Clock } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { formatDate } from '../utils/uiHelpers';
-import { countUniqueThreads } from '../utils/grouping';
+import { groupEmailsByThread, countUniqueThreads } from '../utils/grouping';
 import { showNotification } from './Notification';
+import { CONFIG } from '../utils/constants';
 
 /**
  * Helper functions for category styling
@@ -57,6 +58,82 @@ function generateDynamicInsight(suggestion) {
   };
 
   return defaultInsights[type] || suggestion.description || "";
+}
+
+/**
+ * StatCarousel component for cycling through different statistics
+ */
+function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDeltaPct, newApplicationsThisWeek, offersCount, emailsCur30, emailsPrev30, emailsCur7, emailsPrev7, Trend }) {
+  const [currentSlide, setCurrentSlide] = useState(0);
+  
+  const appsCur = countUniqueThreads(emailsCur30.filter(e => e.category?.toLowerCase().includes('appl')));
+  const appsPrev = countUniqueThreads(emailsPrev30.filter(e => e.category?.toLowerCase().includes('appl')));
+  const appsCur7 = countUniqueThreads(emailsCur7.filter(e => e.category?.toLowerCase().includes('appl')));
+  const appsPrev7 = countUniqueThreads(emailsPrev7.filter(e => e.category?.toLowerCase().includes('appl')));
+  
+  const monthDelta = appsPrev > 0 ? Math.round(((appsCur - appsPrev) / appsPrev) * 100) : (appsCur > 0 ? 100 : 0);
+  const weekDelta = appsPrev7 > 0 ? Math.round(((appsCur7 - appsPrev7) / appsPrev7) * 100) : (appsCur7 > 0 ? 100 : 0);
+  
+  const slides = [
+    {
+      label: "Total Applications",
+      value: totalApplications,
+      delta: appsDeltaPct,
+      timeframe: "previous 30 days",
+      bgColor: "bg-gradient-to-r from-cyan-600 to-blue-600",
+      textColor: "text-white"
+    },
+    {
+      label: "Last 30 Days",
+      value: appsCur,
+      delta: monthDelta,
+      timeframe: "previous 30 days",
+      bgColor: "bg-white dark:bg-zinc-800",
+      textColor: "text-gray-900 dark:text-white"
+    },
+    {
+      label: "Last 7 Days",
+      value: appsCur7,
+      delta: weekDelta,
+      timeframe: "previous 7 days",
+      bgColor: "bg-white dark:bg-zinc-800",
+      textColor: "text-gray-900 dark:text-white"
+    }
+  ];
+
+  return (
+    <div className="relative">
+      <div className={cn("p-4 rounded-lg shadow-sm", slides[currentSlide].bgColor)}>
+        <div className={cn("flex items-center justify-between mb-3", slides[currentSlide].textColor)}>
+          <div className="text-sm opacity-90">{slides[currentSlide].label}</div>
+          <FileText className="h-5 w-5 opacity-75" />
+        </div>
+        <div className={cn("text-3xl font-bold mb-2", slides[currentSlide].textColor)}>
+          {slides[currentSlide].value}
+        </div>
+        <div className={cn("text-xs opacity-90", slides[currentSlide].textColor)}>
+          <Trend delta={slides[currentSlide].delta} timeframe={slides[currentSlide].timeframe} />
+        </div>
+        
+        {/* Pagination dots inside the card */}
+        <div className="flex items-center justify-center gap-1.5 mt-4">
+          {slides.map((_, index) => (
+            <button
+              key={index}
+              onClick={() => setCurrentSlide(index)}
+              className={cn(
+                "h-2 rounded-full transition-all duration-300",
+                currentSlide === index 
+                  ? "w-6 bg-current opacity-100" 
+                  : "w-2 bg-current opacity-30 hover:opacity-50"
+              )}
+              aria-label={`Go to slide ${index + 1}`}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -149,17 +226,79 @@ function DashboardEmailCard({ email, onEmailSelect, onOpenMisclassificationModal
 }
 
 /**
+ * Snooze Time Picker Modal
+ */
+function SnoozeModal({ isOpen, onClose, onConfirm }) {
+  const [selectedDuration, setSelectedDuration] = useState(24); // Default 1 day
+
+  const durations = [
+    { label: '1 hour', value: 1 },
+    { label: '3 hours', value: 3 },
+    { label: '1 day', value: 24 },
+    { label: '3 days', value: 72 },
+    { label: '1 week', value: 168 }
+  ];
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={onClose}>
+      <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl max-w-sm w-full p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Remind me later</h3>
+        <p className="text-sm text-gray-600 dark:text-zinc-400 mb-4">When should we remind you about this?</p>
+        
+        <div className="space-y-2 mb-6">
+          {durations.map((duration) => (
+            <button
+              key={duration.value}
+              onClick={() => setSelectedDuration(duration.value)}
+              className={cn(
+                "w-full px-4 py-3 rounded-md text-sm font-medium text-left transition-colors",
+                selectedDuration === duration.value
+                  ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-2 border-blue-500"
+                  : "bg-gray-50 dark:bg-zinc-700 text-gray-700 dark:text-zinc-300 border-2 border-transparent hover:bg-gray-100 dark:hover:bg-zinc-600"
+              )}
+            >
+              {duration.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 rounded-md text-sm font-medium bg-gray-100 dark:bg-zinc-700 text-gray-700 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-600 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => {
+              onConfirm(selectedDuration);
+              onClose();
+            }}
+            className="flex-1 px-4 py-2 rounded-md text-sm font-medium bg-slate-900 text-white hover:bg-slate-800 transition-colors"
+          >
+            Set Reminder
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * DashboardFollowUpCard component
  */
-function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedState, onEmailSelect, openMisclassificationModal }) {
+function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedState, onEmailSelect, openMisclassificationModal, onActionComplete, onSnooze }) {
   const [showWhyThis, setShowWhyThis] = useState(false);
+  const [showSnoozeModal, setShowSnoozeModal] = useState(false);
 
   const getActionEmoji = (type) => {
     switch ((type || '').toLowerCase()) {
       case 'email':
       case 'follow_up': return '📧';
       case 'linkedin':
-      case 'networking': return '💼';
+      case 'networking': return '�';
       case 'call': return '📞';
       case 'research': return '🔍';
       case 'thank_you': return '💬';
@@ -167,6 +306,28 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
       case 'application': return '📄';
       case 'portfolio': return '🎯';
       default: return '📌';
+    }
+  };
+
+  const getChannelEmoji = (channel) => {
+    switch ((channel || '').toLowerCase()) {
+      case 'email': return '📧';
+      case 'linkedin': return '💼';
+      case 'call': return '📞';
+      case 'research': return '🔍';
+      case 'portfolio': return '🎯';
+      default: return '📧';
+    }
+  };
+
+  const getChannelLabel = (channel) => {
+    switch ((channel || '').toLowerCase()) {
+      case 'email': return 'email';
+      case 'linkedin': return 'LinkedIn';
+      case 'call': return 'call';
+      case 'research': return 'research';
+      case 'portfolio': return 'portfolio';
+      default: return 'email';
     }
   };
 
@@ -218,6 +379,12 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
   const colors = getUrgencyColors(suggestion.urgency);
   const emoji = getActionEmoji(suggestion.actionType || suggestion.type);
   const aiInsight = suggestion.aiInsight || generateDynamicInsight(suggestion) || suggestion.description;
+
+  // Use backend-provided values with smart fallbacks
+  const estimatedTime = suggestion.estimatedTime || '10 mins';
+  const actionChannel = suggestion.actionChannel || 'email';
+  const channelEmoji = getChannelEmoji(actionChannel);
+  const channelLabel = getChannelLabel(actionChannel);
 
   return (
     <div className={cn(
@@ -278,7 +445,7 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
         )}
         {suggestion.actionType && (
           <span className="flex items-center gap-1">
-            <span>{getActionEmoji(suggestion.actionType)}</span>
+            <span>📍</span>
             {suggestion.actionType}
           </span>
         )}
@@ -286,18 +453,30 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
 
       <div className="flex gap-3 items-center">
         <button
-          onClick={(e) => { e.stopPropagation(); showNotification('Open action not implemented'); }}
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            onActionComplete?.(suggestion);
+          }}
           className="flex-1 bg-slate-900 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-slate-800 transition-colors"
         >
           Take Action
         </button>
         <button
-          onClick={(e) => { e.stopPropagation(); showNotification('Remind Later not implemented'); }}
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            setShowSnoozeModal(true);
+          }}
           className={cn("flex-1 px-4 py-2 rounded-md text-sm font-medium hover:bg-white/50 transition-colors", colors.remind)}
         >
           Remind Later
         </button>
       </div>
+
+      <SnoozeModal 
+        isOpen={showSnoozeModal}
+        onClose={() => setShowSnoozeModal(false)}
+        onConfirm={(duration) => onSnooze?.(suggestion, duration)}
+      />
 
       {showWhyThis && (
         <div className="mt-3 pt-3 border-t border-gray-200">
@@ -313,6 +492,7 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
 // --- Main Dashboard Component ---
 function Dashboard({
   categorizedEmails = { applied: [], interviewed: [], offers: [], rejected: [], irrelevant: [] },
+  categoryTotals = null, // NEW: Accurate category counts from backend
   onCategorySelect,
   onEmailSelect,
   followUpSuggestions = [],
@@ -330,13 +510,171 @@ function Dashboard({
   const [followUpUrgencyFilter, setFollowUpUrgencyFilter] = useState('all');
   const [followUpTypeFilter, setFollowUpTypeFilter] = useState('all');
   const [followUpPage, setFollowUpPage] = useState(1);
+  const [hiddenSuggestions, setHiddenSuggestions] = useState(new Set());
   const FOLLOW_UPS_PER_PAGE = 6;
 
+  // Listen for scope error messages from background script
+  useEffect(() => {
+    const handleMessage = (message) => {
+      if (message.type === 'SCOPE_ERROR' || message.errorCode === 'INSUFFICIENT_SCOPES') {
+        showNotification(
+          '⚠️ Gmail permissions needed. Please sign out and sign in again to grant all permissions.',
+          'error',
+          null,
+          10000 // Show for 10 seconds
+        );
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(handleMessage);
+    return () => chrome.runtime.onMessage.removeListener(handleMessage);
+  }, []);
+
+  // Helper function to make authenticated API calls
+  const apiFetch = useCallback(async (endpoint, options = {}) => {
+    try {
+      const { userEmail, userId } = await chrome.storage.local.get(['userEmail', 'userId']);
+      
+      const response = await chrome.runtime.sendMessage({
+        type: 'API_CALL',
+        endpoint,
+        options: {
+          ...options,
+          body: options.body ? { ...options.body, userEmail, userId } : undefined
+        }
+      });
+
+      if (!response?.success) {
+        throw new Error(response?.error || 'API call failed');
+      }
+
+      return response;
+    } catch (error) {
+      console.error('API fetch error:', error);
+      throw error;
+    }
+  }, []);
+
+  // Handle Take Action - mark suggestion as completed and open email modal
+  const handleActionComplete = useCallback(async (suggestion) => {
+    try {
+      const threadId = suggestion.threadId || suggestion.thread_id;
+      const suggestionKey = `${threadId}:${suggestion.actionType}`;
+      
+      // Mark as pending completion (show with reduced opacity)
+      setHiddenSuggestions(prev => {
+        const next = new Set(prev);
+        next.add(suggestionKey);
+        return next;
+      });
+      
+      const response = await chrome.runtime.sendMessage({
+        type: 'SUGGESTION_ACTION',
+        threadId: threadId,
+        actionType: suggestion.actionType
+      });
+
+      if (response?.success) {
+        // Show success notification with undo option
+        showNotification(
+          'Action completed! Opening email...', 
+          'success',
+          async () => {
+            // Undo function - called when user clicks "Undo" button
+            try {
+              // Call backend to remove the action
+              const undoResponse = await chrome.runtime.sendMessage({
+                type: 'UNDO_SUGGESTION_ACTION',
+                threadId: threadId,
+                actionType: suggestion.actionType
+              });
+              
+              if (undoResponse?.success) {
+                // Restore the suggestion
+                setHiddenSuggestions(prev => {
+                  const next = new Set(prev);
+                  next.delete(suggestionKey);
+                  return next;
+                });
+                showNotification('Action undone!', 'info');
+              } else {
+                showNotification('Could not undo action', 'error');
+              }
+            } catch (error) {
+              console.error('Error undoing action:', error);
+              showNotification('Could not undo action', 'error');
+            }
+          },
+          5000 // Show for 5 seconds
+        );
+        
+        // Open the email modal so user can reply
+        onEmailSelect(suggestion);
+        
+        // Refresh suggestions from backend after delay (in case user doesn't undo)
+        setTimeout(() => {
+          chrome.runtime.sendMessage({ type: 'FETCH_FOLLOWUP_SUGGESTIONS' });
+        }, 6000); // Wait for undo window to expire
+      } else {
+        // If failed, restore the suggestion
+        setHiddenSuggestions(prev => {
+          const next = new Set(prev);
+          next.delete(suggestionKey);
+          return next;
+        });
+        throw new Error(response?.error || 'Failed to mark action as complete');
+      }
+    } catch (error) {
+      console.error('Error completing action:', error);
+      showNotification(`Error: ${error.message}`, 'error');
+    }
+  }, [onEmailSelect]);
+
+  // Handle Remind Later - snooze suggestion
+  const handleSnooze = useCallback(async (suggestion, durationHours) => {
+    try {
+      showNotification(`Snoozing for ${durationHours >= 24 ? `${durationHours / 24} day(s)` : `${durationHours} hour(s)`}...`);
+      
+      const response = await chrome.runtime.sendMessage({
+        type: 'SUGGESTION_SNOOZE',
+        threadId: suggestion.threadId || suggestion.thread_id,
+        actionType: suggestion.actionType,
+        snoozeDuration: durationHours
+      });
+
+      if (response?.success) {
+        // Hide the suggestion immediately
+        setHiddenSuggestions(prev => {
+          const next = new Set(prev);
+          next.add(`${suggestion.threadId || suggestion.thread_id}:${suggestion.actionType}`);
+          return next;
+        });
+        
+        const timeLabel = durationHours >= 24 ? `${durationHours / 24} day(s)` : `${durationHours} hour(s)`;
+        showNotification(`Reminder set! We'll show this again in ${timeLabel}.`, 'success');
+        
+        // Refresh suggestions from backend after a short delay
+        setTimeout(() => {
+          chrome.runtime.sendMessage({ type: 'FETCH_FOLLOWUP_SUGGESTIONS' });
+        }, 500);
+      } else {
+        throw new Error(response?.error || 'Failed to snooze suggestion');
+      }
+    } catch (error) {
+      console.error('Error snoozing suggestion:', error);
+      showNotification(`Error: ${error.message}`, 'error');
+    }
+  }, []);
+
   const getCount = useCallback((category) => {
+    // Use backend-provided totals if available, otherwise count local paginated data
+    if (categoryTotals && categoryTotals[category] !== undefined) {
+      return categoryTotals[category];
+    }
+    // Fallback to counting local data (for backward compatibility or when totals not available)
     const list = (categorizedEmails[category] || categorizedEmails[category.charAt(0).toUpperCase() + category.slice(1)] || []);
-    const count = countUniqueThreads(list);
-    return count;
-  }, [categorizedEmails]);
+    return countUniqueThreads(list);
+  }, [categorizedEmails, categoryTotals]);
 
   const appliedCount = useMemo(() => getCount('applied'), [getCount]);
   const interviewedCount = useMemo(() => getCount('interviewed'), [getCount]);
@@ -368,7 +706,8 @@ function Dashboard({
   const newApplicationsThisWeek = useMemo(() => {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    return (categorizedEmails.applied || categorizedEmails.Applied || []).filter(email => new Date(email.date) >= sevenDaysAgo).length;
+    const recentApplications = (categorizedEmails.applied || categorizedEmails.Applied || []).filter(email => new Date(email.date) >= sevenDaysAgo);
+    return countUniqueThreads(recentApplications);
   }, [categorizedEmails.applied, categorizedEmails.Applied]);
 
   const successRate = useMemo(() => {
@@ -386,13 +725,7 @@ function Dashboard({
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5), [allRelevantEmails]);
 
-  // Trend metrics
-  const nowMs = Date.now();
-  const d30 = 30 * 24 * 60 * 60 * 1000;
-  const d7 = 7 * 24 * 60 * 60 * 1000;
-  const startCur30 = nowMs - d30;
-  const startPrev30 = nowMs - 2 * d30;
-
+  // Trend metrics - Helper functions
   const parseMs = (d) => {
     const t = Date.parse(d);
     return Number.isNaN(t) ? null : t;
@@ -401,17 +734,41 @@ function Dashboard({
   const isInRange = (ms, start, end) => ms !== null && ms >= start && ms < end;
   const hasCat = (e, sub) => ((e.category || '').toLowerCase().includes(sub));
 
+  // Use the grouping logic to count UNIQUE company+position combinations, not just thread_ids
   const uniqueCount = (arr) => {
-    const s = new Set();
-    arr.forEach(e => s.add(e.thread_id || e.threadId || e.thread || e.id));
-    return s.size;
+    const grouped = groupEmailsByThread(arr);
+    return grouped.length;
   };
 
-  const emailsCur30 = useMemo(() => allRelevantEmails.filter(e => isInRange(parseMs(e.date), startCur30, nowMs)), [allRelevantEmails, startCur30, nowMs]);
-  const emailsPrev30 = useMemo(() => allRelevantEmails.filter(e => isInRange(parseMs(e.date), startPrev30, startCur30)), [allRelevantEmails, startPrev30, startCur30]);
-  const emailsCur7 = useMemo(() => allRelevantEmails.filter(e => isInRange(parseMs(e.date), nowMs - d7, nowMs)), [allRelevantEmails, nowMs, d7]);
+  // Calculate time ranges - must be inside useMemo to recalculate when allRelevantEmails changes
+  const { nowMs, d30, d7, startCur30, startPrev30 } = useMemo(() => {
+    const now = Date.now();
+    const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+    return {
+      nowMs: now,
+      d30: thirtyDays,
+      d7: sevenDays,
+      startCur30: now - thirtyDays,
+      startPrev30: now - 2 * thirtyDays
+    };
+  }, [allRelevantEmails]); // Recalculate when emails change to get fresh timestamps
 
-  const appsCur = useMemo(() => uniqueCount(emailsCur30.filter(e => hasCat(e, 'appl'))), [emailsCur30]);
+  const emailsCur30 = useMemo(() => {
+    return allRelevantEmails.filter(e => isInRange(parseMs(e.date), startCur30, nowMs));
+  }, [allRelevantEmails, startCur30, nowMs]);
+  
+  const emailsPrev30 = useMemo(() => allRelevantEmails.filter(e => isInRange(parseMs(e.date), startPrev30, startCur30)), [allRelevantEmails, startPrev30, startCur30]);
+  const emailsCur7 = useMemo(() => {
+    return allRelevantEmails.filter(e => isInRange(parseMs(e.date), nowMs - d7, nowMs));
+  }, [allRelevantEmails, nowMs, d7]);
+  const emailsPrev7 = useMemo(() => allRelevantEmails.filter(e => isInRange(parseMs(e.date), nowMs - 2 * d7, nowMs - d7)), [allRelevantEmails, nowMs, d7]);
+
+  const appsCur = useMemo(() => {
+    const apps = emailsCur30.filter(e => hasCat(e, 'appl'));
+    const count = uniqueCount(apps);
+    return count;
+  }, [emailsCur30]);
   const appsPrev = useMemo(() => uniqueCount(emailsPrev30.filter(e => hasCat(e, 'appl'))), [emailsPrev30]);
 
   const interviewsCur = useMemo(() => uniqueCount(emailsCur30.filter(e => hasCat(e, 'interview'))), [emailsCur30]);
@@ -464,17 +821,14 @@ function Dashboard({
       if (app && resp && resp >= app) {
         const days = (resp - app) / (1000 * 60 * 60 * 24);
         diffs.push(days);
-        console.log(`[Analytics] Domain ${domain}: ${Math.round(days * 10) / 10} days response time`);
       }
     });
     
     if (!diffs.length) {
-      console.log('[Analytics] No valid application→response pairs found');
       return null;
     }
     
     const avg = diffs.reduce((a, b) => a + b, 0) / diffs.length;
-    console.log(`[Analytics] Average Response Time: ${Math.round(avg * 10) / 10} days (from ${diffs.length} companies)`);
     return Math.round(avg * 10) / 10;
   };
 
@@ -486,12 +840,16 @@ function Dashboard({
   const interviewsThisWeek = useMemo(() => uniqueCount(emailsCur7.filter(e => hasCat(e, 'interview'))), [emailsCur7]);
 
   // Configurable number of weeks for chart
-  const numWeeks = 4; // Change to 8 or 12 for longer history
+  const numWeeks = 4; // Show recent trends over 4 weeks
   const weeklyData = useMemo(() => {
     const now = Date.now();
     const weekMs = 7 * 24 * 60 * 60 * 1000;
-    const apps = Array(numWeeks).fill(0);
-    const resps = Array(numWeeks).fill(0);
+    
+    // Collect emails per week
+    const weeklyEmails = Array(numWeeks).fill(null).map(() => ({
+      appEmails: [],
+      respEmails: []
+    }));
 
     allRelevantEmails.forEach(e => {
       const t = parseMs(e.date);
@@ -501,20 +859,27 @@ function Dashboard({
       if (idx >= 0 && idx < numWeeks) {
         const i = numWeeks - 1 - idx;
         const cat = (e.category || '').toLowerCase();
-        if (cat.includes('appl')) apps[i]++;
-        if (cat.includes('interview') || cat.includes('offer')) resps[i]++;
+        
+        if (cat.includes('appl')) weeklyEmails[i].appEmails.push(e);
+        if (cat.includes('interview') || cat.includes('offer')) weeklyEmails[i].respEmails.push(e);
       }
     });
-    return apps.map((a, i) => ({ week: `W${i + 1}`, applications: a, responses: resps[i] }));
+    
+    // Use countUniqueThreads for consistency with carousel
+    return weeklyEmails.map((week, i) => ({ 
+      week: `W${i + 1}`, 
+      applications: countUniqueThreads(week.appEmails), 
+      responses: countUniqueThreads(week.respEmails)
+    }));
   }, [allRelevantEmails, numWeeks]);
-  const Trend = ({ delta }) => {
+  const Trend = ({ delta, timeframe = "previous period" }) => {
     if (delta === null) return <span className="text-xs text-gray-500">—</span>;
     const up = delta > 0;
     const val = Math.abs(delta);
     return (
       <span className={cn('inline-flex items-center text-xs', up ? 'text-green-600' : 'text-red-600')}>
         {up ? <ArrowUp className="h-3 w-3 mr-1" /> : <ArrowDown className="h-3 w-3 mr-1" />}
-        {up ? '+' : '-'}{val}% from last month
+        {up ? '+' : '-'}{val}% from {timeframe}
       </span>
     );
   };
@@ -611,16 +976,19 @@ function Dashboard({
 
               {analyticsTab === 'overview' && (
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="p-3 rounded-lg bg-gray-50 dark:bg-zinc-700">
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="text-xs text-gray-600 dark:text-gray-400">Total Applications</div>
-                        <div className="text-xl font-bold text-gray-900 dark:text-white">{totalApplications}</div>
-                      </div>
-                      <BarChart3 className="h-5 w-5 text-gray-500" />
-                    </div>
-                    <div className="mt-1"><Trend delta={appsDeltaPct} /></div>
-                  </div>
+                  <StatCarousel
+                    totalApplications={totalApplications}
+                    appsDeltaPct={appsDeltaPct}
+                    responseRate={responseRate}
+                    rateDeltaPct={rateDeltaPct}
+                    newApplicationsThisWeek={newApplicationsThisWeek}
+                    offersCount={offersCount}
+                    emailsCur30={emailsCur30}
+                    emailsPrev30={emailsPrev30}
+                    emailsCur7={emailsCur7}
+                    emailsPrev7={emailsPrev7}
+                    Trend={Trend}
+                  />
                   <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900">
                     <div className="flex items-start justify-between">
                       <div>
@@ -829,13 +1197,13 @@ function Dashboard({
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded-full bg-blue-500"></div>
                         <span className="text-xs text-gray-600 dark:text-gray-300">
-                          Applications ({weeklyData[0].applications} → {weeklyData[3].applications})
+                          Applications ({weeklyData.reduce((sum, w) => sum + w.applications, 0)} total)
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 rounded-full bg-green-500"></div>
                         <span className="text-xs text-gray-600 dark:text-gray-300">
-                          Responses ({weeklyData[0].responses} → {weeklyData[3].responses})
+                          Responses ({weeklyData.reduce((sum, w) => sum + w.responses, 0)} total)
                         </span>
                       </div>
                     </div>
@@ -846,12 +1214,13 @@ function Dashboard({
                     <ul className="space-y-1 text-xs text-amber-700 dark:text-amber-400">
                       {(() => {
                         const insights = [];
-                        const appChange = weeklyData[3].applications - weeklyData[0].applications;
-                        const latestRespRate = weeklyData[3].applications > 0 ? Math.round((weeklyData[3].responses / weeklyData[3].applications) * 100) : 0;
+                        const lastWeekIndex = weeklyData.length - 1;
+                        const appChange = weeklyData[lastWeekIndex].applications - weeklyData[0].applications;
+                        const latestRespRate = weeklyData[lastWeekIndex].applications > 0 ? Math.round((weeklyData[lastWeekIndex].responses / weeklyData[lastWeekIndex].applications) * 100) : 0;
                         const firstRespRate = weeklyData[0].applications > 0 ? Math.round((weeklyData[0].responses / weeklyData[0].applications) * 100) : 0;
 
                         if (appChange > 0) {
-                          insights.push(`Application volume increased by ${appChange} over 4 weeks - excellent momentum`);
+                          insights.push(`Application volume increased by ${appChange} over ${numWeeks} weeks - excellent momentum`);
                         } else if (appChange < 0) {
                           insights.push(`Application volume decreased by ${Math.abs(appChange)} - consider increasing activity`);
                         } else {
@@ -886,14 +1255,32 @@ function Dashboard({
               )}
 
               {analyticsTab === 'performance' && (
-                <div className="p-3 rounded-lg border border-dashed border-gray-200 dark:border-zinc-700 text-xs text-gray-600 dark:text-zinc-300">
-                  Performance metrics coming soon. Switch to Trends or Overview for available analytics.
+                <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+                  <div className="w-16 h-16 mb-4 rounded-full bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
+                    <BarChart3 className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Performance Analytics Coming Soon</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 max-w-md mb-4">
+                    We're building detailed insights on which job sources and company types yield the best results for your applications.
+                  </p>
+                  <div className="text-xs text-gray-500 dark:text-gray-500">
+                    Features in development: Response rates by platform, company type analysis, and optimization recommendations
+                  </div>
                 </div>
               )}
 
               {analyticsTab === 'timing' && (
-                <div className="p-3 rounded-lg border border-dashed border-gray-200 dark:border-zinc-700 text-xs text-gray-600 dark:text-zinc-300">
-                  Timing analysis coming soon. Switch to Trends or Overview for available analytics.
+                <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+                  <div className="w-16 h-16 mb-4 rounded-full bg-orange-50 dark:bg-orange-900/20 flex items-center justify-center">
+                    <Clock className="w-8 h-8 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Timing Analysis Coming Soon</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 max-w-md mb-4">
+                    We're developing smart timing recommendations to help you apply and follow up at optimal moments for maximum impact.
+                  </p>
+                  <div className="text-xs text-gray-500 dark:text-gray-500">
+                    Features in development: Best application times, follow-up timing optimization, and response pattern analysis
+                  </div>
                 </div>
               )}
             </div>
@@ -970,16 +1357,23 @@ function Dashboard({
               {/* Follow-up cards */}
               <div className="space-y-3 mb-4">
                 {paginatedFollowUps.length > 0 ? (
-                  paginatedFollowUps.map((f, idx) => (
-                    <DashboardFollowUpCard
-                      key={f.threadId || f.id || idx}
-                      suggestion={f}
-                      markFollowedUp={markFollowedUp}
-                      updateRespondedState={updateRespondedState}
-                      onEmailSelect={onEmailSelect}
-                      openMisclassificationModal={openMisclassificationModal}
-                    />
-                  ))
+                  paginatedFollowUps.map((f, idx) => {
+                    const suggestionKey = `${f.threadId || f.thread_id}:${f.actionType}`;
+                    if (hiddenSuggestions.has(suggestionKey)) return null;
+                    
+                    return (
+                      <DashboardFollowUpCard
+                        key={f.threadId || f.id || idx}
+                        suggestion={f}
+                        markFollowedUp={markFollowedUp}
+                        updateRespondedState={updateRespondedState}
+                        onEmailSelect={onEmailSelect}
+                        openMisclassificationModal={openMisclassificationModal}
+                        onActionComplete={handleActionComplete}
+                        onSnooze={handleSnooze}
+                      />
+                    );
+                  })
                 ) : (
                   <div className="text-center py-8 text-sm text-gray-500 dark:text-zinc-400">
                     {followUpSearch || followUpUrgencyFilter !== 'all' || followUpTypeFilter !== 'all'
@@ -1041,28 +1435,19 @@ function Dashboard({
         ) : (
           <>
             <div className="space-y-3">
-              <div className="p-4 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 text-white">
-                <div className="text-sm">Total Applications</div>
-                <div className="text-3xl font-bold">{totalApplications}</div>
-                <div className="text-xs mt-1 opacity-90">
-                  <Trend delta={appsDeltaPct} />
-                </div>
-              </div>
-              <div className="p-3 rounded-lg bg-white dark:bg-zinc-800 shadow-sm">
-                <div className="text-sm text-green-600">Response Rate</div>
-                <div className="text-2xl font-bold text-green-600">{responseRate}%</div>
-                <div className="text-xs mt-1"><Trend delta={rateDeltaPct} /></div>
-              </div>
-              <div className="p-3 rounded-lg bg-white dark:bg-zinc-800 shadow-sm">
-                <div className="text-sm text-gray-600">This Week</div>
-                <div className="text-2xl font-bold">{newApplicationsThisWeek}</div>
-                <div className="text-xs mt-1 text-gray-500">New applications</div>
-              </div>
-              <div className="p-3 rounded-lg bg-white dark:bg-zinc-800 shadow-sm">
-                <div className="text-sm text-purple-600">Success Rate</div>
-                <div className="text-2xl font-bold text-purple-600">{totalApplications ? Math.round((offersCount / totalApplications) * 100) : 0}%</div>
-                <div className="text-xs mt-1 text-gray-500">Offers received</div>
-              </div>
+              <StatCarousel
+                totalApplications={totalApplications}
+                appsDeltaPct={appsDeltaPct}
+                responseRate={responseRate}
+                rateDeltaPct={rateDeltaPct}
+                newApplicationsThisWeek={newApplicationsThisWeek}
+                offersCount={offersCount}
+                emailsCur30={emailsCur30}
+                emailsPrev30={emailsPrev30}
+                emailsCur7={emailsCur7}
+                emailsPrev7={emailsPrev7}
+                Trend={Trend}
+              />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">

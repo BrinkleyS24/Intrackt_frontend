@@ -27,6 +27,8 @@ export function useEmails(userEmail, userId, CONFIG) {
     rejected: [],
     irrelevant: [],
   });
+  // NEW: State to hold accurate category counts from backend
+  const [categoryTotals, setCategoryTotals] = useState(null);
   // State to indicate if email operations are in progress (e.g., fetching, sending)
   const [initialLoading, setInitialLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -98,11 +100,15 @@ export function useEmails(userEmail, userId, CONFIG) {
   useEffect(() => {
     const handleEmailsSynced = (msg) => {
       if (msg.type === 'EMAILS_SYNCED') { 
-  const stillSyncing = typeof msg.syncInProgress === 'boolean' ? msg.syncInProgress : false;
-  setIsSyncing(stillSyncing);
+        const stillSyncing = typeof msg.syncInProgress === 'boolean' ? msg.syncInProgress : false;
+        setIsSyncing(stillSyncing);
         if (msg.success) {
           setCategorizedEmails(msg.categorizedEmails);
           calculateUnreadCounts(msg.categorizedEmails);
+          // NEW: Update category totals from sync message
+          if (msg.categoryTotals) {
+            setCategoryTotals(msg.categoryTotals);
+          }
         } else {
           console.error("❌ AppMailia AI: Email sync failed:", msg.error);
           showNotification(`Email sync failed: ${msg.error}`, 'error');
@@ -112,6 +118,19 @@ export function useEmails(userEmail, userId, CONFIG) {
     chrome.runtime.onMessage.addListener(handleEmailsSynced);
     return () => chrome.runtime.onMessage.removeListener(handleEmailsSynced);
   }, [calculateUnreadCounts]);
+
+  // WATCHDOG: Reset sync state if it gets stuck (e.g., service worker restart)
+  useEffect(() => {
+    if (isSyncing) {
+      const SYNC_TIMEOUT = 120000; // 2 minutes
+      const timeout = setTimeout(() => {
+        console.warn('[useEmails] Sync timeout detected - resetting sync state after 2 minutes');
+        setIsSyncing(false);
+        showNotification('Sync timed out. Try refreshing manually.', 'warning');
+      }, SYNC_TIMEOUT);
+      return () => clearTimeout(timeout);
+    }
+  }, [isSyncing]);
 
   useEffect(() => {
     const counts = {
@@ -128,16 +147,12 @@ export function useEmails(userEmail, userId, CONFIG) {
         }
       }
     }
-    // Debug: log computed unreadCounts for visibility during development
-    try {
-      // eslint-disable-next-line no-console
-      console.log('[useEmails] Computed unreadCounts:', counts);
-    } catch (e) {}
     setUnreadCounts(counts);
   }, [categorizedEmails]); // This now correctly depends on the source state.
 
   const markEmailAsRead = useCallback(async (emailId) => {
-    let originalEmails = JSON.parse(JSON.stringify(categorizedEmails));
+    let originalCategory = null;
+    let originalCategoryEmails = null;
     let targetEmail = null;
     let categoryKey = null;
 
@@ -154,6 +169,9 @@ export function useEmails(userEmail, userId, CONFIG) {
       return;
     }
 
+    // Store shallow copy of just the affected category for rollback
+    originalCategoryEmails = [...categorizedEmails[categoryKey]];
+
     // Optimistic UI Update: Just update the emails. The useEffect above will handle counts.
     const newCategorizedEmails = { ...categorizedEmails };
     newCategorizedEmails[categoryKey] = newCategorizedEmails[categoryKey].map(e =>
@@ -167,8 +185,11 @@ export function useEmails(userEmail, userId, CONFIG) {
     } catch (error) {
       console.error("❌ AppMailia AI: Failed to mark email as read on the server:", error);
       showNotification("Failed to update email read status.", "error");
-      // Revert on failure, which will also re-trigger the useEffect to fix counts.
-      setCategorizedEmails(originalEmails);
+      // Revert using structural sharing - only restore affected category
+      setCategorizedEmails(prev => ({
+        ...prev,
+        [categoryKey]: originalCategoryEmails
+      }));
     }
   }, [categorizedEmails]);
 
@@ -183,6 +204,12 @@ export function useEmails(userEmail, userId, CONFIG) {
       const stored = await fetchStoredEmailsService();
       setCategorizedEmails(stored);
       calculateUnreadCounts(stored);
+      
+      // NEW: Retrieve category totals from local storage
+      const result = await chrome.storage.local.get(['categoryTotals']);
+      if (result.categoryTotals) {
+        setCategoryTotals(result.categoryTotals);
+      }
     } catch (error) {
       console.error("❌ AppMailia AI: Error fetching stored emails:", error);
       showNotification("Failed to load stored emails.", "error");
@@ -369,6 +396,15 @@ export function useEmails(userEmail, userId, CONFIG) {
     }
   }, [lastMisclassifiedEmail, fetchStoredEmails]);
 
+  // CLEANUP: Clear misclassification timer on unmount to prevent memory leak
+  useEffect(() => {
+    return () => {
+      if (misclassificationTimerRef.current) {
+        clearTimeout(misclassificationTimerRef.current);
+      }
+    };
+  }, []);
+
   /**
    * Handles sending an email reply via the background script.
    */
@@ -439,6 +475,7 @@ export function useEmails(userEmail, userId, CONFIG) {
   // Returns all states and functions provided by this hook
   return {
     categorizedEmails,
+    categoryTotals, // NEW: Export category totals to components
     fetchStoredEmails,
     fetchNewEmails,
     isFilteredView,

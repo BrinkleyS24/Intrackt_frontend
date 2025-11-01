@@ -28,45 +28,33 @@ export const useAuth = (onPaymentStatusChange) => {
 
   // Function to check payment status from backend (using authenticated subscription status)
   const checkPaymentStatus = useCallback(async () => {
-    console.log('🔍 checkPaymentStatus called with userEmail:', userEmail, 'userId:', userId);
     if (!userEmail || !userId) {
-      console.log('❌ checkPaymentStatus: Missing userEmail or userId, skipping');
       return;
     }
     
     try {
-      console.log('🔍 Checking subscription status from authenticated backend endpoint...');
       const response = await sendMessageToBackground({
         type: 'CHECK_SUBSCRIPTION_STATUS',
         userEmail: userEmail,
         userId: userId
       });
       
-      console.log('📨 Backend subscription response:', response);
-      
       if (response.success && response.subscription) {
         const currentPlan = response.subscription.plan;
-        console.log('🔍 Current subscription plan:', currentPlan, 'vs stored plan:', userPlan);
         
         if (currentPlan && currentPlan !== userPlan) {
-          console.log('💳 Subscription status updated:', currentPlan);
           const previousPlan = userPlan;
           setUserPlan(currentPlan);
-          // Update storage to persist the change
           await chrome.storage.local.set({ userPlan: currentPlan });
           showNotification('Payment confirmed! Premium features unlocked.', 'success');
           
-          // Close premium modal if user upgraded from free to premium
           if (previousPlan === 'free' && currentPlan === 'premium' && onPaymentStatusChange) {
-            console.log('🎉 Payment upgrade detected! Closing premium modal...');
             onPaymentStatusChange(currentPlan, previousPlan);
           }
-        } else if (response.success) {
-          console.log('✅ Subscription status checked, no change needed. Current plan:', currentPlan);
         }
       }
     } catch (error) {
-      console.error('❌ Error checking subscription status:', error);
+      console.error('Error checking subscription status:', error);
     }
   }, [userEmail, userId, userPlan, showNotification]);
 
@@ -74,27 +62,19 @@ export const useAuth = (onPaymentStatusChange) => {
   // This is now the primary source of truth for the popup's UI state.
   const loadCurrentUserStateFromStorage = useCallback(async () => {
     try {
-      console.log("✅ AppMailia AI: Loading user state from storage...");
-      const result = await chrome.storage.local.get(['userEmail', 'userName', 'userId', 'userPlan']); // Added userId, userPlan
-      console.log("✅ AppMailia AI: Loaded user state from storage:", result);
+      const result = await chrome.storage.local.get(['userEmail', 'userName', 'userId', 'userPlan']);
 
       setUserEmail(result.userEmail || null);
       setUserName(result.userName || null);
-      setUserId(result.userId || null); // Set userId from storage
-      setUserPlan(result.userPlan || 'free'); // Set userPlan from storage, default to 'free'
+      setUserId(result.userId || null);
+      setUserPlan(result.userPlan || 'free');
       
-      console.log('📊 Current user state after storage load:', {
-        userEmail: result.userEmail,
-        userPlan: result.userPlan || 'free',
-        userId: result.userId
-      });
-
       // Mark auth as ready once initial state is loaded from storage
       setIsAuthReady(true);
       setLoadingAuth(false);
     } catch (error) {
-      console.error("❌ AppMailia AI: Error loading user state from storage:", error);
-      setIsAuthReady(true); // Still mark as ready even on error to unblock UI
+      console.error("Error loading user state from storage:", error);
+      setIsAuthReady(true);
       setLoadingAuth(false);
     }
   }, []);
@@ -102,8 +82,7 @@ export const useAuth = (onPaymentStatusChange) => {
   // Function to fetch quota data from the background script
   const fetchQuotaData = useCallback(async () => {
     if (!userEmail || !userId) {
-      console.warn("AppMailia AI: Cannot fetch quota data - user not logged in or userId missing.");
-      setQuotaData(null); // Clear quota if user is not logged in
+      setQuotaData(null);
       return;
     }
     try {
@@ -117,8 +96,8 @@ export const useAuth = (onPaymentStatusChange) => {
       if (response.success && response.quota) {
         setQuotaData(response.quota);
       } else {
-        console.error("❌ AppMailia AI: Failed to fetch quota data:", response.error);
-        setQuotaData(null); // Clear quota on error
+        console.error("Failed to fetch quota data:", response.error);
+        setQuotaData(null);
       }
     } catch (error) {
       console.error("❌ AppMailia AI: Error fetching quota data:", error);
@@ -148,19 +127,13 @@ export const useAuth = (onPaymentStatusChange) => {
   useEffect(() => {
     const handleStorageChange = (changes, namespace) => {
       if (namespace === 'local') {
-        console.log('🔍 Storage change detected:', changes);
-        // Only trigger a re-load if relevant auth/user data changes
-        if (changes.userEmail || changes.userName || changes.userPlan || changes.userId) { // Added userId
-          console.log("🔄 Detected storage change in user data. Re-loading state.");
-          console.log('Previous userPlan:', changes.userPlan?.oldValue, '→ New userPlan:', changes.userPlan?.newValue);
-          loadCurrentUserStateFromStorage(); // Re-load state from storage
+        if (changes.userEmail || changes.userName || changes.userPlan || changes.userId) {
+          loadCurrentUserStateFromStorage();
         }
       }
     };
 
-    // Also listen for custom userPlanUpdated events for immediate UI refresh
     const handleUserPlanUpdate = (event) => {
-      console.log('🎯 Received userPlanUpdated event:', event.detail);
       loadCurrentUserStateFromStorage();
     };
 
@@ -168,7 +141,6 @@ export const useAuth = (onPaymentStatusChange) => {
     window.addEventListener('userPlanUpdated', handleUserPlanUpdate);
 
     return () => {
-      console.log("DEBUG useAuth: Cleaning up listeners.");
       chrome.storage.onChanged.removeListener(handleStorageChange);
       window.removeEventListener('userPlanUpdated', handleUserPlanUpdate);
     };
@@ -180,7 +152,6 @@ export const useAuth = (onPaymentStatusChange) => {
   // or if it's set from storage.
   useEffect(() => {
     if (userEmail && userId && isAuthReady) { // Ensure userId is also present and auth is ready
-      console.log("DEBUG useAuth: userEmail, userId or isAuthReady changed. Re-fetching quota data.");
       fetchQuotaData();
     }
   }, [userEmail, userId, isAuthReady, fetchQuotaData]);
@@ -188,12 +159,10 @@ export const useAuth = (onPaymentStatusChange) => {
 
   // Function to initiate Google OAuth login flow
   const loginGoogleOAuth = useCallback(async () => {
-    console.log("DEBUG useAuth: Initiating login process by sending LOGIN_GOOGLE_OAUTH message to background.");
     setLoadingAuth(true); // Start loading when login initiated
     try {
       const response = await sendMessageToBackground({ type: 'LOGIN_GOOGLE_OAUTH' });
       if (response.success) {
-        console.log("DEBUG useAuth: Login message sent successfully. Background script will update storage.");
         // The chrome.storage.onChanged listener will pick up updates from background script
       } else {
         console.error("❌ AppMailia AI: Error during Google OAuth login process:", response.error);
@@ -221,7 +190,6 @@ export const useAuth = (onPaymentStatusChange) => {
     reloadUserState: loadCurrentUserStateFromStorage, // Expose reload function for immediate refresh
     loginGoogleOAuth, // Expose the login function
     logout: useCallback(async () => {
-      console.log("DEBUG useAuth: Initiating logout process.");
       try {
         await sendMessageToBackground({ type: 'LOGOUT' });
         showNotification("Logged out successfully!", "info");

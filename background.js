@@ -25,8 +25,8 @@ const WATCHDOG_INTERVAL_MIN = 5; // how often to check for stuck syncs
 
 // Define your backend endpoints.
 const CONFIG_ENDPOINTS = {
-  BACKEND_BASE_URL: 'http://localhost:3000', // Production backend URL (default)
-  // To develop locally, temporarily replace with: 'http://localhost:3000'
+  BACKEND_BASE_URL: 'http://localhost:3000', // Development backend URL
+  // To switch to production, set to: 'https://gmail-tracker-backend-215378038667.us-central1.run.app'
   AUTH_URL: '/api/auth/auth-url',
   AUTH_TOKEN: '/api/auth/token',
   SYNC_EMAILS: '/api/emails',
@@ -55,6 +55,17 @@ const authReadyPromise = new Promise(resolve => {
 // --- Sync de-duplication state ---
 let syncInFlight = false;
 let lastSyncStartTs = 0;
+
+// --- Token refresh de-duplication ---
+let tokenRefreshPromise = null;
+
+async function getFreshToken(user) {
+  if (!tokenRefreshPromise) {
+    tokenRefreshPromise = user.getIdToken(true)
+      .finally(() => { tokenRefreshPromise = null; });
+  }
+  return tokenRefreshPromise;
+}
 
 // --- Helper Functions ---
 
@@ -88,16 +99,9 @@ async function apiFetch(endpoint, options = {}) {
   // Wait for authentication to be ready before proceeding
   await authReadyPromise;
 
-  // Dynamic backend override (development aid): if chrome.storage.local has DEV_BACKEND, use it.
-  try {
-    const { DEV_BACKEND } = await chrome.storage.local.get(['DEV_BACKEND']);
-    if (DEV_BACKEND && typeof DEV_BACKEND === 'string') {
-      CONFIG_ENDPOINTS.BACKEND_BASE_URL = DEV_BACKEND;
-    }
-  } catch (_) {
-    // Non-fatal; ignore storage errors.
-  }
-
+  // SECURITY: DEV_BACKEND override removed to prevent malicious redirect attacks
+  // For local development, modify CONFIG_ENDPOINTS.BACKEND_BASE_URL directly in code
+  
   const user = auth.currentUser;
   const headers = {
     'Content-Type': 'application/json',
@@ -106,7 +110,7 @@ async function apiFetch(endpoint, options = {}) {
 
     if (user && !user.isAnonymous) { // Only attempt to get ID token for non-anonymous users
     try {
-      const idToken = await user.getIdToken(true); // Pass true to force refresh
+      const idToken = await getFreshToken(user); // Use deduplicated token refresh
       headers['Authorization'] = `Bearer ${idToken}`;
       bgLogger.info(`Attached fresh ID token for user: ${user.uid}`);
     } catch (error) {
@@ -170,7 +174,10 @@ async function apiFetch(endpoint, options = {}) {
  */
 async function refreshStoredEmailsCache(syncInProgress = undefined) {
   try {
-    const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, { method: 'POST' });
+    const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, { 
+      method: 'POST',
+      body: { limit: 999 } // CRITICAL FIX: Fetch all emails, not just default 50
+    });
     if (response.success && response.categorizedEmails) {
       await chrome.storage.local.set({
         appliedEmails: response.categorizedEmails.applied || [],
@@ -193,8 +200,9 @@ async function refreshStoredEmailsCache(syncInProgress = undefined) {
 
 /**
  * Poll the sync status and periodically refresh stored emails until complete or timeout.
+ * FIXED: Reduced polling from 2s to 10s to avoid exhausting Gmail API quota
  */
-async function pollSyncStatusAndRefresh(maxSeconds = 60, intervalMs = 2000) {
+async function pollSyncStatusAndRefresh(maxSeconds = 60, intervalMs = 10000) {
   const start = Date.now();
   while (Date.now() - start < maxSeconds * 1000) {
     try {
@@ -316,25 +324,61 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
     });
 
     if (response.success && response.categorizedEmails) {
-      // Save categorized emails to chrome.storage.local
-      await chrome.storage.local.set({
-        appliedEmails: response.categorizedEmails.applied || [],
-        interviewedEmails: response.categorizedEmails.interviewed || [],
-        offersEmails: response.categorizedEmails.offers || [],
-        rejectedEmails: response.categorizedEmails.rejected || [],
-        quotaData: response.quota || null // Also cache quota data
-      });
-  bgLogger.info('Emails and quota cached successfully in local storage.');
+      // CRITICAL FIX: Only update chrome.storage if sync is NOT in progress
+      // This prevents overwriting fresh local data with stale database data
+      if (!response.sync?.inProgress) {
+        
+        // Save categorized emails to chrome.storage.local
+        await chrome.storage.local.set({
+          appliedEmails: response.categorizedEmails.applied || [],
+          interviewedEmails: response.categorizedEmails.interviewed || [],
+          offersEmails: response.categorizedEmails.offers || [],
+          rejectedEmails: response.categorizedEmails.rejected || [],
+          quotaData: response.quota || null, // Also cache quota data
+          categoryTotals: response.categoryTotals || null // NEW: Cache accurate category counts
+        });
+        bgLogger.info('Emails and quota cached successfully in local storage.');
 
-      // Notify the popup that emails have been synced and cached
-      chrome.runtime.sendMessage({
-        type: 'EMAILS_SYNCED',
-        success: true,
-        categorizedEmails: response.categorizedEmails,
-        quota: response.quota,
-  userEmail: userEmail, // Include userEmail for targeted updates in popup
-  syncInProgress: !!response.sync?.inProgress
-      });
+        // Notify the popup that emails have been synced and cached
+        chrome.runtime.sendMessage({
+          type: 'EMAILS_SYNCED',
+          success: true,
+          categorizedEmails: response.categorizedEmails,
+          categoryTotals: response.categoryTotals, // NEW: Pass category totals to popup
+          quota: response.quota,
+          userEmail: userEmail, // Include userEmail for targeted updates in popup
+          syncInProgress: false
+        });
+      } else {
+        // Sync in progress - don't overwrite storage, just update quota and category totals
+        await chrome.storage.local.set({
+          quotaData: response.quota || null,
+          categoryTotals: response.categoryTotals || null // NEW: Update category totals even during sync
+        });
+        bgLogger.info('Sync in progress - updated quota and category totals only, preserving existing emails in storage.');
+        
+        // Read current emails from chrome.storage to send to UI
+        const cached = await chrome.storage.local.get([
+          'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'
+        ]);
+        
+        // Notify UI with current cached data (not stale backend data)
+        chrome.runtime.sendMessage({
+          type: 'EMAILS_SYNCED',
+          success: true,
+          categorizedEmails: {
+            applied: cached.appliedEmails || [],
+            interviewed: cached.interviewedEmails || [],
+            offers: cached.offersEmails || [],
+            rejected: cached.rejectedEmails || [],
+            irrelevant: cached.irrelevantEmails || []
+          },
+          categoryTotals: response.categoryTotals, // NEW: Pass category totals to popup
+          quota: response.quota,
+          userEmail: userEmail,
+          syncInProgress: true
+        });
+      }
 
       // If backend indicates a background sync is in progress, start polling without blocking
       if (response.sync?.inProgress) {
@@ -342,11 +386,36 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
       }
       return { success: true, categorizedEmails: response.categorizedEmails, quota: response.quota };
     } else {
+      // Check if this is a scope error requiring re-authentication
+      if (response.errorCode === 'INSUFFICIENT_SCOPES' || response.requiresReauth) {
+        console.error('❌ AppMailia AI Background: Insufficient Gmail permissions - user needs to re-authenticate');
+        
+        // Notify popup about scope error
+        chrome.runtime.sendMessage({
+          type: 'SCOPE_ERROR',
+          error: response.error || 'Your Gmail permissions are incomplete. Please sign out and sign in again.',
+          requiresReauth: true
+        });
+        
+        return { success: false, error: response.error, errorCode: 'INSUFFICIENT_SCOPES', requiresReauth: true };
+      }
+      
       console.error('❌ AppMailia AI Background: Backend sync failed or returned no emails:', response.error);
       return { success: false, error: response.error || "Backend sync failed or returned no emails." };
     }
   } catch (error) {
     console.error('❌ AppMailia AI Background: Error during email sync:', error);
+    
+    // Check if the error response has scope error information
+    if (error.errorCode === 'INSUFFICIENT_SCOPES' || error.requiresReauth) {
+      chrome.runtime.sendMessage({
+        type: 'SCOPE_ERROR',
+        error: error.message || 'Your Gmail permissions are incomplete. Please sign out and sign in again.',
+        requiresReauth: true
+      });
+      return { success: false, error: error.message, errorCode: 'INSUFFICIENT_SCOPES', requiresReauth: true };
+    }
+    
     return { success: false, error: error.message };
   } finally {
     syncInFlight = false;
@@ -661,6 +730,61 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
         } catch (error) {
           console.error('❌ AppMailia AI Background: Error fetching follow-up suggestions:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'SUGGESTION_ACTION':
+        try {
+          const response = await apiFetch('/api/suggestions/action', {
+            method: 'POST',
+            body: { 
+              threadId: msg.threadId, 
+              actionType: msg.actionType,
+              userEmail: currentUserEmail, 
+              userId: currentUserId 
+            }
+          });
+          sendResponse(response);
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error marking suggestion action:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'SUGGESTION_SNOOZE':
+        try {
+          const response = await apiFetch('/api/suggestions/snooze', {
+            method: 'POST',
+            body: { 
+              threadId: msg.threadId, 
+              actionType: msg.actionType,
+              snoozeDuration: msg.snoozeDuration,
+              userEmail: currentUserEmail, 
+              userId: currentUserId 
+            }
+          });
+          sendResponse(response);
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error snoozing suggestion:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'UNDO_SUGGESTION_ACTION':
+        try {
+          const response = await apiFetch('/api/suggestions/action', {
+            method: 'DELETE',
+            body: { 
+              threadId: msg.threadId, 
+              actionType: msg.actionType,
+              userEmail: currentUserEmail, 
+              userId: currentUserId 
+            }
+          });
+          sendResponse(response);
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error undoing suggestion action:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;

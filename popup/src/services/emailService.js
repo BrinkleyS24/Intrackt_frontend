@@ -112,7 +112,7 @@ export async function sendEmailReplyService(threadId, recipient, subject, body, 
     }
     return response; // may contain fallback flag or error
   } catch (error) {
-    console.error("❌ Intrackt: Error sending SEND_EMAIL_REPLY message to background:", error);
+    console.error("❌ AppMailia AI: Error sending SEND_EMAIL_REPLY message to background:", error);
     return { success: false, error: error.message };
   }
 }

@@ -38,14 +38,13 @@ export function useFollowUps(userEmail, userId, userPlan) { // Accept userPlan a
   // Function to load follow-up suggestions from the backend
   const loadFollowUpSuggestions = useCallback(async () => {
     if (!userEmail || !userId) {
-      console.warn("Intrackt: Cannot load follow-up suggestions - user not logged in or ID missing.");
+      console.warn("AppMailia AI: Cannot load follow-up suggestions - user not logged in or ID missing.");
       setFollowUpSuggestions([]);
       return;
     }
 
     // Only fetch suggestions if the user is premium
     if (userPlan !== 'premium') {
-      console.log("Intrackt: Follow-up suggestions are a premium feature. Skipping fetch for free user.");
       setFollowUpSuggestions([]); // Clear any old suggestions
       return;
     }
@@ -53,7 +52,6 @@ export function useFollowUps(userEmail, userId, userPlan) { // Accept userPlan a
     setLoadingSuggestions(true);
     try {
       const fetchedSuggestions = await fetchFollowUpSuggestionsService(userEmail);
-      console.log("DEBUG useFollowUps: Raw fetched suggestions from service:", fetchedSuggestions);
 
       // Merge with local followedUpMap and respondedMap
       // Normalize/enrich suggestion objects so the UI has predictable fields
@@ -149,10 +147,9 @@ export function useFollowUps(userEmail, userId, userPlan) { // Accept userPlan a
         !suggestion.followedUp && !suggestion.responded
       );
 
-      console.log("DEBUG useFollowUps: Final merged and filtered suggestions:", filteredSuggestions);
       setFollowUpSuggestions(filteredSuggestions);
     } catch (error) {
-      console.error("❌ Intrackt: Error fetching follow-up suggestions:", error);
+      console.error("❌ AppMailia AI: Error fetching follow-up suggestions:", error);
       // Show specific error if it's a premium feature error
       if (error.message && error.message.includes("Premium feature")) {
         showNotification("Follow-up suggestions: Premium feature. Upgrade to unlock.", "info");

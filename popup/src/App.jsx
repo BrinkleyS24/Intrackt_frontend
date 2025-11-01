@@ -27,8 +27,8 @@ import { Crown, Briefcase } from 'lucide-react';
 
 // Small app-scoped logger to centralize popup logs and make them easy to silence
 const appLogger = {
-  info: (...args) => { try { console.log('[app][info]', ...args); } catch (_) {} },
-  warn: (...args) => { try { console.warn('[app][warn]', ...args); } catch (_) {} },
+  info: () => {}, // Silent in production
+  warn: () => {}, // Silent in production
   error: (...args) => { try { console.error('[app][error]', ...args); } catch (_) {} }
 };
 
@@ -68,6 +68,7 @@ function App() {
   } = useAuth(handlePaymentStatusChange);
   const {
     categorizedEmails,
+    categoryTotals, // NEW: Extract category totals from useEmails hook
     fetchStoredEmails,
     fetchNewEmails,
     isFilteredView,
@@ -103,9 +104,18 @@ function App() {
  useEffect(() => {
     const restoreSelectedCategory = async () => {
       try {
-        const { intracktSelectedCategory } = await chrome.storage?.local?.get('intracktSelectedCategory') || {};
-        if (intracktSelectedCategory) {
-          setSelectedCategory(intracktSelectedCategory);
+        // Migration: check for old key first, then use new key
+        const storage = await chrome.storage?.local?.get(['appmailiaSelectedCategory', 'intracktSelectedCategory']) || {};
+        const selectedCat = storage.appmailiaSelectedCategory || storage.intracktSelectedCategory;
+        
+        if (selectedCat) {
+          setSelectedCategory(selectedCat);
+          
+          // If using old key, migrate to new key and remove old
+          if (storage.intracktSelectedCategory && !storage.appmailiaSelectedCategory) {
+            await chrome.storage.local.set({ appmailiaSelectedCategory: selectedCat });
+            await chrome.storage.local.remove('intracktSelectedCategory');
+          }
         }
       } catch (e) {
         // Non-fatal: storage may be unavailable in some contexts
@@ -140,15 +150,6 @@ function App() {
     };
     initialDataFetch();
   }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData, loadFollowUpSuggestions]);
-
-  // Debug: log selectedCategory and unreadCounts when they change to diagnose Mark-All-Ready visibility
-  useEffect(() => {
-    try {
-      appLogger.info('Debug: selectedCategory', selectedCategory, 'unreadCounts for category:', (unreadCounts && typeof unreadCounts[selectedCategory] !== 'undefined') ? unreadCounts[selectedCategory] : null);
-    } catch (e) {
-      appLogger.error('Debug log failure', e);
-    }
-  }, [selectedCategory, unreadCounts]);
 
   useEffect(() => {
     const handleBackgroundMessage = (message) => {
@@ -224,32 +225,39 @@ function App() {
     setSelectedCategory(category);
     setSelectedEmail(null);
     setCurrentPage(1);
-    // Persist preference
+    // Persist preference with new branding key
     try {
-      chrome.storage?.local?.set({ intracktSelectedCategory: category });
+      chrome.storage?.local?.set({ appmailiaSelectedCategory: category });
     } catch (e) {
       // ignore
     }
   }, []);
 
-  const handleEmailSelect = useCallback((email) => {
+  const handleEmailSelect = useCallback((email, group = null) => {
     if (email) {
       // Mark as read if it's not already
       if (!email.is_read) {
         markEmailAsRead(email.id);
       }
       // Build full thread for preview
-      const threadId = email.thread_id || email.threadId || email.thread;
-      const allEmails = [
-        ...(categorizedEmails.applied || []),
-        ...(categorizedEmails.interviewed || []),
-        ...(categorizedEmails.offers || []),
-        ...(categorizedEmails.rejected || []),
-        ...(categorizedEmails.irrelevant || []),
-      ];
-      const threadMessages = allEmails
-        .filter(e => (e.thread_id || e.threadId || e.thread) === threadId)
-        .sort((a, b) => new Date(b.date) - new Date(a.date)); // newest -> oldest
+      // If we have a group with emails, use those (this includes custom-grouped threads)
+      let threadMessages;
+      if (group && group.emails && group.emails.length > 0) {
+        threadMessages = [...group.emails].sort((a, b) => new Date(b.date) - new Date(a.date)); // newest -> oldest
+      } else {
+        // Fallback: search by thread_id (for emails not in grouped view)
+        const threadId = email.thread_id || email.threadId || email.thread;
+        const allEmails = [
+          ...(categorizedEmails.applied || []),
+          ...(categorizedEmails.interviewed || []),
+          ...(categorizedEmails.offers || []),
+          ...(categorizedEmails.rejected || []),
+          ...(categorizedEmails.irrelevant || []),
+        ];
+        threadMessages = allEmails
+          .filter(e => (e.thread_id || e.threadId || e.thread) === threadId)
+          .sort((a, b) => new Date(b.date) - new Date(a.date)); // newest -> oldest
+      }
 
       // Remember the current category before showing the preview
       setCategoryBeforePreview(selectedCategory);
@@ -307,7 +315,7 @@ function App() {
   const renderMainContent = () => {
     switch (selectedCategory) {
       case 'dashboard':
-        return <Dashboard {...{ categorizedEmails, onCategorySelect: handleCategoryChange, onEmailSelect: handleEmailSelect, openMisclassificationModal, followUpSuggestions, loadingSuggestions, markFollowedUp, updateRespondedState, userPlan, openPremiumModal, quotaData }} />;
+        return <Dashboard {...{ categorizedEmails, categoryTotals, onCategorySelect: handleCategoryChange, onEmailSelect: handleEmailSelect, openMisclassificationModal, followUpSuggestions, loadingSuggestions, markFollowedUp, updateRespondedState, userPlan, openPremiumModal, quotaData }} />;
       case 'emailPreview':
   return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, openPremiumModal, loadingEmails }} />;
       default:
@@ -383,6 +391,7 @@ function App() {
           onCategoryChange={handleCategoryChange}
           unreadCounts={unreadCounts}
           categorizedEmails={categorizedEmails}
+          categoryTotals={categoryTotals} // NEW: Pass accurate backend totals
           onLogout={logout}
           onRefresh={handleRefresh}
           isLoadingEmails={isSyncing}
@@ -440,7 +449,6 @@ function App() {
         setUndoToastVisible={setUndoToastVisible}
         onSubscribePremium={() => {
           // The modal will handle the subscription process directly
-          console.log('Premium modal will handle subscription...');
         }}
       />
     </div>
