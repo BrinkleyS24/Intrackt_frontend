@@ -48,11 +48,9 @@ export function Sidebar({
   onManageSubscription
 }) {
   const getEmailCount = (category) => {
-    // PRIORITY: Always use backend totals if available (accurate DB counts)
-    // Fallback to counting local data only during initial load or if backend unavailable
-    if (categoryTotals && categoryTotals[category] !== undefined) {
-      return categoryTotals[category];
-    }
+    // Always count unique conversations/threads, not individual email messages
+    // This ensures consistency: sidebar matches what users see in the list view
+    // Backend categoryTotals counts raw DB records which includes all messages in a thread
     const list = categorizedEmails[category] || [];
     return countUniqueThreads(list);
   };

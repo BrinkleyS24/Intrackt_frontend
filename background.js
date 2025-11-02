@@ -1126,10 +1126,37 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'CREATE_PORTAL_SESSION':
-        // Portal functionality removed - using fully in-extension approach
-        console.log('⚠️ AppMailia AI Background: Portal session creation removed - using in-extension approach');
-        sendResponse({ success: false, error: 'Portal functionality removed for fully in-extension approach' });
+      case 'OPEN_CUSTOMER_PORTAL':
+        try {
+          const { return_url } = msg;
+          console.log('🎫 AppMailia AI Background: Creating customer portal session');
+          
+          const response = await apiFetch('/api/subscriptions/create-portal-session', {
+            method: 'POST',
+            body: JSON.stringify({ 
+              return_url: return_url || chrome.runtime.getURL('popup/index.html')
+            })
+          });
+          
+          if (response.success && response.url) {
+            console.log('✅ AppMailia AI Background: Portal session created');
+            
+            // Open portal in new tab
+            const tab = await chrome.tabs.create({
+              url: response.url,
+              active: true
+            });
+            
+            console.log('🪟 AppMailia AI Background: Portal opened in tab:', tab.id);
+            sendResponse({ success: true, tabId: tab.id });
+          } else {
+            console.error('❌ AppMailia AI Background: Failed to create portal session:', response.error);
+            sendResponse({ success: false, error: response.error || 'Failed to create portal session' });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error creating portal session:', error);
+          sendResponse({ success: false, error: error.message });
+        }
         break;
 
       case 'OPEN_PAYMENT_WINDOW':

@@ -20,7 +20,7 @@ import { SubscriptionManager } from './components/SubscriptionManager';
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
 import { useFollowUps } from './hooks/useFollowUps';
-import { countUniqueThreads } from './utils/grouping';
+import { countUniqueThreads, groupEmailsByThread } from './utils/grouping';
 
 import { CONFIG } from './utils/constants';
 import { Crown, Briefcase } from 'lucide-react';
@@ -319,10 +319,18 @@ function App() {
       case 'emailPreview':
   return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, openPremiumModal, loadingEmails }} />;
       default:
+        // FIX: Group emails into conversations FIRST, then paginate by conversations
+        // This ensures consistent counting: sidebar, pagination, and display all use conversation counts
         const emailsForCategory = categorizedEmails[selectedCategory] || [];
-        const paginatedEmails = emailsForCategory.slice((currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE, currentPage * CONFIG.PAGINATION.PAGE_SIZE);
-        const totalThreadsInCurrentCategory = countUniqueThreads(emailsForCategory);
-        const totalPages = Math.ceil(emailsForCategory.length / CONFIG.PAGINATION.PAGE_SIZE);
+        const groupedConversations = groupEmailsByThread(emailsForCategory);
+        const totalConversations = groupedConversations.length;
+        const paginatedConversations = groupedConversations.slice(
+          (currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE, 
+          currentPage * CONFIG.PAGINATION.PAGE_SIZE
+        );
+        // Flatten paginated conversations back to email array for EmailList component
+        const paginatedEmails = paginatedConversations.flatMap(conv => conv.emails);
+        const totalPages = Math.ceil(totalConversations / CONFIG.PAGINATION.PAGE_SIZE);
         return (
           <>
             <EmailList
@@ -333,7 +341,7 @@ function App() {
               isFilteredView={isFilteredView}
               filteredEmails={filteredEmails}
               appliedFilters={appliedFilters}
-              totalEmails={totalThreadsInCurrentCategory}
+              totalEmails={totalConversations}
               onMarkAllAsRead={markEmailsAsReadForCategory}
               isMarkingAllAsRead={markingAllAsRead}
               hasUnreadCategory={Boolean(unreadCounts && unreadCounts[selectedCategory])}
@@ -343,7 +351,7 @@ function App() {
                 currentPage={currentPage}
                 totalPages={totalPages}
                 onPageChange={setCurrentPage}
-                totalEmails={emailsForCategory.length}
+                totalEmails={totalConversations}
                 pageSize={CONFIG.PAGINATION.PAGE_SIZE}
               />
             )}

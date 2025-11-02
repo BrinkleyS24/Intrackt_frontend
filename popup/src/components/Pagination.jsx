@@ -22,8 +22,8 @@ function Pagination({ currentPage, totalPages, onPageChange, totalEmails, pageSi
       </button>
       <span id="pagination-info" className="text-gray-600 dark:text-zinc-400">
         {totalEmails === 0
-          ? "No emails"
-          : `${startRange}-${endRange} of ${totalEmails}`
+          ? "No conversations"
+          : `${startRange}-${endRange} of ${totalEmails} ${totalEmails === 1 ? 'conversation' : 'conversations'}`
         }
       </span>
       <button

@@ -667,14 +667,12 @@ function Dashboard({
   }, []);
 
   const getCount = useCallback((category) => {
-    // Use backend-provided totals if available, otherwise count local paginated data
-    if (categoryTotals && categoryTotals[category] !== undefined) {
-      return categoryTotals[category];
-    }
-    // Fallback to counting local data (for backward compatibility or when totals not available)
+    // Always count unique conversations/threads, not individual email messages
+    // This ensures consistency across all UI elements (sidebar, dashboard, list views)
+    // Backend categoryTotals counts raw DB records which includes all messages in a thread
     const list = (categorizedEmails[category] || categorizedEmails[category.charAt(0).toUpperCase() + category.slice(1)] || []);
     return countUniqueThreads(list);
-  }, [categorizedEmails, categoryTotals]);
+  }, [categorizedEmails]);
 
   const appliedCount = useMemo(() => getCount('applied'), [getCount]);
   const interviewedCount = useMemo(() => getCount('interviewed'), [getCount]);
