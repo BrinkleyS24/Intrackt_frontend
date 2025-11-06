@@ -77,6 +77,8 @@ function App() {
     handleReportMisclassification,
     handleSendEmailReply,
     handleArchiveEmail,
+    handleUpdateCompanyName,
+    handleUpdatePosition,
     lastMisclassifiedEmail,
     undoMisclassification,
     undoToastVisible,
@@ -317,7 +319,7 @@ function App() {
       case 'dashboard':
         return <Dashboard {...{ categorizedEmails, categoryTotals, onCategorySelect: handleCategoryChange, onEmailSelect: handleEmailSelect, openMisclassificationModal, followUpSuggestions, loadingSuggestions, markFollowedUp, updateRespondedState, userPlan, openPremiumModal, quotaData }} />;
       case 'emailPreview':
-  return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, openPremiumModal, loadingEmails }} />;
+  return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, openPremiumModal, loadingEmails, onUpdateCompanyName: handleUpdateCompanyName, onUpdatePosition: handleUpdatePosition, userEmail }} />;
       default:
         // FIX: Group emails into conversations FIRST, then paginate by conversations
         // This ensures consistent counting: sidebar, pagination, and display all use conversation counts
@@ -336,6 +338,7 @@ function App() {
             <EmailList
               emails={paginatedEmails}
               category={selectedCategory}
+              selectedEmail={selectedEmail}
               onEmailSelect={handleEmailSelect}
               onOpenMisclassificationModal={openMisclassificationModal}
               isFilteredView={isFilteredView}

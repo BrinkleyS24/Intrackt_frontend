@@ -451,6 +451,98 @@ export function useEmails(userEmail, userId, CONFIG) {
     }
   }, [userEmail, fetchStoredEmails]);
 
+  /**
+   * Updates the company name for a specific email.
+   * @param {string} emailId - The ID of the email to update.
+   * @param {string} companyName - The corrected company name.
+   * @returns {Promise<Object>} Result of the update operation.
+   */
+  const handleUpdateCompanyName = useCallback(async (emailId, companyName) => {
+    try {
+      // Dynamically import the service function to avoid circular dependency
+      const { updateCompanyNameService } = await import('../services/emailService');
+      
+      const result = await updateCompanyNameService(emailId, companyName, userEmail);
+      
+      if (result.success && result.email) {
+        // Update local state with the corrected company name
+        const updatedEmail = result.email;
+        setCategorizedEmails(prevEmails => {
+          const newEmails = { ...prevEmails };
+          Object.keys(newEmails).forEach(category => {
+            newEmails[category] = newEmails[category].map(email =>
+              email.id === emailId
+                ? {
+                    ...email,
+                    company_name: updatedEmail.company_name,
+                    company_name_corrected: updatedEmail.company_name_corrected,
+                    extraction_method: updatedEmail.extraction_method
+                  }
+                : email
+            );
+          });
+          return newEmails;
+        });
+        
+        showNotification("Company name updated successfully!", "success");
+        return { success: true };
+      } else {
+        showNotification(`Failed to update company name: ${result.error}`, "error");
+        return { success: false, error: result.error };
+      }
+    } catch (error) {
+      console.error("❌ AppMailia AI: Error updating company name:", error);
+      showNotification("Error updating company name.", "error");
+      return { success: false, error: error.message };
+    }
+  }, [userEmail]);
+
+  /**
+   * Updates the position for a specific email.
+   * @param {string} emailId - The ID of the email to update.
+   * @param {string} position - The corrected position/job title.
+   * @returns {Promise<Object>} Result of the update operation.
+   */
+  const handleUpdatePosition = useCallback(async (emailId, position) => {
+    try {
+      // Dynamically import the service function to avoid circular dependency
+      const { updatePositionService } = await import('../services/emailService');
+      
+      const result = await updatePositionService(emailId, position, userEmail);
+      
+      if (result.success && result.email) {
+        // Update local state with the corrected position
+        const updatedEmail = result.email;
+        setCategorizedEmails(prevEmails => {
+          const newEmails = { ...prevEmails };
+          Object.keys(newEmails).forEach(category => {
+            newEmails[category] = newEmails[category].map(email =>
+              email.id === emailId
+                ? {
+                    ...email,
+                    position: updatedEmail.position,
+                    position_corrected: updatedEmail.position_corrected,
+                    extraction_method: updatedEmail.extraction_method
+                  }
+                : email
+            );
+          });
+          return newEmails;
+        });
+        
+        showNotification("Position updated successfully!", "success");
+        return { success: true };
+      } else {
+        showNotification(`Failed to update position: ${result.error}`, "error");
+        return { success: false, error: result.error };
+      }
+    } catch (error) {
+      console.error("❌ AppMailia AI: Error updating position:", error);
+      showNotification("Error updating position.", "error");
+      return { success: false, error: error.message };
+    }
+  }, [userEmail]);
+
   // Mark all emails in a category as read (UI-first, then persist via background)
   const markEmailsAsReadForCategory = useCallback(async (category) => {
     if (!category) return;
@@ -486,6 +578,8 @@ export function useEmails(userEmail, userId, CONFIG) {
     handleReportMisclassification,
     handleSendEmailReply,
     handleArchiveEmail,
+    handleUpdateCompanyName, // NEW: Export company name update function
+    handleUpdatePosition, // NEW: Export position update function
     lastMisclassifiedEmail,
     undoMisclassification,
     undoToastVisible,

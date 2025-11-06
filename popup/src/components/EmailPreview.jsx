@@ -2,9 +2,10 @@
  * Enhanced EmailPreview Component with Gmail-like email display
  */
 import React, { useState, useEffect } from 'react';
-import { Building2, Calendar, Clock, ExternalLink, Reply, Archive, Flag, Crown, X } from "lucide-react";
+import { Building2, Briefcase, Calendar, Clock, ExternalLink, Reply, Archive, Flag, Crown, X, Pencil, Check } from "lucide-react";
 import { cn } from '../utils/cn';
 import { showNotification } from './Notification';
+import CompanyField from './CompanyField';
 
 // Enhanced email content utilities (embedded in this file)
 const decodeEmailContent = (content) => {
@@ -284,7 +285,7 @@ const DialogTitle = ({ children, className }) => (
 );
 
 // Main EmailPreview Component
-export default function EmailPreview({ email, onBack, onReply, onArchive, onOpenMisclassificationModal, userPlan, openPremiumModal, loadingEmails }) {
+export default function EmailPreview({ email, onBack, onReply, onArchive, onOpenMisclassificationModal, userPlan, openPremiumModal, loadingEmails, onUpdateCompanyName, onUpdatePosition, userEmail }) {
   if (!email) {
     return null;
   }
@@ -546,7 +547,49 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
             </div>
           </div>
 
-          {/* Job Details removed: company/position extraction disabled */}
+          {/* Job Details - Editable Company and Position */}
+          <div className="bg-gray-50 dark:bg-zinc-800 rounded-lg p-4">
+            <div className="grid grid-cols-2 gap-4">
+              {/* Company Field */}
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Building2 className="h-4 w-4 text-gray-500" />
+                  <span className="text-xs font-medium text-gray-600 dark:text-zinc-400">Company</span>
+                </div>
+                {onUpdateCompanyName ? (
+                  <CompanyField 
+                    email={email} 
+                    userEmail={userEmail}
+                    onUpdate={onUpdateCompanyName}
+                  />
+                ) : (
+                  <div className="text-sm text-gray-900 dark:text-white">
+                    {email.company_name || 'Not extracted'}
+                  </div>
+                )}
+              </div>
+
+              {/* Position Field */}
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <Briefcase className="h-4 w-4 text-gray-500" />
+                  <span className="text-xs font-medium text-gray-600 dark:text-zinc-400">Position</span>
+                </div>
+                {onUpdatePosition ? (
+                  <CompanyField 
+                    email={email} 
+                    userEmail={userEmail}
+                    onUpdate={onUpdatePosition}
+                    fieldName="position"
+                  />
+                ) : (
+                  <div className="text-sm text-gray-900 dark:text-white">
+                    {email.position || 'Not extracted'}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">

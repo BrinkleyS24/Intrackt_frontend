@@ -225,4 +225,77 @@ export async function markEmailAsReadService(emailId) {
   }
 }
 
+/**
+ * Sends a request to the background script to update the company name for an email.
+ * @param {string} emailId - The ID of the email to update.
+ * @param {string} companyName - The corrected company name.
+ * @param {string} userEmail - The email of the authenticated user.
+ * @returns {Promise<Object>} A success/error object with the updated email data.
+ */
+export async function updateCompanyNameService(emailId, companyName, userEmail) {
+  try {
+    if (!emailId || !companyName || !userEmail) {
+      return { success: false, error: 'Missing required parameters (emailId, companyName, or userEmail).' };
+    }
+    const response = await sendMessageToBackground({
+      type: 'UPDATE_COMPANY_NAME',
+      emailId: emailId,
+      companyName: companyName,
+      userEmail: userEmail
+    });
+    return response;
+  } catch (error) {
+    console.error("❌ AppMailia AI: Error sending UPDATE_COMPANY_NAME message to background:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Sends a request to the background script to fetch correction analytics.
+ * @param {string} userEmail - The email of the authenticated user.
+ * @param {string} since - Optional ISO date string to filter corrections (e.g., '2025-01-01').
+ * @returns {Promise<Object>} A success/error object with analytics data.
+ */
+export async function getCorrectionAnalyticsService(userEmail, since = null) {
+  try {
+    if (!userEmail) {
+      return { success: false, error: 'User email not provided for analytics request.' };
+    }
+    const response = await sendMessageToBackground({
+      type: 'GET_CORRECTION_ANALYTICS',
+      userEmail: userEmail,
+      since: since
+    });
+    return response;
+  } catch (error) {
+    console.error("❌ AppMailia AI: Error sending GET_CORRECTION_ANALYTICS message to background:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Sends a request to the background script to update the position for an email.
+ * @param {string} emailId - The ID of the email to update.
+ * @param {string} position - The corrected position/job title.
+ * @param {string} userEmail - The email of the authenticated user.
+ * @returns {Promise<Object>} A success/error object with the updated email data.
+ */
+export async function updatePositionService(emailId, position, userEmail) {
+  try {
+    if (!emailId || !position || !userEmail) {
+      return { success: false, error: 'Missing required parameters (emailId, position, or userEmail).' };
+    }
+    const response = await sendMessageToBackground({
+      type: 'UPDATE_POSITION',
+      emailId: emailId,
+      position: position,
+      userEmail: userEmail
+    });
+    return response;
+  } catch (error) {
+    console.error("❌ AppMailia AI: Error sending UPDATE_POSITION message to background:", error);
+    return { success: false, error: error.message };
+  }
+}
+
 // Backfill services removed

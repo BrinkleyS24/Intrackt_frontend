@@ -5,7 +5,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { CheckCheck } from 'lucide-react';
+import { CheckCheck, Building2, Briefcase } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { formatDate, getCategoryTitle } from '../utils/uiHelpers';
 import { groupEmailsByThread, countUniqueThreads } from '../utils/grouping';
@@ -177,6 +177,27 @@ function EmailList({
                         </span>
                       )}
                     </div>
+
+                    {/* Read-only Company • Position display */}
+                    {(email.company_name || email.position) && (
+                      <div className="flex items-center space-x-2 text-xs mt-2 text-gray-600">
+                        {email.company_name && (
+                          <div className="flex items-center space-x-1">
+                            <Building2 className="h-3 w-3 text-gray-400" />
+                            <span>{email.company_name}</span>
+                          </div>
+                        )}
+                        {email.company_name && email.position && (
+                          <span>•</span>
+                        )}
+                        {email.position && (
+                          <div className="flex items-center space-x-1">
+                            <Briefcase className="h-3 w-3 text-gray-400" />
+                            <span>{email.position}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <p className="text-xs text-gray-500 line-clamp-2 mt-2">{truncatedPreview || 'No preview available.'}</p>
                   </div>

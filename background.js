@@ -42,6 +42,8 @@ const CONFIG_ENDPOINTS = {
   UPDATE_USER_PLAN: '/api/user/update-plan',
   SEND_REPLY: '/api/emails/send-reply', // Legacy backend stub (kept for fallback / logging)
   ARCHIVE_EMAIL: '/api/emails/archive', // Ensure this matches your backend's archive endpoint
+  UPDATE_COMPANY_NAME: '/api/emails/:emailId/company', // PATCH endpoint for company name correction
+  CORRECTION_ANALYTICS: '/api/emails/analytics/corrections', // GET endpoint for correction analytics
 };
 
 // --- Authentication Readiness Promise ---
@@ -978,6 +980,120 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ success: true, message: `Emails in ${category} marked as read.` });
         } catch (error) {
           console.error("❌ AppMailia AI Background: Error marking emails as read:", error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'UPDATE_COMPANY_NAME':
+        try {
+          const { emailId, companyName } = msg;
+          
+          if (!emailId || !companyName) {
+            sendResponse({ success: false, error: 'Missing required parameters (emailId or companyName).' });
+            return;
+          }
+
+          // Call backend PATCH /emails/:emailId/company endpoint
+          const response = await apiFetch(`/api/emails/${emailId}/company`, {
+            method: 'PATCH',
+            body: { companyName: companyName.trim() }
+          });
+
+          if (response.success && response.email) {
+            // Update local storage with the corrected company name
+            const currentEmails = await chrome.storage.local.get([
+              'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'
+            ]);
+
+            // Find and update the email in the appropriate category
+            const categories = ['appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'];
+            for (const categoryKey of categories) {
+              const emails = currentEmails[categoryKey] || [];
+              const emailIndex = emails.findIndex(e => e.id === emailId);
+              if (emailIndex !== -1) {
+                emails[emailIndex] = {
+                  ...emails[emailIndex],
+                  company_name: response.email.company_name,
+                  company_name_corrected: response.email.company_name_corrected,
+                  extraction_method: response.email.extraction_method
+                };
+                await chrome.storage.local.set({ [categoryKey]: emails });
+                bgLogger.info(`Updated company name for email ${emailId} in ${categoryKey}`);
+                break;
+              }
+            }
+          }
+
+          sendResponse(response);
+        } catch (error) {
+          console.error("❌ AppMailia AI Background: Error updating company name:", error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'GET_CORRECTION_ANALYTICS':
+        try {
+          const { since } = msg;
+          
+          // Build query params
+          const queryParams = since ? { since } : {};
+
+          // Call backend GET /analytics/corrections endpoint
+          const response = await apiFetch('/api/emails/analytics/corrections', {
+            method: 'GET',
+            query: queryParams
+          });
+
+          sendResponse(response);
+        } catch (error) {
+          console.error("❌ AppMailia AI Background: Error fetching correction analytics:", error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'UPDATE_POSITION':
+        try {
+          const { emailId, position } = msg;
+          
+          if (!emailId || !position) {
+            sendResponse({ success: false, error: 'Missing required parameters (emailId or position).' });
+            return;
+          }
+
+          // Call backend PATCH /emails/:emailId/position endpoint
+          const response = await apiFetch(`/api/emails/${emailId}/position`, {
+            method: 'PATCH',
+            body: { position: position.trim() }
+          });
+
+          if (response.success && response.email) {
+            // Update local storage with the corrected position
+            const currentEmails = await chrome.storage.local.get([
+              'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'
+            ]);
+
+            // Find and update the email in the appropriate category
+            const categories = ['appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'];
+            for (const categoryKey of categories) {
+              const emails = currentEmails[categoryKey] || [];
+              const emailIndex = emails.findIndex(e => e.id === emailId);
+              if (emailIndex !== -1) {
+                emails[emailIndex] = {
+                  ...emails[emailIndex],
+                  position: response.email.position,
+                  position_corrected: response.email.position_corrected,
+                  extraction_method: response.email.extraction_method
+                };
+                await chrome.storage.local.set({ [categoryKey]: emails });
+                bgLogger.info(`Updated position for email ${emailId} in ${categoryKey}`);
+                break;
+              }
+            }
+          }
+
+          sendResponse(response);
+        } catch (error) {
+          console.error("❌ AppMailia AI Background: Error updating position:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
