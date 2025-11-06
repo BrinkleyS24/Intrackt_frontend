@@ -44,6 +44,7 @@ const CONFIG_ENDPOINTS = {
   ARCHIVE_EMAIL: '/api/emails/archive', // Ensure this matches your backend's archive endpoint
   UPDATE_COMPANY_NAME: '/api/emails/:emailId/company', // PATCH endpoint for company name correction
   CORRECTION_ANALYTICS: '/api/emails/analytics/corrections', // GET endpoint for correction analytics
+  APPLICATION_STATS: '/api/emails/applications/stats', // GET endpoint for application lifecycle statistics
 };
 
 // --- Authentication Readiness Promise ---
@@ -325,6 +326,21 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
     body: { userEmail, userId, fullRefresh, email: userEmail }
     });
 
+    // NEW: Fetch application statistics in parallel
+    let applicationStats = null;
+    try {
+      const statsResponse = await apiFetch(CONFIG_ENDPOINTS.APPLICATION_STATS, {
+        method: 'GET'
+      });
+      if (statsResponse.success && statsResponse.stats) {
+        applicationStats = statsResponse.stats;
+        bgLogger.info('Application stats fetched:', applicationStats);
+      }
+    } catch (error) {
+      bgLogger.error('Failed to fetch application stats:', error);
+      // Continue without stats - this is not critical
+    }
+
     if (response.success && response.categorizedEmails) {
       // CRITICAL FIX: Only update chrome.storage if sync is NOT in progress
       // This prevents overwriting fresh local data with stale database data
@@ -337,7 +353,8 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
           offersEmails: response.categorizedEmails.offers || [],
           rejectedEmails: response.categorizedEmails.rejected || [],
           quotaData: response.quota || null, // Also cache quota data
-          categoryTotals: response.categoryTotals || null // NEW: Cache accurate category counts
+          categoryTotals: response.categoryTotals || null, // NEW: Cache accurate category counts
+          applicationStats: applicationStats || null // NEW: Cache application statistics
         });
         bgLogger.info('Emails and quota cached successfully in local storage.');
 
@@ -347,6 +364,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
           success: true,
           categorizedEmails: response.categorizedEmails,
           categoryTotals: response.categoryTotals, // NEW: Pass category totals to popup
+          applicationStats: applicationStats, // NEW: Pass application stats to popup
           quota: response.quota,
           userEmail: userEmail, // Include userEmail for targeted updates in popup
           syncInProgress: false
@@ -355,7 +373,8 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         // Sync in progress - don't overwrite storage, just update quota and category totals
         await chrome.storage.local.set({
           quotaData: response.quota || null,
-          categoryTotals: response.categoryTotals || null // NEW: Update category totals even during sync
+          categoryTotals: response.categoryTotals || null, // NEW: Update category totals even during sync
+          applicationStats: applicationStats || null // NEW: Update application stats even during sync
         });
         bgLogger.info('Sync in progress - updated quota and category totals only, preserving existing emails in storage.');
         
@@ -376,6 +395,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
             irrelevant: cached.irrelevantEmails || []
           },
           categoryTotals: response.categoryTotals, // NEW: Pass category totals to popup
+          applicationStats: applicationStats, // NEW: Pass application stats to popup
           quota: response.quota,
           userEmail: userEmail,
           syncInProgress: true
@@ -1115,6 +1135,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
         } catch (error) {
           console.error('❌ AppMailia AI Background: Error getting current user:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'FETCH_APPLICATION_LIFECYCLE':
+        try {
+          const { applicationId } = msg;
+          if (!applicationId) {
+            sendResponse({ success: false, error: 'Application ID is required' });
+            break;
+          }
+
+          const response = await apiFetch(`/api/emails/applications/${applicationId}/lifecycle`, {
+            method: 'GET'
+          });
+
+          if (response.success) {
+            sendResponse({ 
+              success: true, 
+              application: response.application,
+              lifecycle: response.lifecycle 
+            });
+          } else {
+            sendResponse({ success: false, error: response.error || 'Failed to fetch lifecycle' });
+          }
+        } catch (error) {
+          bgLogger.error('Error fetching application lifecycle:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;

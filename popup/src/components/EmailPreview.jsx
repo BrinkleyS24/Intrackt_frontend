@@ -2,7 +2,7 @@
  * Enhanced EmailPreview Component with Gmail-like email display
  */
 import React, { useState, useEffect } from 'react';
-import { Building2, Briefcase, Calendar, Clock, ExternalLink, Reply, Archive, Flag, Crown, X, Pencil, Check } from "lucide-react";
+import { Building2, Briefcase, Calendar, Clock, ExternalLink, Reply, Archive, Flag, Crown, X, Pencil, Check, TrendingUp } from "lucide-react";
 import { cn } from '../utils/cn';
 import { showNotification } from './Notification';
 import CompanyField from './CompanyField';
@@ -435,6 +435,33 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
   const [replyBody, setReplyBody] = useState('');
   const [sending, setSending] = useState(false);
 
+  // Lifecycle tracking state
+  const [lifecycle, setLifecycle] = useState(null);
+  const [loadingLifecycle, setLoadingLifecycle] = useState(false);
+
+  // Fetch lifecycle when email with applicationId is opened
+  useEffect(() => {
+    if (email?.applicationId) {
+      setLoadingLifecycle(true);
+      chrome.runtime.sendMessage(
+        {
+          type: 'FETCH_APPLICATION_LIFECYCLE',
+          applicationId: email.applicationId
+        },
+        (response) => {
+          setLoadingLifecycle(false);
+          if (response?.success && response?.lifecycle) {
+            setLifecycle(response.lifecycle);
+          } else {
+            setLifecycle(null);
+          }
+        }
+      );
+    } else {
+      setLifecycle(null);
+    }
+  }, [email?.applicationId]);
+
   const toggleReplyForm = () => {
     // If user is not premium block (UI overlay already encourages upgrade, but double-check)
     if (userPlan !== 'premium') {
@@ -662,6 +689,53 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
                   <Button type="button" variant="outline" size="sm" onClick={() => setShowReplyForm(false)} disabled={sending}>Cancel</Button>
                 </div>
               </form>
+            </div>
+          )}
+
+          {/* Application Lifecycle Timeline */}
+          {lifecycle && lifecycle.length > 0 && (
+            <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+              <h4 className="text-sm font-semibold text-purple-900 dark:text-purple-300 mb-3 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Application Journey ({lifecycle.length} stages)
+              </h4>
+              <div className="space-y-2">
+                {lifecycle.map((stage, idx) => (
+                  <div key={stage.emailId} className="flex items-start gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className={cn(
+                        "w-2 h-2 rounded-full mt-1",
+                        stage.category === 'applied' && "bg-blue-500",
+                        stage.category === 'interviewed' && "bg-yellow-500",
+                        stage.category === 'offers' && "bg-green-500",
+                        stage.category === 'rejected' && "bg-red-500"
+                      )}></div>
+                      {idx < lifecycle.length - 1 && (
+                        <div className="w-0.5 h-8 bg-purple-200 dark:bg-purple-700"></div>
+                      )}
+                    </div>
+                    <div className="flex-1 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "text-xs font-medium px-2 py-0.5 rounded-full",
+                          stage.category === 'applied' && "bg-blue-100 text-blue-800",
+                          stage.category === 'interviewed' && "bg-yellow-100 text-yellow-800",
+                          stage.category === 'offers' && "bg-green-100 text-green-800",
+                          stage.category === 'rejected' && "bg-red-100 text-red-800"
+                        )}>
+                          {stage.category}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {new Date(stage.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 truncate">
+                        {stage.subject}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

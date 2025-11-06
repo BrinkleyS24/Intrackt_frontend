@@ -5,7 +5,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { CheckCheck, Building2, Briefcase } from 'lucide-react';
+import { CheckCheck, Building2, Briefcase, TrendingUp } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { formatDate, getCategoryTitle } from '../utils/uiHelpers';
 import { groupEmailsByThread, countUniqueThreads } from '../utils/grouping';
@@ -178,8 +178,8 @@ function EmailList({
                       )}
                     </div>
 
-                    {/* Read-only Company • Position display */}
-                    {(email.company_name || email.position) && (
+                    {/* Read-only Company • Position • Lifecycle display */}
+                    {(email.company_name || email.position || (email.lifecycleStageCount && email.lifecycleStageCount > 1)) && (
                       <div className="flex items-center space-x-2 text-xs mt-2 text-gray-600">
                         {email.company_name && (
                           <div className="flex items-center space-x-1">
@@ -195,6 +195,15 @@ function EmailList({
                             <Briefcase className="h-3 w-3 text-gray-400" />
                             <span>{email.position}</span>
                           </div>
+                        )}
+                        {email.lifecycleStageCount && email.lifecycleStageCount > 1 && (
+                          <>
+                            {(email.company_name || email.position) && <span>•</span>}
+                            <div className="flex items-center space-x-1 text-purple-600">
+                              <TrendingUp className="h-3 w-3" />
+                              <span className="font-medium">{email.lifecycleStageCount} stages</span>
+                            </div>
+                          </>
                         )}
                       </div>
                     )}

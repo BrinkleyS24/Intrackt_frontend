@@ -63,7 +63,7 @@ function generateDynamicInsight(suggestion) {
 /**
  * StatCarousel component for cycling through different statistics
  */
-function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDeltaPct, newApplicationsThisWeek, offersCount, emailsCur30, emailsPrev30, emailsCur7, emailsPrev7, Trend }) {
+function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDeltaPct, newApplicationsThisWeek, offersCount, emailsCur30, emailsPrev30, emailsCur7, emailsPrev7, applicationStats, Trend }) {
   const [currentSlide, setCurrentSlide] = useState(0);
   
   const appsCur = countUniqueThreads(emailsCur30.filter(e => e.category?.toLowerCase().includes('appl')));
@@ -76,10 +76,11 @@ function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDelta
   
   const slides = [
     {
-      label: "Total Applications",
+      label: "Active Applications",
       value: totalApplications,
-      delta: appsDeltaPct,
-      timeframe: "previous 30 days",
+      subtitle: applicationStats?.emails?.total ? `Across ${applicationStats.emails.total} emails` : null,
+      delta: null,
+      timeframe: null,
       bgColor: "bg-gradient-to-r from-cyan-600 to-blue-600",
       textColor: "text-white"
     },
@@ -111,9 +112,16 @@ function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDelta
         <div className={cn("text-3xl font-bold mb-2", slides[currentSlide].textColor)}>
           {slides[currentSlide].value}
         </div>
-        <div className={cn("text-xs opacity-90", slides[currentSlide].textColor)}>
-          <Trend delta={slides[currentSlide].delta} timeframe={slides[currentSlide].timeframe} />
-        </div>
+        {slides[currentSlide].subtitle && (
+          <div className={cn("text-xs opacity-75 mb-2", slides[currentSlide].textColor)}>
+            {slides[currentSlide].subtitle}
+          </div>
+        )}
+        {slides[currentSlide].delta !== null && (
+          <div className={cn("text-xs opacity-90", slides[currentSlide].textColor)}>
+            <Trend delta={slides[currentSlide].delta} timeframe={slides[currentSlide].timeframe} />
+          </div>
+        )}
         
         {/* Pagination dots inside the card */}
         <div className="flex items-center justify-center gap-1.5 mt-4">
@@ -493,6 +501,7 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
 function Dashboard({
   categorizedEmails = { applied: [], interviewed: [], offers: [], rejected: [], irrelevant: [] },
   categoryTotals = null, // NEW: Accurate category counts from backend
+  applicationStats = null, // NEW: Application lifecycle statistics
   onCategorySelect,
   onEmailSelect,
   followUpSuggestions = [],
@@ -674,10 +683,23 @@ function Dashboard({
     return countUniqueThreads(list);
   }, [categorizedEmails]);
 
-  const appliedCount = useMemo(() => getCount('applied'), [getCount]);
-  const interviewedCount = useMemo(() => getCount('interviewed'), [getCount]);
-  const offersCount = useMemo(() => getCount('offers'), [getCount]);
-  const rejectedCount = useMemo(() => getCount('rejected'), [getCount]);
+  const appliedCount = useMemo(() => {
+    // NEW: Use application stats if available, otherwise fallback to email counts
+    return applicationStats?.applications?.applied ?? getCount('applied');
+  }, [applicationStats, getCount]);
+  
+  const interviewedCount = useMemo(() => {
+    return applicationStats?.applications?.interviewed ?? getCount('interviewed');
+  }, [applicationStats, getCount]);
+  
+  const offersCount = useMemo(() => {
+    return applicationStats?.applications?.offered ?? getCount('offers');
+  }, [applicationStats, getCount]);
+  
+  const rejectedCount = useMemo(() => {
+    return applicationStats?.applications?.rejected ?? getCount('rejected');
+  }, [applicationStats, getCount]);
+  
   const irrelevantCount = useMemo(() => getCount('irrelevant'), [getCount]);
 
   const allRelevantEmails = useMemo(() => {
@@ -687,13 +709,18 @@ function Dashboard({
   }, [categorizedEmails]);
 
   const totalApplications = useMemo(() => {
+    // NEW: Use application lifecycle statistics if available
+    if (applicationStats?.applications?.total) {
+      return applicationStats.applications.total;
+    }
+    // Fallback to email-based counting (old behavior)
     const localTotal = countUniqueThreads(allRelevantEmails);
     const backendTotal = (typeof quotaData?.totalProcessed === 'number' && !Number.isNaN(quotaData.totalProcessed))
       ? quotaData.totalProcessed
       : null;
     if (backendTotal === null) return localTotal;
     return Math.max(backendTotal, localTotal);
-  }, [quotaData, allRelevantEmails]);
+  }, [applicationStats, quotaData, allRelevantEmails]);
 
   const totalInterviewsAndOffers = useMemo(() => interviewedCount + offersCount, [interviewedCount, offersCount]);
 
@@ -985,6 +1012,7 @@ function Dashboard({
                     emailsPrev30={emailsPrev30}
                     emailsCur7={emailsCur7}
                     emailsPrev7={emailsPrev7}
+                    applicationStats={applicationStats}
                     Trend={Trend}
                   />
                   <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900">
@@ -1444,6 +1472,7 @@ function Dashboard({
                 emailsPrev30={emailsPrev30}
                 emailsCur7={emailsCur7}
                 emailsPrev7={emailsPrev7}
+                applicationStats={applicationStats}
                 Trend={Trend}
               />
             </div>

@@ -29,6 +29,8 @@ export function useEmails(userEmail, userId, CONFIG) {
   });
   // NEW: State to hold accurate category counts from backend
   const [categoryTotals, setCategoryTotals] = useState(null);
+  // NEW: State to hold application lifecycle statistics
+  const [applicationStats, setApplicationStats] = useState(null);
   // State to indicate if email operations are in progress (e.g., fetching, sending)
   const [initialLoading, setInitialLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -108,6 +110,9 @@ export function useEmails(userEmail, userId, CONFIG) {
           // NEW: Update category totals from sync message
           if (msg.categoryTotals) {
             setCategoryTotals(msg.categoryTotals);
+          }
+          if (msg.applicationStats) {
+            setApplicationStats(msg.applicationStats);
           }
         } else {
           console.error("❌ AppMailia AI: Email sync failed:", msg.error);
@@ -206,9 +211,12 @@ export function useEmails(userEmail, userId, CONFIG) {
       calculateUnreadCounts(stored);
       
       // NEW: Retrieve category totals from local storage
-      const result = await chrome.storage.local.get(['categoryTotals']);
+      const result = await chrome.storage.local.get(['categoryTotals', 'applicationStats']);
       if (result.categoryTotals) {
         setCategoryTotals(result.categoryTotals);
+      }
+      if (result.applicationStats) {
+        setApplicationStats(result.applicationStats);
       }
     } catch (error) {
       console.error("❌ AppMailia AI: Error fetching stored emails:", error);
@@ -568,6 +576,7 @@ export function useEmails(userEmail, userId, CONFIG) {
   return {
     categorizedEmails,
     categoryTotals, // NEW: Export category totals to components
+    applicationStats, // NEW: Export application statistics to components
     fetchStoredEmails,
     fetchNewEmails,
     isFilteredView,

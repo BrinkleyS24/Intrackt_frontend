@@ -69,6 +69,7 @@ function App() {
   const {
     categorizedEmails,
     categoryTotals, // NEW: Extract category totals from useEmails hook
+    applicationStats, // NEW: Extract application statistics from useEmails hook
     fetchStoredEmails,
     fetchNewEmails,
     isFilteredView,
@@ -317,7 +318,7 @@ function App() {
   const renderMainContent = () => {
     switch (selectedCategory) {
       case 'dashboard':
-        return <Dashboard {...{ categorizedEmails, categoryTotals, onCategorySelect: handleCategoryChange, onEmailSelect: handleEmailSelect, openMisclassificationModal, followUpSuggestions, loadingSuggestions, markFollowedUp, updateRespondedState, userPlan, openPremiumModal, quotaData }} />;
+        return <Dashboard {...{ categorizedEmails, categoryTotals, applicationStats, onCategorySelect: handleCategoryChange, onEmailSelect: handleEmailSelect, openMisclassificationModal, followUpSuggestions, loadingSuggestions, markFollowedUp, updateRespondedState, userPlan, openPremiumModal, quotaData }} />;
       case 'emailPreview':
   return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, openPremiumModal, loadingEmails, onUpdateCompanyName: handleUpdateCompanyName, onUpdatePosition: handleUpdatePosition, userEmail }} />;
       default:
