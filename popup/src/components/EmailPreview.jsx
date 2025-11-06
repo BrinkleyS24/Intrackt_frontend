@@ -308,6 +308,8 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
   };
 
   const getCategoryColor = (category) => {
+    // Normalize to lowercase to handle both "Applied" and "applied"
+    const normalizedCategory = category?.toLowerCase();
     const colors = {
       applied: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
       interviewed: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
@@ -315,7 +317,7 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
       rejected: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
       irrelevant: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
     };
-    return colors[category] || "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
+    return colors[normalizedCategory] || "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
   };
 
   const formatDate = (dateStr) => {
@@ -531,9 +533,9 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
             <span className="truncate pr-2">{email.subject}</span>
-            <Badge className={getCategoryColor(email.category)}>
+            <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold", getCategoryColor(email.category))}>
               {email.category}
-            </Badge>
+            </span>
           </DialogTitle>
         </DialogHeader>
 

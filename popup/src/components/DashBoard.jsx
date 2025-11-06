@@ -12,8 +12,8 @@ import { CONFIG } from '../utils/constants';
 function getCategoryColor(category) {
   const colors = {
     applied: 'border-l-4 border-blue-500',
-    interviewed: 'border-l-4 border-green-500',
-    offers: 'border-l-4 border-purple-500',
+    interviewed: 'border-l-4 border-yellow-500',
+    offers: 'border-l-4 border-green-500',
     rejected: 'border-l-4 border-red-500',
     irrelevant: 'border-l-4 border-gray-400'
   };
@@ -23,8 +23,8 @@ function getCategoryColor(category) {
 function getCategoryBadgeColor(category) {
   const colors = {
     applied: 'bg-blue-100 text-blue-800',
-    interviewed: 'bg-green-100 text-green-800',
-    offers: 'bg-purple-100 text-purple-800',
+    interviewed: 'bg-yellow-100 text-yellow-800',
+    offers: 'bg-green-100 text-green-800',
     rejected: 'bg-red-100 text-red-800',
     irrelevant: 'bg-gray-100 text-gray-800'
   };
@@ -150,8 +150,8 @@ function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDelta
 function CategorySummaryCard({ categoryKey, counts, onCategorySelect }) {
   const categoryConfig = {
     applied: { title: 'Applied', icon: FileText, description: 'Applications sent', iconBg: 'bg-blue-100', iconText: 'text-blue-600' },
-    interviewed: { title: 'Interviewed', icon: Calendar, description: 'Interview invitations', iconBg: 'bg-green-100', iconText: 'text-green-600' },
-    offers: { title: 'Offers', icon: Gift, description: 'Job offers received', iconBg: 'bg-purple-100', iconText: 'text-purple-600' },
+    interviewed: { title: 'Interviewed', icon: Calendar, description: 'Interview invitations', iconBg: 'bg-yellow-100', iconText: 'text-yellow-600' },
+    offers: { title: 'Offers', icon: Gift, description: 'Job offers received', iconBg: 'bg-green-100', iconText: 'text-green-600' },
     rejected: { title: 'Rejected', icon: X, description: 'Applications declined', iconBg: 'bg-red-100', iconText: 'text-red-600' }
   };
 

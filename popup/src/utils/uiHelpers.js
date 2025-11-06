@@ -43,9 +43,9 @@ export function getCategoryBadgeColor(category) {
     case 'applied':
       return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
     case 'interviewed':
-      return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+      return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
     case 'offers':
-      return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200';
+      return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
     case 'rejected':
       return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
     case 'irrelevant':
@@ -68,9 +68,9 @@ export function getCategoryColor(category) {
     case 'applied':
       return 'text-blue-600 dark:text-blue-400';
     case 'interviewed':
-      return 'text-green-600 dark:text-green-400';
+      return 'text-yellow-600 dark:text-yellow-400';
     case 'offers':
-      return 'text-purple-600 dark:text-purple-400';
+      return 'text-green-600 dark:text-green-400';
     case 'rejected':
       return 'text-red-600 dark:text-red-400';
     case 'irrelevant':
