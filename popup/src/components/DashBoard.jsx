@@ -1460,21 +1460,22 @@ function Dashboard({
           </>
         ) : (
           <>
-            <div className="space-y-3">
-              <StatCarousel
-                totalApplications={totalApplications}
-                appsDeltaPct={appsDeltaPct}
-                responseRate={responseRate}
-                rateDeltaPct={rateDeltaPct}
-                newApplicationsThisWeek={newApplicationsThisWeek}
-                offersCount={offersCount}
-                emailsCur30={emailsCur30}
-                emailsPrev30={emailsPrev30}
-                emailsCur7={emailsCur7}
-                emailsPrev7={emailsPrev7}
-                applicationStats={applicationStats}
-                Trend={Trend}
-              />
+            {/* Free users: Single Active Applications card (not carousel) */}
+            <div className="mb-4">
+              <div className="p-4 rounded-lg shadow-sm bg-gradient-to-r from-cyan-600 to-blue-600 text-white">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm opacity-90">Active Applications</div>
+                  <FileText className="h-5 w-5 opacity-75" />
+                </div>
+                <div className="text-3xl font-bold mb-2">
+                  {totalApplications}
+                </div>
+                {applicationStats?.emails?.total && (
+                  <div className="text-xs opacity-75 mb-2">
+                    Across {applicationStats.emails.total} emails
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">

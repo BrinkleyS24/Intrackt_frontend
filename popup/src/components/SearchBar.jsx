@@ -1,8 +1,12 @@
 ﻿import React, { useState, useEffect } from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, X, Crown, SlidersHorizontal, Calendar } from 'lucide-react';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
 
-export default function SearchBar({ userId, onEmailSelect }) {
+/**
+ * PREMIUM Advanced Search - Cross-category application lifecycle search
+ * Searches across all categories and groups by company + position
+ */
+export default function SearchBar({ userId, onEmailSelect, userPlan, openPremiumModal }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
   const [isSearching, setIsSearching] = useState(false);
@@ -19,6 +23,13 @@ export default function SearchBar({ userId, onEmailSelect }) {
   }, [searchQuery, userId]);
 
   const performSearch = async (query) => {
+    // Premium-only feature enforcement
+    if (userPlan !== 'premium') {
+      openPremiumModal?.();
+      setSearchQuery('');
+      return;
+    }
+
     setIsSearching(true);
     setError(null);
     try {
@@ -43,14 +54,24 @@ export default function SearchBar({ userId, onEmailSelect }) {
 
   return (
     <div className="sticky top-0 z-10 bg-white border-b p-4">
+      {/* Premium Badge Header */}
+      <div className="flex items-center gap-2 mb-3">
+        <SlidersHorizontal className="w-4 h-4 text-purple-600" />
+        <span className="text-sm font-semibold text-gray-700">Advanced Search</span>
+        <Crown className="w-3 h-3 text-yellow-500" />
+        <span className="text-xs text-purple-600 font-medium">Premium</span>
+      </div>
+
       <div className="relative">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search by company, position, or subject..."
-          className="w-full pl-10 pr-10 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          onFocus={() => { if (userPlan !== 'premium') openPremiumModal?.(); }}
+          placeholder={userPlan === 'premium' ? "Search across all categories..." : "Upgrade to Premium for Advanced Search"}
+          className="w-full pl-10 pr-10 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+          disabled={userPlan !== 'premium'}
         />
         {searchQuery && (
           <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -58,6 +79,11 @@ export default function SearchBar({ userId, onEmailSelect }) {
           </button>
         )}
       </div>
+      {userPlan !== 'premium' && (
+        <p className="text-xs text-gray-500 mt-2">
+          Search across all categories, group by application lifecycle, and find emails instantly
+        </p>
+      )}
       {isSearching && <div className="text-center mt-2 text-gray-500">Searching...</div>}
       {error && (
         <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">

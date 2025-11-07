@@ -17,6 +17,7 @@ import Pagination from './components/Pagination';
 import Modals from './components/Modals';
 import { SubscriptionManager } from './components/SubscriptionManager';
 import SearchBar from './components/SearchBar';
+import CategorySearchFilter from './components/CategorySearchFilter';
 
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
@@ -43,6 +44,10 @@ function App() {
   const [isSubscriptionManagerOpen, setIsSubscriptionManagerOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [categoryBeforePreview, setCategoryBeforePreview] = useState('dashboard');
+  
+  // Category-specific search/filter state
+  const [categoryFilteredEmails, setCategoryFilteredEmails] = useState(null);
+  const [categoryFilterParams, setCategoryFilterParams] = useState(null);
 
   // Callback to handle payment status changes (for auto-closing premium modal)
   const handlePaymentStatusChange = useCallback((newPlan, previousPlan) => {
@@ -229,6 +234,9 @@ function App() {
     setSelectedCategory(category);
     setSelectedEmail(null);
     setCurrentPage(1);
+    // Reset category filters when changing categories
+    setCategoryFilteredEmails(null);
+    setCategoryFilterParams(null);
     // Persist preference with new branding key
     try {
       chrome.storage?.local?.set({ appmailiaSelectedCategory: category });
@@ -365,7 +373,11 @@ function App() {
         // FIX: Group emails into conversations FIRST, then paginate by conversations
         // This ensures consistent counting: sidebar, pagination, and display all use conversation counts
         const emailsForCategory = categorizedEmails[selectedCategory] || [];
-        const groupedConversations = groupEmailsByThread(emailsForCategory);
+        
+        // Use filtered emails if category filter is active, otherwise use all emails
+        const emailsToDisplay = categoryFilteredEmails !== null ? categoryFilteredEmails : emailsForCategory;
+        
+        const groupedConversations = groupEmailsByThread(emailsToDisplay);
         const totalConversations = groupedConversations.length;
         const paginatedConversations = groupedConversations.slice(
           (currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE, 
@@ -374,17 +386,30 @@ function App() {
         // Flatten paginated conversations back to email array for EmailList component
         const paginatedEmails = paginatedConversations.flatMap(conv => conv.emails);
         const totalPages = Math.ceil(totalConversations / CONFIG.PAGINATION.PAGE_SIZE);
+        
+        const handleCategoryFilter = (filtered, filterParams) => {
+          setCategoryFilteredEmails(filtered);
+          setCategoryFilterParams(filterParams);
+          setCurrentPage(1); // Reset to first page when filters change
+        };
+        
         return (
           <>
+            <CategorySearchFilter
+              category={selectedCategory}
+              emails={emailsForCategory}
+              onFilteredResults={handleCategoryFilter}
+              totalEmails={emailsForCategory.length}
+            />
             <EmailList
               emails={paginatedEmails}
               category={selectedCategory}
               selectedEmail={selectedEmail}
               onEmailSelect={handleEmailSelect}
               onOpenMisclassificationModal={openMisclassificationModal}
-              isFilteredView={isFilteredView}
-              filteredEmails={filteredEmails}
-              appliedFilters={appliedFilters}
+              isFilteredView={categoryFilteredEmails !== null}
+              filteredEmails={categoryFilteredEmails || []}
+              appliedFilters={categoryFilterParams || {}}
               totalEmails={totalConversations}
               onMarkAllAsRead={markEmailsAsReadForCategory}
               isMarkingAllAsRead={markingAllAsRead}
@@ -472,11 +497,13 @@ function App() {
           </div>
         </header>
 
-        {/* Search Bar - shown for all categories except dashboard */}
-        {selectedCategory !== 'dashboard' && selectedCategory !== 'follow-up' && (
+        {/* Search Bar - premium only, shown only on dashboard */}
+        {selectedCategory === 'dashboard' && userPlan === 'premium' && (
           <SearchBar 
             userId={userId}
             onEmailSelect={handleEmailSelect}
+            userPlan={userPlan}
+            openPremiumModal={openPremiumModal}
           />
         )}
 
