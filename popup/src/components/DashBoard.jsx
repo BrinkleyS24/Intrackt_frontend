@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { FileText, Calendar, Gift, X, Flag, ArrowUp, ArrowDown, BarChart3, TrendingUp, Clock } from 'lucide-react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { FileText, Calendar, Gift, X, Flag, ArrowUp, ArrowDown, BarChart3, TrendingUp, Clock, Info } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { formatDate } from '../utils/uiHelpers';
 import { groupEmailsByThread, countUniqueThreads } from '../utils/grouping';
@@ -61,6 +61,85 @@ function generateDynamicInsight(suggestion) {
 }
 
 /**
+ * InfoTooltip component for displaying helpful explanations
+ */
+function InfoTooltip({ children, className = "" }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef(null);
+
+  const updatePosition = () => {
+    if (buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const tooltipWidth = 288; // w-72 = 18rem = 288px
+      
+      // Calculate left position, ensuring tooltip stays within viewport
+      let leftPos = rect.left + rect.width / 2 + window.scrollX;
+      
+      // Check if tooltip would overflow right edge
+      if (leftPos + tooltipWidth / 2 > window.innerWidth) {
+        leftPos = window.innerWidth - tooltipWidth / 2 - 10; // 10px padding from edge
+      }
+      
+      // Check if tooltip would overflow left edge
+      if (leftPos - tooltipWidth / 2 < 0) {
+        leftPos = tooltipWidth / 2 + 10; // 10px padding from edge
+      }
+      
+      setPosition({
+        top: rect.top + window.scrollY,
+        left: leftPos
+      });
+    }
+  };
+
+  const handleMouseEnter = () => {
+    updatePosition();
+    setIsVisible(true);
+  };
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={() => setIsVisible(false)}
+        onFocus={handleMouseEnter}
+        onBlur={() => setIsVisible(false)}
+        className="inline-flex items-center justify-center w-4 h-4 ml-1 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition-colors"
+        aria-label="More information"
+      >
+        <Info className="w-4 h-4" />
+      </button>
+      {isVisible && (
+        <div 
+          className={cn(
+            "fixed z-[99999] w-72 max-w-[90vw] p-3 text-xs leading-relaxed",
+            "text-gray-700 bg-white border border-gray-200 rounded-lg shadow-xl",
+            "dark:text-gray-200 dark:bg-gray-800 dark:border-gray-700",
+            "-translate-x-1/2 -translate-y-full",
+            "whitespace-normal break-words",
+            "pointer-events-none",
+            // Arrow pointing down
+            "after:content-[''] after:absolute after:top-full after:left-1/2 after:-translate-x-1/2",
+            "after:border-[6px] after:border-transparent after:border-t-white",
+            "dark:after:border-t-gray-800",
+            className
+          )}
+          style={{
+            top: `${position.top - 12}px`,
+            left: `${position.left}px`
+          }}
+        >
+          {children}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
  * StatCarousel component for cycling through different statistics
  */
 function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDeltaPct, newApplicationsThisWeek, offersCount, emailsCur30, emailsPrev30, emailsCur7, emailsPrev7, applicationStats, Trend }) {
@@ -78,7 +157,7 @@ function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDelta
     {
       label: "Active Applications",
       value: totalApplications,
-      subtitle: applicationStats?.emails?.total ? `Across ${applicationStats.emails.total} emails` : null,
+      subtitle: applicationStats?.emails?.total ? `From ${applicationStats.emails.total} conversations` : null,
       delta: null,
       timeframe: null,
       bgColor: "bg-gradient-to-r from-cyan-600 to-blue-600",
@@ -149,16 +228,44 @@ function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDelta
  */
 function CategorySummaryCard({ categoryKey, counts, onCategorySelect }) {
   const categoryConfig = {
-    applied: { title: 'Applied', icon: FileText, description: 'Applications sent', iconBg: 'bg-blue-100', iconText: 'text-blue-600' },
-    interviewed: { title: 'Interviewed', icon: Calendar, description: 'Interview invitations', iconBg: 'bg-yellow-100', iconText: 'text-yellow-600' },
-    offers: { title: 'Offers', icon: Gift, description: 'Job offers received', iconBg: 'bg-green-100', iconText: 'text-green-600' },
-    rejected: { title: 'Rejected', icon: X, description: 'Applications declined', iconBg: 'bg-red-100', iconText: 'text-red-600' }
+    applied: { 
+      title: 'Applied', 
+      icon: FileText, 
+      description: 'Jobs you\'ve applied to',
+      tooltip: 'Track all the positions you\'ve submitted applications for',
+      iconBg: 'bg-blue-100', 
+      iconText: 'text-blue-600' 
+    },
+    interviewed: { 
+      title: 'Interviewed', 
+      icon: Calendar, 
+      description: 'Interview scheduled',
+      tooltip: 'Applications that have progressed to the interview stage. Click to see all interview conversations.',
+      iconBg: 'bg-yellow-100', 
+      iconText: 'text-yellow-600' 
+    },
+    offers: { 
+      title: 'Offers', 
+      icon: Gift, 
+      description: 'Offers received',
+      tooltip: 'Job offers you\'ve received - congratulations!',
+      iconBg: 'bg-green-100', 
+      iconText: 'text-green-600' 
+    },
+    rejected: { 
+      title: 'Rejected', 
+      icon: X, 
+      description: 'Not selected',
+      tooltip: 'Applications that weren\'t successful this time',
+      iconBg: 'bg-red-100', 
+      iconText: 'text-red-600' 
+    }
   };
 
   const config = categoryConfig[categoryKey];
   if (!config) return null;
 
-  const { title: categoryTitle, icon: IconComponent, description, iconBg: iconBgColorClass, iconText: iconTextColorClass } = config;
+  const { title: categoryTitle, icon: IconComponent, description, tooltip, iconBg: iconBgColorClass, iconText: iconTextColorClass } = config;
   const count = countUniqueThreads(counts[categoryKey] || []);
 
   return (
@@ -173,7 +280,12 @@ function CategorySummaryCard({ categoryKey, counts, onCategorySelect }) {
         <div className={cn("p-2 rounded-lg mr-3", iconBgColorClass)}>
           {IconComponent && <IconComponent className={cn("h-5 w-5", iconTextColorClass)} />}
         </div>
-        <h4 className="text-md font-semibold text-gray-900 dark:text-white">{categoryTitle}</h4>
+        <div className="flex items-center">
+          <h4 className="text-md font-semibold text-gray-900 dark:text-white">{categoryTitle}</h4>
+          <InfoTooltip>
+            {tooltip}
+          </InfoTooltip>
+        </div>
         <span className={cn(
           "ml-auto text-xs font-medium px-2.5 py-0.5 rounded-full",
           getCategoryBadgeColor(categoryKey),
@@ -709,18 +821,16 @@ function Dashboard({
   }, [categorizedEmails]);
 
   const totalApplications = useMemo(() => {
-    // NEW: Use application lifecycle statistics if available
+    // Use application lifecycle statistics if available (backend application tracking)
     if (applicationStats?.applications?.total) {
       return applicationStats.applications.total;
     }
-    // Fallback to email-based counting (old behavior)
-    const localTotal = countUniqueThreads(allRelevantEmails);
-    const backendTotal = (typeof quotaData?.totalProcessed === 'number' && !Number.isNaN(quotaData.totalProcessed))
-      ? quotaData.totalProcessed
-      : null;
-    if (backendTotal === null) return localTotal;
-    return Math.max(backendTotal, localTotal);
-  }, [applicationStats, quotaData, allRelevantEmails]);
+    
+    // Fallback to frontend email-based counting
+    // This counts unique threads/conversations, which matches what users see in the UI
+    // Note: quotaData.totalProcessed counts raw emails for quota tracking, NOT unique applications
+    return countUniqueThreads(allRelevantEmails);
+  }, [applicationStats, allRelevantEmails]);
 
   const totalInterviewsAndOffers = useMemo(() => interviewedCount + offersCount, [interviewedCount, offersCount]);
 
@@ -864,6 +974,67 @@ function Dashboard({
   
   const interviewsThisWeek = useMemo(() => uniqueCount(emailsCur7.filter(e => hasCat(e, 'interview'))), [emailsCur7]);
 
+  // Calculate average response time - time between application and first positive response
+  const avgResponseTime = useMemo(() => {
+    // Get all applied emails
+    const appliedEmails = allRelevantEmails.filter(e => hasCat(e, 'appl'));
+    
+    // Get all response emails (interviews and offers)
+    const responseEmails = allRelevantEmails.filter(e => 
+      hasCat(e, 'interview') || hasCat(e, 'offer')
+    );
+    
+    if (appliedEmails.length === 0 || responseEmails.length === 0) return null;
+    
+    // Group by applicationId (if available) or by company+position
+    const applicationMap = new Map();
+    
+    // Process applied emails first
+    appliedEmails.forEach(email => {
+      const key = email.applicationId || `${email.company || 'unknown'}_${email.position || 'unknown'}`;
+      const emailDate = parseMs(email.date);
+      if (emailDate === null) return;
+      
+      if (!applicationMap.has(key)) {
+        applicationMap.set(key, { applied: emailDate, firstResponse: null });
+      } else {
+        const app = applicationMap.get(key);
+        if (emailDate < app.applied) {
+          app.applied = emailDate;
+        }
+      }
+    });
+    
+    // Process response emails
+    responseEmails.forEach(email => {
+      const key = email.applicationId || `${email.company || 'unknown'}_${email.position || 'unknown'}`;
+      const emailDate = parseMs(email.date);
+      if (emailDate === null) return;
+      
+      // Only match responses to applications we've tracked
+      if (applicationMap.has(key)) {
+        const app = applicationMap.get(key);
+        if (app.firstResponse === null || emailDate < app.firstResponse) {
+          app.firstResponse = emailDate;
+        }
+      }
+    });
+    
+    // Calculate response times for applications that got responses
+    const responseTimes = [];
+    applicationMap.forEach(app => {
+      if (app.applied && app.firstResponse && app.firstResponse > app.applied) {
+        const days = (app.firstResponse - app.applied) / (1000 * 60 * 60 * 24);
+        responseTimes.push(days);
+      }
+    });
+    
+    if (responseTimes.length === 0) return null;
+    
+    const avg = responseTimes.reduce((sum, days) => sum + days, 0) / responseTimes.length;
+    return Math.round(avg * 10) / 10; // Round to 1 decimal place
+  }, [allRelevantEmails]);
+
   // Configurable number of weeks for chart
   const numWeeks = 4; // Show recent trends over 4 weeks
   const weeklyData = useMemo(() => {
@@ -1000,7 +1171,7 @@ function Dashboard({
               </div>
 
               {analyticsTab === 'overview' && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   <StatCarousel
                     totalApplications={totalApplications}
                     appsDeltaPct={appsDeltaPct}
@@ -1018,7 +1189,12 @@ function Dashboard({
                   <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900">
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="text-xs text-gray-600 dark:text-gray-400">Response Rate</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400 flex items-center">
+                          Response Rate
+                          <InfoTooltip>
+                            Percentage of applications that resulted in interviews or offers.
+                          </InfoTooltip>
+                        </div>
                         <div className="text-xl font-bold text-green-600 dark:text-green-400">{responseRate}%</div>
                       </div>
                       <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
@@ -1028,29 +1204,39 @@ function Dashboard({
                   <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900">
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="text-xs text-gray-600 dark:text-gray-400">Interviews Scheduled</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400 flex items-center">
+                          Interview Stage
+                          <InfoTooltip>
+                            Total number of unique applications currently in the interview process (grouped by company + position).
+                          </InfoTooltip>
+                        </div>
                         <div className="text-xl font-bold text-blue-600 dark:text-blue-400">{interviewedCount}</div>
                       </div>
                       <Calendar className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                     </div>
                     <div className="mt-1 text-xs text-blue-600">+{interviewsThisWeek} this week</div>
                   </div>
-                  {/* TODO: Avg Response Time - Disabled until proper company name extraction is implemented
-                      Currently uses domain-based matching which doesn't work when:
-                      - Applications come from ATS platforms (greenhouse, smartrecruiters) 
-                      - Interviews come from company recruiters with different email domains
-                      Need to implement company name extraction from subject/body to properly match application→interview
                   <div className="p-3 rounded-lg bg-orange-50 dark:bg-orange-900">
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="text-xs text-gray-600 dark:text-gray-400">Avg Response Time</div>
-                        <div className="text-xl font-bold text-orange-600 dark:text-orange-400">{artCur ?? Math.max(1, Math.round((offersCount ? 3.2 : 5) * 10) / 10)}d</div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400 flex items-center">
+                          Avg Response Time
+                          <InfoTooltip>
+                            Average time between submitting an application and receiving your first response (interview or offer).
+                          </InfoTooltip>
+                        </div>
+                        <div className="text-xl font-bold text-orange-600 dark:text-orange-400">
+                          {avgResponseTime !== null ? `${avgResponseTime}d` : '—'}
+                        </div>
                       </div>
                       <Clock className="h-5 w-5 text-orange-600 dark:text-orange-400" />
                     </div>
-                    <div className="mt-1"><TimeTrend delta={artDeltaDays} /></div>
+                    <div className="mt-1 text-xs text-orange-600">
+                      {avgResponseTime !== null 
+                        ? avgResponseTime < 7 ? '⚡ Fast responses' : avgResponseTime < 14 ? '✓ Good timing' : '⏳ Be patient'
+                        : 'No data yet'}
+                    </div>
                   </div>
-                  */}
                 </div>
               )}
 
@@ -1324,8 +1510,19 @@ function Dashboard({
 
             <div className="card p-4 rounded-lg shadow-sm bg-white dark:bg-zinc-800">
               <div className="mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Suggested Follow-ups</h3>
-                <p className="text-sm text-gray-600 dark:text-zinc-400">Actionable steps to advance your job search</p>
+                <div className="flex items-center">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Suggested Follow-ups</h3>
+                  <InfoTooltip>
+                    <div className="space-y-2">
+                      <p className="font-semibold">Understanding the metrics:</p>
+                      <p><span className="font-medium">Urgency:</span> How soon you should act (High = immediate, Low = when convenient)</p>
+                      <p><span className="font-medium">Impact:</span> Expected effect on your job search success</p>
+                      <p><span className="font-medium">Estimated time:</span> How long the action will take</p>
+                      <p><span className="font-medium">Days ago:</span> Time since last interaction with this company</p>
+                    </div>
+                  </InfoTooltip>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-zinc-400">AI-powered actionable steps to advance your job search</p>
               </div>
 
               {/* Filters */}
@@ -1464,15 +1661,20 @@ function Dashboard({
             <div className="mb-4">
               <div className="p-4 rounded-lg shadow-sm bg-gradient-to-r from-cyan-600 to-blue-600 text-white">
                 <div className="flex items-center justify-between mb-3">
-                  <div className="text-sm opacity-90">Active Applications</div>
+                  <div className="text-sm opacity-90 flex items-center">
+                    Active Applications
+                    <InfoTooltip>
+                      Unique job applications (company + position pairs). Each may have multiple email conversations.
+                    </InfoTooltip>
+                  </div>
                   <FileText className="h-5 w-5 opacity-75" />
                 </div>
                 <div className="text-3xl font-bold mb-2">
                   {totalApplications}
                 </div>
-                {applicationStats?.emails?.total && (
+                {applicationStats?.emails?.total > 0 && (
                   <div className="text-xs opacity-75 mb-2">
-                    Across {applicationStats.emails.total} emails
+                    From {applicationStats.emails.total} conversations
                   </div>
                 )}
               </div>

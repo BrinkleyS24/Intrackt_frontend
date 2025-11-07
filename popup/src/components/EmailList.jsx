@@ -4,7 +4,7 @@
  * Mirrors the provided UI design.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { CheckCheck, Building2, Briefcase, TrendingUp } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { formatDate, getCategoryTitle } from '../utils/uiHelpers';
@@ -36,6 +36,8 @@ function EmailList({
   // Optional prop: parent can signal if the entire category has unread threads
   hasUnreadCategory
 }) {
+  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'active', 'inactive'
+  
   const categoryTitle = getCategoryTitle(category);
   // Category color mapping for badges and accents
   const CATEGORY_STYLES = {
@@ -66,7 +68,34 @@ function EmailList({
   };
   const style = CATEGORY_STYLES[category] || CATEGORY_STYLES.applied;
   const threadGroups = useMemo(() => groupEmailsByThread(emails), [emails]);
+  
+  // Apply active/inactive filter
+  const filteredThreadGroups = useMemo(() => {
+    if (activeFilter === 'all') return threadGroups;
+    
+    return threadGroups.filter(group => {
+      const email = group.latestEmail || {};
+      const isActive = !email.isClosed && (category === 'applied' || category === 'interviewed');
+      
+      if (activeFilter === 'active') return isActive;
+      if (activeFilter === 'inactive') return !isActive;
+      return true;
+    });
+  }, [threadGroups, activeFilter, category]);
+  
   const displayCount = totalEmails !== undefined ? totalEmails : countUniqueThreads(emails);
+  
+  // Get the appropriate label based on category
+  const getCategoryLabel = (count) => {
+    const labels = {
+      applied: count === 1 ? 'application' : 'applications',
+      interviewed: count === 1 ? 'conversation' : 'conversations',
+      offers: count === 1 ? 'offer' : 'offers',
+      rejected: count === 1 ? 'rejection' : 'rejections'
+    };
+    return labels[category] || (count === 1 ? 'conversation' : 'conversations');
+  };
+  
   // If parent supplies `hasUnreadCategory` use it (covers unread threads outside pagination),
   // otherwise fall back to inspecting the currently-paginated thread groups.
   const hasUnreadEmails = typeof hasUnreadCategory === 'boolean' ? hasUnreadCategory : threadGroups.some(group => group.unreadCount > 0);
@@ -93,7 +122,7 @@ function EmailList({
     <div className="flex-1 overflow-y-auto px-6 py-4 min-w-0"> {/* Added min-w-0 */}
       {/* Header - redesigned */}
       <div className="p-4 border-b bg-white">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-1">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
             {categoryTitle}
           </h2>
@@ -101,9 +130,58 @@ function EmailList({
             "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
             style.badge
           )}>
-            {displayCount} {displayCount === 1 ? 'conversation' : 'conversations'}
+            {category === 'interviewed' && displayCount > 0
+              ? `${emails.length} message${emails.length !== 1 ? 's' : ''} in ${displayCount} ${getCategoryLabel(displayCount)}`
+              : `${displayCount} ${getCategoryLabel(displayCount)}`
+            }
           </span>
         </div>
+        {/* Explanatory subtext to clarify what the count represents */}
+        <div className="mb-2">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Email threads grouped by conversation. May include multiple emails per application.
+          </p>
+        </div>
+        
+        {/* Active/Inactive Filter - Only show for Applied and Interviewed categories */}
+        {(category === 'applied' || category === 'interviewed') && (
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => setActiveFilter('all')}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                activeFilter === 'all'
+                  ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
+              )}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setActiveFilter('active')}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                activeFilter === 'active'
+                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
+              )}
+            >
+              Active
+            </button>
+            <button
+              onClick={() => setActiveFilter('inactive')}
+              className={cn(
+                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                activeFilter === 'inactive'
+                  ? "bg-gray-200 text-gray-700 dark:bg-zinc-600 dark:text-zinc-200"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600"
+              )}
+            >
+              Closed
+            </button>
+          </div>
+        )}
+        
         {canShowMarkAllButton && (
           <div>
             <button
@@ -125,13 +203,17 @@ function EmailList({
           </div>
         )}
       </div>
-      {threadGroups.length === 0 ? (
+      {filteredThreadGroups.length === 0 ? (
         <div className="text-center text-gray-500 dark:text-zinc-400 py-8">
-          No emails found in this category.
+          {activeFilter === 'all' 
+            ? 'No emails found in this category.'
+            : activeFilter === 'active'
+            ? 'No active applications in this category.'
+            : 'No closed applications in this category.'}
         </div>
       ) : (
         <div className="p-2 space-y-2">
-          {threadGroups.map(group => {
+          {filteredThreadGroups.map(group => {
             const email = group.latestEmail || {};
             const rawPreview = group.preview || email.preview || email.body || '';
             const cleanPreview = stripHtml(rawPreview);
@@ -141,6 +223,9 @@ function EmailList({
 
             const isSelected = selectedEmail && (selectedEmail.thread_id === group.threadId || selectedEmail.threadId === group.threadId);
             const isUnread = group.unreadCount > 0;
+            
+            // An application is "active" if it's not closed and is in Applied or Interviewed categories
+            const isActive = !email.isClosed && (category === 'applied' || category === 'interviewed');
 
             return (
               <div
@@ -178,9 +263,19 @@ function EmailList({
                       )}
                     </div>
 
-                    {/* Read-only Company • Position • Lifecycle display */}
-                    {(email.company_name || email.position || (email.lifecycleStageCount && email.lifecycleStageCount > 1)) && (
+                    {/* Read-only Company • Position • Lifecycle • Active Status display */}
+                    {(email.company_name || email.position || (email.lifecycleStageCount && email.lifecycleStageCount > 1) || isActive) && (
                       <div className="flex items-center space-x-2 text-xs mt-2 text-gray-600">
+                        {isActive && (
+                          <div className="flex items-center space-x-1">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200">
+                              Active
+                            </span>
+                          </div>
+                        )}
+                        {isActive && (email.company_name || email.position || (email.lifecycleStageCount && email.lifecycleStageCount > 1)) && (
+                          <span>•</span>
+                        )}
                         {email.company_name && (
                           <div className="flex items-center space-x-1">
                             <Building2 className="h-3 w-3 text-gray-400" />
