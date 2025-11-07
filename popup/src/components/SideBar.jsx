@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mail, BarChart3, FileText, Calendar, Gift, X, Home, LogOut, RefreshCw, Settings } from "lucide-react";
+import { Mail, BarChart3, FileText, Calendar, Gift, X, Home, LogOut, RefreshCw, Settings, Star } from "lucide-react";
 import { cn } from "../utils/cn";
 import { EmailQuotaIndicator } from "./EmailQuotaIndicator";
 import { countUniqueThreads } from "../utils/grouping";
@@ -55,8 +55,13 @@ export function Sidebar({
     return countUniqueThreads(list);
   };
 
+  // Count starred emails across all categories
+  const starredCount = Object.values(categorizedEmails).flat().filter(email => email.is_starred).length;
+
+  // Build menu items, conditionally including Starred only if count > 0
   const menuItems = [
     { id: "dashboard", label: "Dashboard", icon: Home, count: null, unread: 0 },
+    ...(starredCount > 0 ? [{ id: "starred", label: "Starred", icon: Star, count: starredCount, unread: 0 }] : []),
     { id: "applied", label: "Applied", icon: FileText, count: getEmailCount("applied"), unread: unreadCounts?.applied || 0 },
     { id: "interviewed", label: "Interviewed", icon: Calendar, count: getEmailCount("interviewed"), unread: unreadCounts?.interviewed || 0 },
     { id: "offers", label: "Offers", icon: Gift, count: getEmailCount("offers"), unread: unreadCounts?.offers || 0 },

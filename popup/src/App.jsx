@@ -16,6 +16,7 @@ import QuotaBanner from './components/QuotaBanner';
 import Pagination from './components/Pagination';
 import Modals from './components/Modals';
 import { SubscriptionManager } from './components/SubscriptionManager';
+import SearchBar from './components/SearchBar';
 
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
@@ -321,6 +322,45 @@ function App() {
         return <Dashboard {...{ categorizedEmails, categoryTotals, applicationStats, onCategorySelect: handleCategoryChange, onEmailSelect: handleEmailSelect, openMisclassificationModal, followUpSuggestions, loadingSuggestions, markFollowedUp, updateRespondedState, userPlan, openPremiumModal, quotaData }} />;
       case 'emailPreview':
   return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, openPremiumModal, loadingEmails, onUpdateCompanyName: handleUpdateCompanyName, onUpdatePosition: handleUpdatePosition, userEmail }} />;
+      case 'starred':
+        // Show all starred emails across all categories
+        const allEmails = Object.values(categorizedEmails).flat();
+        const starredEmails = allEmails.filter(email => email.is_starred);
+        const starredGroupedConversations = groupEmailsByThread(starredEmails);
+        const starredTotalConversations = starredGroupedConversations.length;
+        const starredPaginatedConversations = starredGroupedConversations.slice(
+          (currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE, 
+          currentPage * CONFIG.PAGINATION.PAGE_SIZE
+        );
+        const starredPaginatedEmails = starredPaginatedConversations.flatMap(conv => conv.emails);
+        const starredTotalPages = Math.ceil(starredTotalConversations / CONFIG.PAGINATION.PAGE_SIZE);
+        return (
+          <>
+            <EmailList
+              emails={starredPaginatedEmails}
+              category="starred"
+              selectedEmail={selectedEmail}
+              onEmailSelect={handleEmailSelect}
+              onOpenMisclassificationModal={openMisclassificationModal}
+              isFilteredView={false}
+              filteredEmails={[]}
+              appliedFilters={{}}
+              totalEmails={starredTotalConversations}
+              onMarkAllAsRead={markEmailsAsReadForCategory}
+              isMarkingAllAsRead={markingAllAsRead}
+              hasUnreadCategory={false}
+            />
+            {starredTotalPages > 1 && (
+              <Pagination
+                currentPage={currentPage}
+                totalPages={starredTotalPages}
+                onPageChange={setCurrentPage}
+                totalEmails={starredTotalConversations}
+                pageSize={CONFIG.PAGINATION.PAGE_SIZE}
+              />
+            )}
+          </>
+        );
       default:
         // FIX: Group emails into conversations FIRST, then paginate by conversations
         // This ensures consistent counting: sidebar, pagination, and display all use conversation counts
@@ -431,6 +471,14 @@ function App() {
             )}
           </div>
         </header>
+
+        {/* Search Bar - shown for all categories except dashboard */}
+        {selectedCategory !== 'dashboard' && selectedCategory !== 'follow-up' && (
+          <SearchBar 
+            userId={userId}
+            onEmailSelect={handleEmailSelect}
+          />
+        )}
 
         {quotaData && <QuotaBanner quota={quotaData} userPlan={userPlan} onUpgradeClick={openPremiumModal} />}
 

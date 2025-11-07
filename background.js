@@ -1390,6 +1390,104 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
+      case 'SEARCH_EMAILS':
+        try {
+          const { query } = msg;
+          
+          if (!query || query.trim().length === 0) {
+            sendResponse({ success: true, applications: [], totalResults: 0, query: '' });
+            return;
+          }
+
+          console.log('🔍 AppMailia AI Background: Searching emails with query:', query);
+          
+          const response = await apiFetch('/api/emails/search', {
+            method: 'GET',
+            query: { q: query }
+          });
+          
+          if (response.success) {
+            console.log('✅ AppMailia AI Background: Search completed, found', response.totalResults, 'results');
+            sendResponse({ 
+              success: true, 
+              applications: response.applications,
+              totalResults: response.totalResults,
+              query: response.query
+            });
+          } else {
+            console.error('❌ AppMailia AI Background: Search failed:', response.error);
+            sendResponse({ success: false, error: response.error });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error searching emails:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'TOGGLE_STAR':
+        try {
+          const { emailId, isStarred } = msg;
+          
+          if (!emailId) {
+            sendResponse({ success: false, error: 'Email ID is required' });
+            return;
+          }
+
+          console.log(`⭐ AppMailia AI Background: ${isStarred ? 'Starring' : 'Unstarring'} email ${emailId}`);
+          
+          const response = await apiFetch(`/api/emails/${emailId}/star`, {
+            method: 'POST',
+            body: { isStarred: isStarred }
+          });
+          
+          if (response.success) {
+            console.log(`✅ AppMailia AI Background: Email ${isStarred ? 'starred' : 'unstarred'} successfully`);
+            
+            // Update local storage to reflect star change
+            const storage = await chrome.storage.local.get([
+              'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'
+            ]);
+            
+            for (const key of ['appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails']) {
+              const emails = storage[key] || [];
+              const emailIndex = emails.findIndex(e => e.id === emailId);
+              
+              if (emailIndex !== -1) {
+                emails[emailIndex] = {
+                  ...emails[emailIndex],
+                  is_starred: isStarred
+                };
+                await chrome.storage.local.set({ [key]: emails });
+                console.log(`Updated star status for email ${emailId} in ${key}`);
+                break;
+              }
+            }
+            
+            // Broadcast update to popup
+            chrome.runtime.sendMessage({
+              type: 'EMAIL_STARRED_UPDATED',
+              emailId: emailId,
+              isStarred: isStarred
+            });
+            
+            sendResponse({ 
+              success: true, 
+              isStarred: response.isStarred,
+              emailId: response.emailId
+            });
+          } else if (response.premiumOnly) {
+            console.log('⚠️ AppMailia AI Background: Premium subscription required to star emails');
+            sendResponse({ success: false, error: response.error, premiumOnly: true });
+          } else {
+            console.error('❌ AppMailia AI Background: Star toggle failed:', response.error);
+            sendResponse({ success: false, error: response.error });
+          }
+        } catch (error) {
+          console.error('❌ AppMailia AI Background: Error toggling star:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
       default:
         console.warn('AppMailia AI: Unhandled message type:', msg.type);
         sendResponse({ success: false, error: 'Unhandled message type.' });

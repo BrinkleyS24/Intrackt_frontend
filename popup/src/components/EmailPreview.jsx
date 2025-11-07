@@ -2,9 +2,10 @@
  * Enhanced EmailPreview Component with Gmail-like email display
  */
 import React, { useState, useEffect } from 'react';
-import { Building2, Briefcase, Calendar, Clock, ExternalLink, Reply, Archive, Flag, Crown, X, Pencil, Check, TrendingUp } from "lucide-react";
+import { Building2, Briefcase, Calendar, Clock, ExternalLink, Reply, Archive, Flag, Crown, X, Pencil, Check, TrendingUp, Star } from "lucide-react";
 import { cn } from '../utils/cn';
 import { showNotification } from './Notification';
+import { sendMessageToBackground } from '../utils/chromeMessaging';
 import CompanyField from './CompanyField';
 
 // Enhanced email content utilities (embedded in this file)
@@ -491,6 +492,53 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
     }
   };
 
+  // Star toggle state
+  const [isStarred, setIsStarred] = useState(email.is_starred || false);
+  const [isTogglingstar, setIsTogglingstar] = useState(false);
+
+  const handleStarClick = async () => {
+    if (isTogglingstar) return;
+    
+    // Check if user is premium
+    if (userPlan !== 'premium') {
+      openPremiumModal?.();
+      return;
+    }
+
+    setIsTogglingstar(true);
+    const newStarredState = !isStarred;
+    
+    // Optimistic update
+    setIsStarred(newStarredState);
+
+    try {
+      const response = await sendMessageToBackground({
+        type: 'TOGGLE_STAR',
+        emailId: email.id,
+        isStarred: newStarredState
+      });
+
+      if (response.success) {
+        console.log(`Email ${newStarredState ? 'starred' : 'unstarred'} successfully`);
+      } else if (response.premiumOnly) {
+        // Revert optimistic update
+        setIsStarred(!newStarredState);
+        openPremiumModal?.();
+      } else {
+        // Revert optimistic update
+        setIsStarred(!newStarredState);
+        showNotification(response.error || 'Failed to toggle star', 'error');
+      }
+    } catch (error) {
+      console.error('Error toggling star:', error);
+      // Revert optimistic update
+      setIsStarred(!newStarredState);
+      showNotification('Failed to toggle star', 'error');
+    } finally {
+      setIsTogglingstar(false);
+    }
+  };
+
   const handleArchiveClick = async () => {
     await onArchive(email.thread_id);
     onBack();
@@ -629,6 +677,19 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
             <Button variant="outline" size="sm" className="flex items-center space-x-1" onClick={handleArchiveClick}>
               <Archive className="h-4 w-4" />
               <span>Archive</span>
+            </Button>
+            <Button 
+              variant={isStarred ? "default" : "outline"} 
+              size="sm" 
+              className={`flex items-center space-x-1 ${isStarred ? 'bg-yellow-500 hover:bg-yellow-600 text-white border-yellow-500' : ''}`}
+              onClick={handleStarClick}
+              disabled={isTogglingstar}
+            >
+              <Star className={`h-4 w-4 ${isStarred ? 'fill-current' : ''}`} />
+              <span>{isStarred ? 'Unstar' : 'Star'}</span>
+              {userPlan !== 'premium' && (
+                <Crown className="h-3 w-3 ml-1 text-yellow-500" />
+              )}
             </Button>
             <Button variant="outline" size="sm" className="flex items-center space-x-1" onClick={handleMisclassifyClick}>
               <Flag className="h-4 w-4" />
