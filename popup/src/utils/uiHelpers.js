@@ -132,6 +132,8 @@ export function getCategoryTitle(categoryKey) {
     "offers": "Offers",
     "rejected": "Rejected",
     "irrelevant": "Irrelevant",
+    "all": "All",
+    "starred": "Starred",
     "dashboard": "Dashboard", // For sidebar navigation
   };
   return titles[lowerCategoryKey] || (categoryKey || "Unknown Category"); // Fallback to original key or generic string

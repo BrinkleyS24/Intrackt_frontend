@@ -73,7 +73,6 @@ export function useEmailQuota(initialQuotaData, userPlan) {
     // Function to get the warning message based on current quota state
     const getWarningMessage = () => {
         const remaining = quota.total === Infinity ? "Unlimited" : quota.total - quota.used;
-        const daysUntilReset = getDaysUntilReset(quota.resetDate); // Use the helper function
 
         if (quota.total === Infinity) {
             return null; // No warning message for premium users
@@ -81,17 +80,13 @@ export function useEmailQuota(initialQuotaData, userPlan) {
 
         switch (quota.warningLevel) {
             case 'exceeded':
-                // Check if reset is very soon (e.g., within 24 hours) for specific message
-                if (daysUntilReset <= 1 && Math.abs(quota.resetDate.getTime() - new Date().getTime()) < (1000 * 60 * 60 * 24)) {
-                    return "Monthly limit reached. Upgrade for unlimited emails.";
-                }
-                return `Monthly limit reached. Resets in ${daysUntilReset} day${daysUntilReset !== 1 ? "s" : ""}.`;
+                return "Tracking limit reached. Upgrade for unlimited tracking.";
             case 'critical':
-                return `Only ${remaining} emails remaining this month.`;
+                return `Only ${remaining} emails remaining in your tracking limit.`;
             case 'warning':
-                return `You're approaching your monthly limit (${remaining} left).`;
+                return `You're approaching your tracking limit (${remaining} left).`;
             case 'approaching':
-                return `${quota.used}/${quota.total} emails used this month.`;
+                return `${quota.used}/${quota.total} tracked emails used.`;
             default:
                 return null;
         }

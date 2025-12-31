@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AppMailia AI - Job Tracker",
   "version": "1.2.0",
-  "description": "Effortlessly track your job applications directly from Gmail.",
+  "description": "Self-learning AI that tracks job applications from Gmail. Auto-detects interviews, offers & rejections. Gets smarter from your corrections.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -19,16 +19,12 @@
   "permissions": [
     "identity",
     "storage",
-    "alarms",
-    "tabs"
+    "alarms"
   ],
   "host_permissions": [
-    "http://localhost:3000/",
-    "https://gmail-tracker-backend-215378038667.us-central1.run.app/",
-    "https://www.googleapis.com/",
-    "https://accounts.google.com/",
-    "https://checkout.stripe.com/",
-    "https://dashboard.stripe.com/"
+    "http://localhost:3000/*",
+    "https://www.googleapis.com/*",
+    "https://accounts.google.com/*"
   ],
   "oauth2": {
     "client_id": "807157076800-qcgsknjcd45sigpufervigockvgnm06d.apps.googleusercontent.com",
@@ -45,6 +41,6 @@
     "type": "module"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:3000 https://www.googleapis.com https://accounts.google.com https://gmail-tracker-backend-215378038667.us-central1.run.app https://securetoken.googleapis.com https://identitytoolkit.googleapis.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' http://localhost:3000 https://www.googleapis.com https://accounts.google.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com;"
   }
 }

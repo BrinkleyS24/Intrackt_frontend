@@ -5,27 +5,30 @@
  * of different views (Dashboard, Email List, Email Preview).
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import Sidebar from './components/SideBar';
-import Dashboard from './components/DashBoard';
+import React, { useState, useEffect, useCallback } from 'react';
+import QuickView from './components/QuickView';
 import EmailList from './components/EmailList';
 import EmailPreview from './components/EmailPreview';
 import LoadingOverlay from './components/LoadingOverlay';
 import { Notification, showNotification } from './components/Notification';
-import QuotaBanner from './components/QuotaBanner';
 import Pagination from './components/Pagination';
 import Modals from './components/Modals';
-import { SubscriptionManager } from './components/SubscriptionManager';
-import SearchBar from './components/SearchBar';
-import CategorySearchFilter from './components/CategorySearchFilter';
 
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
-import { useFollowUps } from './hooks/useFollowUps';
-import { countUniqueThreads, groupEmailsByThread } from './utils/grouping';
+import { groupEmailsByThread } from './utils/grouping';
+import { getCategoryTitle } from './utils/uiHelpers';
 
 import { CONFIG } from './utils/constants';
-import { Crown, Briefcase } from 'lucide-react';
+import { Briefcase } from 'lucide-react';
+
+const flattenCategorized = (categorized) => [
+  ...(categorized?.applied || []),
+  ...(categorized?.interviewed || []),
+  ...(categorized?.offers || []),
+  ...(categorized?.rejected || []),
+  ...(categorized?.irrelevant || []),
+];
 
 // Small app-scoped logger to centralize popup logs and make them easy to silence
 const appLogger = {
@@ -36,26 +39,13 @@ const appLogger = {
 
 function App() {
   // Default to dashboard; a stored preference may override after auth is ready
-  const [selectedCategory, setSelectedCategory] = useState('dashboard');
+  const [selectedCategory, setSelectedCategory] = useState('home');
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [isMisclassificationModalOpen, setIsMisclassificationModalOpen] = useState(false);
   const [emailToMisclassify, setEmailToMisclassify] = useState(null);
-  const [isPremiumModalOpen, setIsPremiumModalOpen] = useState(false);
-  const [isSubscriptionManagerOpen, setIsSubscriptionManagerOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [categoryBeforePreview, setCategoryBeforePreview] = useState('dashboard');
-  
-  // Category-specific search/filter state
-  const [categoryFilteredEmails, setCategoryFilteredEmails] = useState(null);
-  const [categoryFilterParams, setCategoryFilterParams] = useState(null);
-
-  // Callback to handle payment status changes (for auto-closing premium modal)
-  const handlePaymentStatusChange = useCallback((newPlan, previousPlan) => {
-    if (previousPlan === 'free' && newPlan === 'premium') {
-      appLogger.info('Auto-closing premium modal after successful payment upgrade');
-      setIsPremiumModalOpen(false);
-    }
-  }, []);
+  const [categoryBeforePreview, setCategoryBeforePreview] = useState('home');
+  const [allApplicationsFilter, setAllApplicationsFilter] = useState('all'); // all|applied|interviewed|offers|rejected
 
   const {
     userEmail,
@@ -71,7 +61,7 @@ function App() {
     quotaData,
     loadingAuth,
     reloadUserState
-  } = useAuth(handlePaymentStatusChange);
+  } = useAuth();
   const {
     categorizedEmails,
     categoryTotals, // NEW: Extract category totals from useEmails hook
@@ -99,18 +89,27 @@ function App() {
     markingAllAsRead
   } = useEmails(userEmail, userId, CONFIG);
 
-  const {
-    followUpSuggestions,
-    loadFollowUpSuggestions,
-    loadingSuggestions,
-    markFollowedUp,
-    updateRespondedState,
-  } = useFollowUps(userEmail, userId, userPlan);
+  const isLoadingApp = loadingAuth || initialLoading;
 
-  const isLoadingApp = loadingAuth || initialLoading || loadingSuggestions;
+  // Keep the currently-open preview email in sync with refreshed backend state
+  // (e.g., when applicationId/isClosed appears after linking/backfill).
+  useEffect(() => {
+    if (!selectedEmail?.id) return;
+    if (selectedCategory !== 'emailPreview') return;
 
- // Load last selected category from storage once auth is ready
- useEffect(() => {
+    const all = flattenCategorized(categorizedEmails);
+    const updated = all.find(e => e.id === selectedEmail.id);
+    if (!updated) return;
+
+    setSelectedEmail(prev => {
+      if (!prev) return prev;
+      // Preserve the assembled threadMessages from the preview, but refresh all other fields.
+      return { ...updated, threadMessages: prev.threadMessages };
+    });
+  }, [categorizedEmails, selectedEmail?.id, selectedCategory]);
+
+  // Load last selected category from storage once auth is ready
+  useEffect(() => {
     const restoreSelectedCategory = async () => {
       try {
         // Migration: check for old key first, then use new key
@@ -118,7 +117,7 @@ function App() {
         const selectedCat = storage.appmailiaSelectedCategory || storage.intracktSelectedCategory;
         
         if (selectedCat) {
-          setSelectedCategory(selectedCat);
+          setSelectedCategory(selectedCat === 'dashboard' ? 'home' : selectedCat);
           
           // If using old key, migrate to new key and remove old
           if (storage.intracktSelectedCategory && !storage.appmailiaSelectedCategory) {
@@ -133,14 +132,6 @@ function App() {
     if (isAuthReady) restoreSelectedCategory();
   }, [isAuthReady]);
 
-  // Expose reloadUserState globally for immediate UI refresh after payments
-  useEffect(() => {
-    window.reloadUserState = reloadUserState;
-    return () => {
-      delete window.reloadUserState;
-    };
-  }, [reloadUserState]);
-
  useEffect(() => {
     const initialDataFetch = async () => {
     if (isAuthReady && userEmail && userId) {
@@ -149,7 +140,6 @@ function App() {
     await fetchStoredEmails();
     // Avoid double-triggering sync here; background starts sync on auth state change
           fetchQuotaData();
-          loadFollowUpSuggestions();
         } catch (error) {
           showNotification("Failed to load initial data.", "error");
         }
@@ -158,7 +148,7 @@ function App() {
       }
     };
     initialDataFetch();
-  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData, loadFollowUpSuggestions]);
+  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData]);
 
   useEffect(() => {
     const handleBackgroundMessage = (message) => {
@@ -167,14 +157,13 @@ function App() {
         if (!message.syncInProgress) {
           fetchStoredEmails();
           fetchQuotaData();
-          loadFollowUpSuggestions();
         }
       }
 
     };
     chrome.runtime.onMessage.addListener(handleBackgroundMessage);
     return () => chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
-  }, [userEmail, userId, fetchStoredEmails, fetchQuotaData, loadFollowUpSuggestions]);
+  }, [userEmail, userId, fetchStoredEmails, fetchQuotaData]);
 
   // Add this useEffect to listen for the custom FORCE_LOGOUT message
   useEffect(() => {
@@ -192,31 +181,6 @@ function App() {
     return () => chrome.runtime.onMessage.removeListener(handleForceLogout);
   }, []);
 
-  // Listen for subscription updates from background script
-  useEffect(() => {
-    const handleSubscriptionUpdate = (message) => {
-      if (message.type === 'SUBSCRIPTION_UPDATED' && message.subscription) {
-  appLogger.info('Subscription status updated:', message.subscription);
-        
-        // Update user plan state
-        setUserPlan(message.subscription.plan);
-        
-        // Show notification about subscription change
-        if (message.subscription.plan === 'premium') {
-          showNotification('Subscription activated! Premium features unlocked.', 'success');
-        } else if (message.subscription.cancel_at_period_end) {
-          showNotification('Subscription will cancel at the end of the billing period.', 'info');
-        }
-        
-        // Refresh user state
-        reloadUserState();
-      }
-    };
-
-    chrome.runtime.onMessage.addListener(handleSubscriptionUpdate);
-    return () => chrome.runtime.onMessage.removeListener(handleSubscriptionUpdate);
-  }, [showNotification, reloadUserState]);
-
   const handleRefresh = useCallback(async () => {
     if (!userEmail || !userId) return;
     try {
@@ -224,19 +188,18 @@ function App() {
       showNotification("Emails refreshed!", "success");
       await fetchStoredEmails();
       await fetchQuotaData();
-      await loadFollowUpSuggestions();
     } catch (error) {
       showNotification(`Failed to refresh emails: ${error.message}`, "error");
     }
-  }, [userEmail, userId, fetchNewEmails, fetchStoredEmails, fetchQuotaData, loadFollowUpSuggestions]);
+  }, [userEmail, userId, fetchNewEmails, fetchStoredEmails, fetchQuotaData]);
 
   const handleCategoryChange = useCallback((category) => {
     setSelectedCategory(category);
     setSelectedEmail(null);
     setCurrentPage(1);
-    // Reset category filters when changing categories
-    setCategoryFilteredEmails(null);
-    setCategoryFilterParams(null);
+    if (category === 'all') {
+      setAllApplicationsFilter('all');
+    }
     // Persist preference with new branding key
     try {
       chrome.storage?.local?.set({ appmailiaSelectedCategory: category });
@@ -297,123 +260,160 @@ function App() {
     closeMisclassificationModal();
     await handleReportMisclassification(emailData, newCategory);
     await fetchStoredEmails();
-    await loadFollowUpSuggestions();
-  }, [handleReportMisclassification, closeMisclassificationModal, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
+  }, [handleReportMisclassification, closeMisclassificationModal, fetchStoredEmails]);
 
   const handleReplySubmit = useCallback(async (threadId, recipient, subject, body) => {
     await handleSendEmailReply(threadId, recipient, subject, body);
     await fetchStoredEmails();
-    await loadFollowUpSuggestions();
-  }, [handleSendEmailReply, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
+  }, [handleSendEmailReply, fetchStoredEmails]);
 
   const handleArchive = useCallback(async (threadId) => {
     await handleArchiveEmail(threadId);
     await fetchStoredEmails();
-    await loadFollowUpSuggestions();
     setSelectedEmail(null);
-  }, [handleArchiveEmail, fetchStoredEmails, userEmail, userId, loadFollowUpSuggestions]);
-
-  const openPremiumModal = useCallback(() => setIsPremiumModalOpen(true), []);
-  const closePremiumModal = useCallback(() => setIsPremiumModalOpen(false), []);
-
-  const handleManageSubscription = useCallback(() => {
-    setIsSubscriptionManagerOpen(true);
-  }, []);
-
-  const closeSubscriptionManager = useCallback(() => {
-    setIsSubscriptionManagerOpen(false);
-  }, []);
+  }, [handleArchiveEmail, fetchStoredEmails]);
 
   const renderMainContent = () => {
     switch (selectedCategory) {
-      case 'dashboard':
-        return <Dashboard {...{ categorizedEmails, categoryTotals, applicationStats, onCategorySelect: handleCategoryChange, onEmailSelect: handleEmailSelect, openMisclassificationModal, followUpSuggestions, loadingSuggestions, markFollowedUp, updateRespondedState, userPlan, openPremiumModal, quotaData }} />;
-      case 'emailPreview':
-  return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, openPremiumModal, loadingEmails, onUpdateCompanyName: handleUpdateCompanyName, onUpdatePosition: handleUpdatePosition, userEmail }} />;
-      case 'starred':
-        // Show all starred emails across all categories
-        const allEmails = Object.values(categorizedEmails).flat();
-        const starredEmails = allEmails.filter(email => email.is_starred);
-        const starredGroupedConversations = groupEmailsByThread(starredEmails);
-        const starredTotalConversations = starredGroupedConversations.length;
-        const starredPaginatedConversations = starredGroupedConversations.slice(
-          (currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE, 
-          currentPage * CONFIG.PAGINATION.PAGE_SIZE
-        );
-        const starredPaginatedEmails = starredPaginatedConversations.flatMap(conv => conv.emails);
-        const starredTotalPages = Math.ceil(starredTotalConversations / CONFIG.PAGINATION.PAGE_SIZE);
+      case 'home':
         return (
-          <>
-            <EmailList
-              emails={starredPaginatedEmails}
-              category="starred"
-              selectedEmail={selectedEmail}
-              onEmailSelect={handleEmailSelect}
-              onOpenMisclassificationModal={openMisclassificationModal}
-              isFilteredView={false}
-              filteredEmails={[]}
-              appliedFilters={{}}
-              totalEmails={starredTotalConversations}
-              onMarkAllAsRead={markEmailsAsReadForCategory}
-              isMarkingAllAsRead={markingAllAsRead}
-              hasUnreadCategory={false}
-            />
-            {starredTotalPages > 1 && (
-              <Pagination
-                currentPage={currentPage}
-                totalPages={starredTotalPages}
-                onPageChange={setCurrentPage}
-                totalEmails={starredTotalConversations}
-                pageSize={CONFIG.PAGINATION.PAGE_SIZE}
-              />
-            )}
-          </>
+          <QuickView
+            categorizedEmails={categorizedEmails}
+            quotaData={quotaData}
+            userPlan={userPlan}
+            isSyncing={isSyncing}
+            onRefresh={handleRefresh}
+            onLogout={logout}
+            onOpenAll={() => handleCategoryChange('all')}
+            onOpenEmail={handleEmailSelect}
+          />
         );
-      default:
-        // FIX: Group emails into conversations FIRST, then paginate by conversations
-        // This ensures consistent counting: sidebar, pagination, and display all use conversation counts
-        const emailsForCategory = categorizedEmails[selectedCategory] || [];
-        
-        // Use filtered emails if category filter is active, otherwise use all emails
-        const emailsToDisplay = categoryFilteredEmails !== null ? categoryFilteredEmails : emailsForCategory;
-        
-        const groupedConversations = groupEmailsByThread(emailsToDisplay);
+      case 'emailPreview':
+  return <EmailPreview {...{ email: selectedEmail, onBack: handleBackToCategory, onReply: handleReplySubmit, onArchive: handleArchive, onOpenMisclassificationModal: openMisclassificationModal, userPlan, loadingEmails, onUpdateCompanyName: handleUpdateCompanyName, onUpdatePosition: handleUpdatePosition, userEmail }} />;
+      case 'starred':
+        {
+          const allEmails = Object.values(categorizedEmails).flat();
+          const starredEmails = allEmails.filter(email => email.is_starred);
+          const groupedConversations = groupEmailsByThread(starredEmails);
+          const totalConversations = groupedConversations.length;
+          const paginatedConversations = groupedConversations.slice(
+            (currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE,
+            currentPage * CONFIG.PAGINATION.PAGE_SIZE
+          );
+          const paginatedEmails = paginatedConversations.flatMap(conv => conv.emails);
+          const totalPages = Math.ceil(totalConversations / CONFIG.PAGINATION.PAGE_SIZE);
+
+          return (
+            <>
+              <div className="px-4 pt-4">
+                <button
+                  onClick={() => handleCategoryChange('home')}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  Back
+                </button>
+              </div>
+              <EmailList
+                emails={paginatedEmails}
+                category="starred"
+                selectedEmail={selectedEmail}
+                onEmailSelect={handleEmailSelect}
+                totalEmails={totalConversations}
+                onMarkAllAsRead={markEmailsAsReadForCategory}
+                isMarkingAllAsRead={markingAllAsRead}
+                hasUnreadCategory={false}
+              />
+              {totalPages > 1 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  totalEmails={totalConversations}
+                  pageSize={CONFIG.PAGINATION.PAGE_SIZE}
+                />
+              )}
+            </>
+          );
+        }
+      case 'all': {
+        const allPageTitle =
+          allApplicationsFilter === 'all' ? 'All applications' : getCategoryTitle(allApplicationsFilter);
+
+        const emailsAll =
+          allApplicationsFilter === 'all'
+            ? [
+                ...(categorizedEmails.applied || []),
+                ...(categorizedEmails.interviewed || []),
+                ...(categorizedEmails.offers || []),
+                ...(categorizedEmails.rejected || []),
+              ]
+            : categorizedEmails[allApplicationsFilter] || [];
+
+        const groupedConversations = groupEmailsByThread(emailsAll);
         const totalConversations = groupedConversations.length;
         const paginatedConversations = groupedConversations.slice(
-          (currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE, 
+          (currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE,
           currentPage * CONFIG.PAGINATION.PAGE_SIZE
         );
-        // Flatten paginated conversations back to email array for EmailList component
         const paginatedEmails = paginatedConversations.flatMap(conv => conv.emails);
         const totalPages = Math.ceil(totalConversations / CONFIG.PAGINATION.PAGE_SIZE);
-        
-        const handleCategoryFilter = (filtered, filterParams) => {
-          setCategoryFilteredEmails(filtered);
-          setCategoryFilterParams(filterParams);
-          setCurrentPage(1); // Reset to first page when filters change
-        };
-        
+
         return (
           <>
-            <CategorySearchFilter
-              category={selectedCategory}
-              emails={emailsForCategory}
-              onFilteredResults={handleCategoryFilter}
-              totalEmails={emailsForCategory.length}
-            />
+              <div className="px-4 pt-4">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => handleCategoryChange('home')}
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                  >
+                    Back
+                  </button>
+                 <div className="text-sm font-semibold text-gray-900 dark:text-white">{allPageTitle}</div>
+                 <div className="w-12" />
+               </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[
+                  { id: 'all', label: 'All' },
+                  { id: 'applied', label: 'Applied' },
+                  { id: 'interviewed', label: 'Interviews' },
+                  { id: 'offers', label: 'Offers' },
+                  { id: 'rejected', label: 'Rejected' },
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => {
+                      setAllApplicationsFilter(t.id);
+                      setCurrentPage(1);
+                    }}
+                    className={
+                      allApplicationsFilter === t.id
+                        ? 'px-3 py-1.5 text-xs font-medium rounded-full bg-blue-600 text-white'
+                        : 'px-3 py-1.5 text-xs font-medium rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-700/40'
+                    }
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <EmailList
               emails={paginatedEmails}
-              category={selectedCategory}
+              category={allApplicationsFilter === 'all' ? 'all' : allApplicationsFilter}
               selectedEmail={selectedEmail}
               onEmailSelect={handleEmailSelect}
-              onOpenMisclassificationModal={openMisclassificationModal}
-              isFilteredView={categoryFilteredEmails !== null}
-              filteredEmails={categoryFilteredEmails || []}
-              appliedFilters={categoryFilterParams || {}}
               totalEmails={totalConversations}
-              onMarkAllAsRead={markEmailsAsReadForCategory}
+              onMarkAllAsRead={allApplicationsFilter === 'all' ? undefined : markEmailsAsReadForCategory}
               isMarkingAllAsRead={markingAllAsRead}
-              hasUnreadCategory={Boolean(unreadCounts && unreadCounts[selectedCategory])}
+              hasUnreadCategory={Boolean(
+                unreadCounts &&
+                  (allApplicationsFilter === 'all'
+                    ? unreadCounts.applied ||
+                      unreadCounts.interviewed ||
+                      unreadCounts.offers ||
+                      unreadCounts.rejected
+                    : unreadCounts[allApplicationsFilter])
+              )}
             />
             {totalPages > 1 && (
               <Pagination
@@ -426,6 +426,51 @@ function App() {
             )}
           </>
         );
+      }
+      default:
+        {
+          const emailsForCategory = categorizedEmails[selectedCategory] || [];
+          const groupedConversations = groupEmailsByThread(emailsForCategory);
+          const totalConversations = groupedConversations.length;
+          const paginatedConversations = groupedConversations.slice(
+            (currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE,
+            currentPage * CONFIG.PAGINATION.PAGE_SIZE
+          );
+          const paginatedEmails = paginatedConversations.flatMap(conv => conv.emails);
+          const totalPages = Math.ceil(totalConversations / CONFIG.PAGINATION.PAGE_SIZE);
+
+          return (
+            <>
+              <div className="px-4 pt-4">
+                <button
+                  onClick={() => handleCategoryChange('home')}
+                  className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                >
+                  Back
+                </button>
+              </div>
+              <EmailList
+                emails={paginatedEmails}
+                category={selectedCategory}
+                selectedEmail={selectedEmail}
+                onEmailSelect={handleEmailSelect}
+                totalEmails={totalConversations}
+                onMarkAllAsRead={markEmailsAsReadForCategory}
+                isMarkingAllAsRead={markingAllAsRead}
+                hasUnreadCategory={Boolean(unreadCounts && unreadCounts[selectedCategory])}
+              />
+              {totalPages > 1 && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  totalEmails={totalConversations}
+                  pageSize={CONFIG.PAGINATION.PAGE_SIZE}
+                />
+              )}
+            </>
+          );
+        }
     }
   };
 
@@ -458,85 +503,19 @@ function App() {
   }
 
   return (
-    <div className="flex h-[600px] max-h-[600px] overflow-hidden bg-gray-100 dark:bg-zinc-900 text-gray-900 dark:text-white font-inter">
+    <div className="h-[600px] max-h-[600px] overflow-hidden bg-gray-100 dark:bg-zinc-900 text-gray-900 dark:text-white font-inter">
       {isLoadingApp && <LoadingOverlay message="Loading data..." />}
       <Notification />
-
-  <div className="w-56 h-[600px] flex flex-col border-r border-gray-200 dark:border-zinc-700">
-        <Sidebar
-          selectedCategory={selectedCategory}
-          onCategoryChange={handleCategoryChange}
-          unreadCounts={unreadCounts}
-          categorizedEmails={categorizedEmails}
-          categoryTotals={categoryTotals} // NEW: Pass accurate backend totals
-          onLogout={logout}
-          onRefresh={handleRefresh}
-          isLoadingEmails={isSyncing}
-          userPlan={userPlan}
-          quotaData={quotaData}
-          onUpgradeClick={openPremiumModal}
-          onManageSubscription={handleManageSubscription}
-        />
-      </div>
-
-  <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        <header className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
-          <h1 id="welcome-header" className="text-xl font-semibold text-gray-900 dark:text-white truncate">
-            {`Welcome, ${userName || userEmail}!`}
-          </h1>
-          <div className="flex items-center space-x-2 flex-shrink-0">
-            {userPlan === 'free' && (
-              <button
-                onClick={openPremiumModal}
-                className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg rounded-full px-6 py-3 transition-all duration-300 flex items-center justify-center"
-              >
-                <Crown className="h-4 w-4 mr-2" />
-                Upgrade to Premium
-              </button>
-            )}
-          </div>
-        </header>
-
-        {/* Search Bar - premium only, shown only on dashboard */}
-        {selectedCategory === 'dashboard' && userPlan === 'premium' && (
-          <SearchBar 
-            userId={userId}
-            onEmailSelect={handleEmailSelect}
-            userPlan={userPlan}
-            openPremiumModal={openPremiumModal}
-          />
-        )}
-
-        {quotaData && <QuotaBanner quota={quotaData} userPlan={userPlan} onUpgradeClick={openPremiumModal} />}
-
-  <div className="flex-1">
-          <div className="p-6">
-            {isSubscriptionManagerOpen ? (
-              <SubscriptionManager 
-                onBack={closeSubscriptionManager}
-                userPlan={userPlan}
-              />
-            ) : (
-              renderMainContent()
-            )}
-          </div>
-        </div>
-      </main>
+      <div className="h-full overflow-y-auto">{renderMainContent()}</div>
 
       <Modals
-        isPremiumModalOpen={isPremiumModalOpen}
-        onClosePremiumModal={closePremiumModal}
         isMisclassificationModalOpen={isMisclassificationModalOpen}
         onCloseMisclassificationModal={closeMisclassificationModal}
         selectedEmailForMisclassification={emailToMisclassify}
         onConfirmMisclassification={handleMisclassificationSubmit}
-        lastMisclassifiedEmail={lastMisclassifiedEmail}
         undoMisclassification={undoMisclassification}
         undoToastVisible={undoToastVisible}
         setUndoToastVisible={setUndoToastVisible}
-        onSubscribePremium={() => {
-          // The modal will handle the subscription process directly
-        }}
       />
     </div>
   );

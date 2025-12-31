@@ -160,6 +160,24 @@ async function apiFetch(endpoint, options = {}) {
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`❌ AppMailia AI: API Error ${response.status} from ${url}:`, errorText);
+      
+      // Try to parse error as JSON to preserve errorCode and other fields
+      try {
+        const errorJson = JSON.parse(errorText);
+        if (errorJson.errorCode || errorJson.requiresReauth) {
+          // Return the structured error response instead of throwing
+          // This allows the caller to handle auth errors properly
+          return {
+            success: false,
+            error: errorJson.error || errorJson.message || `Backend error: ${response.status}`,
+            errorCode: errorJson.errorCode,
+            requiresReauth: errorJson.requiresReauth
+          };
+        }
+      } catch (parseError) {
+        // Not JSON, continue with default error handling
+      }
+      
       throw new Error(`Backend error: ${response.status} - ${errorText}`);
     }
 
@@ -167,6 +185,10 @@ async function apiFetch(endpoint, options = {}) {
   bgLogger.info(`API success: ${url}`, data);
     return data;
   } catch (error) {
+    // Check if this is already a structured response (from our error handling above)
+    if (error.errorCode || error.requiresReauth) {
+      return error;
+    }
     console.error(`❌ AppMailia AI: Network or parsing error for ${url}:`, error);
     throw new Error(`Network or server error: ${error.message}`);
   }
@@ -182,6 +204,66 @@ async function refreshStoredEmailsCache(syncInProgress = undefined) {
       body: { limit: 999 } // CRITICAL FIX: Fetch all emails, not just default 50
     });
     if (response.success && response.categorizedEmails) {
+      // One-time backfill: older stored emails may not have been linked into `email_applications` yet,
+      // which prevents Application Journey timelines and can cause incorrect "Active" labeling.
+      const APP_LINK_BACKFILL_KEY = 'appLinksBackfilledV1';
+      const tryBackfill = async () => {
+        try {
+          const state = await chrome.storage.local.get([APP_LINK_BACKFILL_KEY]);
+          if (state && state[APP_LINK_BACKFILL_KEY]) return false;
+        } catch (_) {
+          // ignore
+        }
+
+        const allRelevant = [
+          ...(response.categorizedEmails.applied || []),
+          ...(response.categorizedEmails.interviewed || []),
+          ...(response.categorizedEmails.offers || []),
+          ...(response.categorizedEmails.rejected || []),
+        ];
+
+        const needsLinking = allRelevant.some(e => !e.applicationId && e.company_name && e.position);
+        if (!needsLinking) {
+          try {
+            await chrome.storage.local.set({ [APP_LINK_BACKFILL_KEY]: true });
+          } catch (_) {
+            // ignore
+          }
+          return false;
+        }
+
+        try {
+          bgLogger.info('[backfill] Running one-time application linking backfill...');
+          const backfillRes = await apiFetch('/api/emails/applications/backfill', {
+            method: 'POST',
+            body: { limit: 5000 }
+          });
+          if (backfillRes && backfillRes.success) {
+            try {
+              await chrome.storage.local.set({ [APP_LINK_BACKFILL_KEY]: true });
+            } catch (_) {
+              // ignore
+            }
+            return true;
+          }
+        } catch (e) {
+          bgLogger.warn?.('[backfill] Backfill failed:', e?.message);
+        }
+        return false;
+      };
+
+      const didBackfill = await tryBackfill();
+      if (didBackfill) {
+        // Refetch once so cached emails include `applicationId` and updated `isClosed`.
+        const refreshed = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, {
+          method: 'POST',
+          body: { limit: 999 }
+        });
+        if (refreshed.success && refreshed.categorizedEmails) {
+          response.categorizedEmails = refreshed.categorizedEmails;
+        }
+      }
+
       await chrome.storage.local.set({
         appliedEmails: response.categorizedEmails.applied || [],
         interviewedEmails: response.categorizedEmails.interviewed || [],
@@ -408,18 +490,25 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
       }
       return { success: true, categorizedEmails: response.categorizedEmails, quota: response.quota };
     } else {
-      // Check if this is a scope error requiring re-authentication
-      if (response.errorCode === 'INSUFFICIENT_SCOPES' || response.requiresReauth) {
-        console.error('❌ AppMailia AI Background: Insufficient Gmail permissions - user needs to re-authenticate');
+      // Check if this is a scope or auth error requiring re-authentication
+      if (response.errorCode === 'INSUFFICIENT_SCOPES' || response.errorCode === 'INVALID_GRANT' || response.requiresReauth) {
+        console.error('❌ AppMailia AI Background: Auth error - user needs to re-authenticate:', response.errorCode);
         
-        // Notify popup about scope error
+        // Send appropriate message type based on error
+        const messageType = response.errorCode === 'INVALID_GRANT' ? 'AUTH_ERROR' : 'SCOPE_ERROR';
+        const errorMessage = response.errorCode === 'INVALID_GRANT' 
+          ? 'Your Google session has expired. Please sign out and sign back in.'
+          : 'Your Gmail permissions are incomplete. Please sign out and sign in again.';
+        
+        // Notify popup about auth error
         chrome.runtime.sendMessage({
-          type: 'SCOPE_ERROR',
-          error: response.error || 'Your Gmail permissions are incomplete. Please sign out and sign in again.',
+          type: messageType,
+          errorCode: response.errorCode,
+          error: response.error || errorMessage,
           requiresReauth: true
         });
         
-        return { success: false, error: response.error, errorCode: 'INSUFFICIENT_SCOPES', requiresReauth: true };
+        return { success: false, error: response.error, errorCode: response.errorCode || 'INSUFFICIENT_SCOPES', requiresReauth: true };
       }
       
       console.error('❌ AppMailia AI Background: Backend sync failed or returned no emails:', response.error);
@@ -428,14 +517,21 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
   } catch (error) {
     console.error('❌ AppMailia AI Background: Error during email sync:', error);
     
-    // Check if the error response has scope error information
-    if (error.errorCode === 'INSUFFICIENT_SCOPES' || error.requiresReauth) {
+    // Check if the error response has scope/auth error information
+    if (error.errorCode === 'INSUFFICIENT_SCOPES' || error.errorCode === 'INVALID_GRANT' || error.requiresReauth) {
+      // Send appropriate message type based on error
+      const messageType = error.errorCode === 'INVALID_GRANT' ? 'AUTH_ERROR' : 'SCOPE_ERROR';
+      const errorMessage = error.errorCode === 'INVALID_GRANT' 
+        ? 'Your Google session has expired. Please sign out and sign back in.'
+        : 'Your Gmail permissions are incomplete. Please sign out and sign in again.';
+      
       chrome.runtime.sendMessage({
-        type: 'SCOPE_ERROR',
-        error: error.message || 'Your Gmail permissions are incomplete. Please sign out and sign in again.',
+        type: messageType,
+        errorCode: error.errorCode,
+        error: error.message || errorMessage,
         requiresReauth: true
       });
-      return { success: false, error: error.message, errorCode: 'INSUFFICIENT_SCOPES', requiresReauth: true };
+      return { success: false, error: error.message, errorCode: error.errorCode || 'INSUFFICIENT_SCOPES', requiresReauth: true };
     }
     
     return { success: false, error: error.message };
@@ -694,6 +790,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (response.success) {
             await chrome.storage.local.set({ userPlan: newPlan });
           }
+          // Refresh cached emails so application linking (applicationId/isClosed) is reflected in the UI.
+          // The backend may have re-linked this email to an existing application.
+          try {
+            await refreshStoredEmailsCache();
+          } catch (e) {
+            bgLogger.warn?.('Failed to refresh stored emails after company correction:', e?.message);
+          }
+
           sendResponse(response);
         } catch (error) {
           console.error('❌ AppMailia AI Background: Error updating user plan:', error);
@@ -767,6 +871,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               userId: currentUserId 
             }
           });
+          // Refresh cached emails so application linking (applicationId/isClosed) is reflected in the UI.
+          // This enables the Application Journey to appear and ensures "Active" reflects closure.
+          try {
+            await refreshStoredEmailsCache();
+          } catch (e) {
+            bgLogger.warn?.('Failed to refresh stored emails after position correction:', e?.message);
+          }
+
           sendResponse(response);
         } catch (error) {
           console.error('❌ AppMailia AI Background: Error marking suggestion action:', error);
@@ -1166,6 +1278,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
+      case 'LINK_APPLICATION_ROLE':
+        try {
+          const { emailId } = msg;
+          if (!emailId) {
+            sendResponse({ success: false, error: 'Email ID is required' });
+            break;
+          }
+
+          const response = await apiFetch('/api/emails/applications/link-role', {
+            method: 'POST',
+            body: { emailId }
+          });
+
+          // Always refresh the cache so UI picks up new applicationId/isClosed values.
+          try {
+            await refreshStoredEmailsCache();
+          } catch (e) {
+            bgLogger.warn?.('Failed to refresh stored emails after role-link:', e?.message);
+          }
+
+          sendResponse(response);
+        } catch (error) {
+          bgLogger.error('Error linking role emails:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
       case 'GET_ID_TOKEN':
         try {
           const user = auth.currentUser;
@@ -1181,7 +1320,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'PAYMENT_SUCCESS':
+      case '__DISABLED_PAYMENT_SUCCESS__':
         try {
           // Add a delay to allow webhook processing to complete
           console.log('🔄 AppMailia AI Background: Waiting 3 seconds for webhook processing...');
@@ -1207,7 +1346,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'CHECK_PAYMENT_STATUS':
+      case '__DISABLED_CHECK_PAYMENT_STATUS__':
         try {
           // Check current user payment status from backend
           const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_USER_PLAN, {
@@ -1228,7 +1367,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'CHECK_SUBSCRIPTION_STATUS':
+      case '__DISABLED_CHECK_SUBSCRIPTION_STATUS__':
         try {
           // Check subscription status using authenticated endpoint
           const response = await apiFetch('/api/subscriptions/status', {
@@ -1248,7 +1387,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'CREATE_CHECKOUT_SESSION':
+      case '__DISABLED_CREATE_CHECKOUT_SESSION__':
         try {
           // Create Stripe checkout session using authenticated endpoint
           const response = await apiFetch('/api/subscriptions/create-checkout-session', {
@@ -1269,7 +1408,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'CREATE_SETUP_INTENT':
+      case '__DISABLED_CREATE_SETUP_INTENT__':
         try {
           // Create setup intent for payment method update
           const response = await apiFetch('/api/subscriptions/create-setup-intent', {
@@ -1289,7 +1428,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'OPEN_CUSTOMER_PORTAL':
+      case '__DISABLED_OPEN_CUSTOMER_PORTAL__':
         try {
           const { return_url } = msg;
           console.log('🎫 AppMailia AI Background: Creating customer portal session');
@@ -1322,7 +1461,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'OPEN_PAYMENT_WINDOW':
+      case '__DISABLED_OPEN_PAYMENT_WINDOW__':
         try {
           const { url } = msg;
           console.log('🪟 AppMailia AI Background: Opening payment window:', url);
@@ -1342,13 +1481,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'OPEN_PORTAL_WINDOW':
+      case '__DISABLED_OPEN_PORTAL_WINDOW__':
         // Portal functionality removed - using fully in-extension approach
         console.log('⚠️ AppMailia AI Background: Portal window opening removed - using in-extension approach');
         sendResponse({ success: false, error: 'Portal functionality removed for fully in-extension approach' });
         break;
 
-      case 'CANCEL_SUBSCRIPTION':
+      case '__DISABLED_CANCEL_SUBSCRIPTION__':
         try {
           console.log('🗑️ AppMailia AI Background: Canceling subscription');
           
@@ -1369,7 +1508,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
-      case 'RESUME_SUBSCRIPTION':
+      case '__DISABLED_RESUME_SUBSCRIPTION__':
         try {
           console.log('🔄 AppMailia AI Background: Resuming subscription');
           

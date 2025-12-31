@@ -1,8 +1,8 @@
-/**
- * Enhanced EmailPreview Component with Gmail-like email display
- */
-import React, { useState, useEffect } from 'react';
-import { Building2, Briefcase, Calendar, Clock, ExternalLink, Reply, Archive, Flag, Crown, X, Pencil, Check, TrendingUp, Star } from "lucide-react";
+ /**
+  * Enhanced EmailPreview Component with Gmail-like email display
+  */
+import React, { useMemo, useState, useEffect } from 'react';
+import { Building2, Briefcase, Calendar, Clock, ExternalLink, Reply, Archive, Flag, X, Pencil, Check, TrendingUp, Star } from "lucide-react";
 import { cn } from '../utils/cn';
 import { showNotification } from './Notification';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
@@ -43,16 +43,131 @@ const decodeEmailContent = (content) => {
   return decoded;
 };
 
+const isSafeLinkUrl = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  if (trimmed.startsWith('#')) return true;
+  try {
+    const parsed = new URL(trimmed, 'https://example.invalid');
+    return ['http:', 'https:', 'mailto:', 'tel:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+};
+
+const isSafeImageUrl = (url) => {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const parsed = new URL(url.trim(), 'https://example.invalid');
+    return ['http:', 'https:'].includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+};
+
+const sanitizeUntrustedEmailHtml = (html) => {
+  if (!html || typeof html !== 'string') return '';
+
+  const SAFE_TAGS = new Set([
+    'a', 'abbr', 'b', 'blockquote', 'br', 'code', 'div', 'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'hr', 'i', 'img', 'li', 'ol', 'p', 'pre', 'span', 'strong', 'table', 'tbody', 'td', 'th', 'thead',
+    'tr', 'u', 'ul'
+  ]);
+
+  const SAFE_ATTRS = new Set(['href', 'title', 'alt', 'src', 'colspan', 'rowspan', 'aria-label', 'aria-hidden']);
+  const DROP_TAGS = new Set([
+    // Never render these; unwrapping would leak CSS/JS text into the UI.
+    'style',
+    'script',
+    'noscript',
+    // Metadata/containers that commonly carry CSS/JS and aren't useful in the popup renderer.
+    'head',
+    'meta',
+    'link',
+    'title',
+    'base',
+  ]);
+
+  const template = document.createElement('template');
+  template.innerHTML = html;
+
+  const sanitizeNode = (node) => {
+    if (node.nodeType === Node.COMMENT_NODE) {
+      node.remove();
+      return;
+    }
+
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node;
+      const tag = el.tagName.toLowerCase();
+
+      if (DROP_TAGS.has(tag)) {
+        el.remove();
+        return;
+      }
+
+      if (!SAFE_TAGS.has(tag)) {
+        const fragment = document.createDocumentFragment();
+        while (el.firstChild) fragment.appendChild(el.firstChild);
+        el.replaceWith(fragment);
+        return;
+      }
+
+      el.removeAttribute('style');
+      el.removeAttribute('class');
+      el.removeAttribute('id');
+
+      for (const attr of Array.from(el.attributes)) {
+        const name = attr.name.toLowerCase();
+        const value = attr.value;
+
+        if (name.startsWith('on') || name === 'srcset' || name === 'nonce') {
+          el.removeAttribute(attr.name);
+          continue;
+        }
+
+        if (!SAFE_ATTRS.has(name)) {
+          el.removeAttribute(attr.name);
+          continue;
+        }
+
+        if (tag === 'a' && name === 'href' && !isSafeLinkUrl(value)) {
+          el.removeAttribute(attr.name);
+          continue;
+        }
+
+        if (tag === 'img' && name === 'src' && !isSafeImageUrl(value)) {
+          el.removeAttribute(attr.name);
+          continue;
+        }
+      }
+
+      if (tag === 'a') {
+        el.setAttribute('target', '_blank');
+        el.setAttribute('rel', 'noopener noreferrer');
+      }
+
+      if (tag === 'img') {
+        el.setAttribute('loading', 'lazy');
+        el.setAttribute('referrerpolicy', 'no-referrer');
+      }
+    }
+
+    for (const child of Array.from(node.childNodes)) {
+      sanitizeNode(child);
+    }
+  };
+
+  sanitizeNode(template.content);
+  return template.innerHTML;
+};
+
 // Enhanced HTML sanitization and styling for Gmail-like display
 const sanitizeAndStyleEmailHTML = (html) => {
   if (!html) return '';
   
   const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = html;
-  
-  // Remove dangerous elements
-  const dangerousElements = tempDiv.querySelectorAll('script, object, embed, form, input, textarea, select, iframe');
-  dangerousElements.forEach(el => el.remove());
+  tempDiv.innerHTML = sanitizeUntrustedEmailHtml(html);
   
   // Remove tracking pixels and tiny images
   const trackingImages = tempDiv.querySelectorAll('img[width="1"], img[height="1"], img[src*="tracking"], img[src*="pixel"]');
@@ -161,6 +276,9 @@ const formatPlainTextEmail = (text) => {
     /(https?:\/\/[^\s]+)/g, 
     '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: #1a73e8; text-decoration: none;">$1</a>'
   );
+
+  // Sanitize the generated HTML (defense-in-depth)
+  formatted = sanitizeUntrustedEmailHtml(formatted);
   
   // Format email addresses
   formatted = formatted.replace(
@@ -184,6 +302,75 @@ const cleanPlainTextEmail = (text) => {
   if (!text || typeof text !== 'string') return '';
   
   let cleaned = text;
+
+  // Remove common email-client CSS "noise" that sometimes gets stored as plain text
+  // (e.g., Outlook/WordHTML: ReadMsgBody, .ExternalClass, @media blocks).
+  // This is a heuristic to improve readability; it only targets CSS-shaped sections.
+  const removeCssNoise = (input) => {
+    const normalized = input.replace(/\r\n/g, '\n');
+    const lines = normalized.split('\n');
+
+    const out = [];
+    let inCss = false;
+    let braceDepth = 0;
+
+    const isCssStartLine = (line) => {
+      const l = line.trim();
+      if (!l) return false;
+      if (/^(ReadMsgBody|\.ExternalClass)\b/i.test(l)) return true;
+      if (/^@media\b/i.test(l)) return true;
+      // Typical CSS selector line (e.g., ".foo {", "table td {", "body {")
+      if (l.includes('{') && /(^[.#]|^(body|html|table|td|th|p|div|span|img)\b)/i.test(l)) return true;
+      return false;
+    };
+
+    const looksLikeCssPropertyLine = (line) => {
+      const l = line.trim();
+      if (!l) return false;
+      // property: value;  OR includes !important
+      if (l.includes('!important')) return true;
+      return /^[a-z-]+\s*:\s*[^;]+;?$/i.test(l);
+    };
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      if (!inCss && isCssStartLine(trimmed)) {
+        inCss = true;
+      }
+
+      if (inCss) {
+        // Track braces to detect end of CSS blocks.
+        braceDepth += (line.match(/{/g) || []).length;
+        braceDepth -= (line.match(/}/g) || []).length;
+
+        // Skip CSS lines while inside a CSS-shaped section.
+        if (looksLikeCssPropertyLine(trimmed) || trimmed.includes('{') || trimmed.includes('}') || isCssStartLine(trimmed)) {
+          if (braceDepth <= 0 && !trimmed.includes('{') && !trimmed.includes('}')) {
+            inCss = false;
+            braceDepth = 0;
+          }
+          continue;
+        }
+
+        // If we hit a non-CSS looking line and we're not inside braces, exit CSS mode and keep the line.
+        if (braceDepth <= 0) {
+          inCss = false;
+          braceDepth = 0;
+          if (trimmed) out.push(line);
+          continue;
+        }
+
+        continue;
+      }
+
+      out.push(line);
+    }
+
+    return out.join('\n');
+  };
+
+  cleaned = removeCssNoise(cleaned);
   
   cleaned = cleaned
     .replace(/On\s+.+?\s+at\s+.+?,\s+.+?\s+wrote:\s*/gi, '')
@@ -465,12 +652,88 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
     }
   }, [email?.applicationId]);
 
-  const toggleReplyForm = () => {
-    // If user is not premium block (UI overlay already encourages upgrade, but double-check)
-    if (userPlan !== 'premium') {
-      openPremiumModal && openPremiumModal();
+  const journeyData = useMemo(() => {
+    const normalizeCategory = (c) => (c || '').toString().trim().toLowerCase();
+    const isRelevant = (c) => ['applied', 'interviewed', 'offers', 'rejected'].includes(normalizeCategory(c));
+
+    const fromLifecycle = Array.isArray(lifecycle) ? lifecycle : [];
+    if (fromLifecycle.length > 0) {
+      return { stages: fromLifecycle, source: 'application' };
+    }
+
+    // Fallback: show a minimal journey using the current thread messages we have locally.
+    // This ensures "Applied" always has at least 1 visible stage even before application linking completes.
+    const localStages = (threadArr || [])
+      .filter((m) => isRelevant(m?.category))
+      .map((m) => ({
+        emailId: m.id || m.emailId || `${m.thread_id || m.threadId || 'msg'}-${m.date || ''}`,
+        subject: m.subject || '',
+        category: normalizeCategory(m.category),
+        date: m.date
+      }));
+
+    // If nothing is categorized on the message objects, still show the current email's stage if relevant.
+    const emailCategory = normalizeCategory(email?.category);
+    if (localStages.length === 0 && isRelevant(emailCategory)) {
+      localStages.push({
+        emailId: email.id || email.emailId || `${email.thread_id || email.threadId || 'email'}-${email.date || ''}`,
+        subject: email.subject || '',
+        category: emailCategory,
+        date: email.date
+      });
+    }
+
+    // Sort oldest -> newest for a "journey" feel.
+    localStages.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // De-dupe by emailId to avoid duplicates when threadArr contains the same message twice.
+    const seen = new Set();
+    const deduped = localStages.filter((s) => {
+      if (!s.emailId) return false;
+      if (seen.has(s.emailId)) return false;
+      seen.add(s.emailId);
+      return true;
+    });
+
+    return { stages: deduped, source: 'fallback' };
+  }, [email, lifecycle, threadArr]);
+
+  const handleLinkAcrossCategories = async () => {
+    if (!email?.id) {
+      showNotification('Cannot link: missing email id', 'error');
       return;
     }
+    try {
+      setLoadingLifecycle(true);
+      const resp = await sendMessageToBackground({ type: 'LINK_APPLICATION_ROLE', emailId: email.id });
+      if (resp?.success) {
+        showNotification('Linking complete. Refreshing…', 'success');
+      } else {
+        showNotification(resp?.error || 'Failed to link across categories', 'error');
+      }
+    } catch (e) {
+      showNotification(e?.message || 'Failed to link across categories', 'error');
+    } finally {
+      setLoadingLifecycle(false);
+    }
+  };
+
+  const formatJourneyDate = (dateStr) => {
+    const d = new Date(dateStr);
+    if (!dateStr || isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  const getJourneyDescription = (category) => {
+    const c = (category || '').toString().toLowerCase();
+    if (c === 'applied') return 'Application email received';
+    if (c === 'interviewed') return 'Interview email received';
+    if (c === 'offers') return 'Offer email received';
+    if (c === 'rejected') return 'Rejection email received';
+    return 'Status update email received';
+  };
+
+  const toggleReplyForm = () => {
     setShowReplyForm(v => !v);
   };
 
@@ -498,12 +761,6 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
 
   const handleStarClick = async () => {
     if (isTogglingstar) return;
-    
-    // Check if user is premium
-    if (userPlan !== 'premium') {
-      openPremiumModal?.();
-      return;
-    }
 
     setIsTogglingstar(true);
     const newStarredState = !isStarred;
@@ -523,7 +780,7 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
       } else if (response.premiumOnly) {
         // Revert optimistic update
         setIsStarred(!newStarredState);
-        openPremiumModal?.();
+        showNotification(response.error || 'Failed to toggle star', 'error');
       } else {
         // Revert optimistic update
         setIsStarred(!newStarredState);
@@ -687,9 +944,6 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
             >
               <Star className={`h-4 w-4 ${isStarred ? 'fill-current' : ''}`} />
               <span>{isStarred ? 'Unstar' : 'Star'}</span>
-              {userPlan !== 'premium' && (
-                <Crown className="h-3 w-3 ml-1 text-yellow-500" />
-              )}
             </Button>
             <Button variant="outline" size="sm" className="flex items-center space-x-1" onClick={handleMisclassifyClick}>
               <Flag className="h-4 w-4" />
@@ -702,7 +956,7 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
           </div>
 
           {/* Reply Form */}
-          {showReplyForm && userPlan === 'premium' && (
+          {showReplyForm && (
             <div className="border border-blue-200 dark:border-blue-700 rounded-lg p-4 bg-blue-50 dark:bg-zinc-700/40 space-y-3">
               <h4 className="text-sm font-semibold flex items-center gap-2 text-blue-700 dark:text-blue-300">
                 <Reply className="h-4 w-4" />
@@ -755,52 +1009,94 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
             </div>
           )}
 
-          {/* Application Lifecycle Timeline */}
-          {lifecycle && lifecycle.length > 0 && (
-            <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
-              <h4 className="text-sm font-semibold text-purple-900 dark:text-purple-300 mb-3 flex items-center gap-2">
+          {/* Application Journey (always visible; shows empty/fallback if not linked yet) */}
+          <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h4 className="text-sm font-semibold text-purple-900 dark:text-purple-300 flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
-                Application Journey ({lifecycle.length} stages)
+                Application Journey
               </h4>
-              <div className="space-y-2">
-                {lifecycle.map((stage, idx) => (
-                  <div key={stage.emailId} className="flex items-start gap-3">
+              <div className="text-xs text-purple-700 dark:text-purple-300">
+                {loadingLifecycle ? 'Loading…' : `${journeyData.stages.length} stage${journeyData.stages.length === 1 ? '' : 's'}`}
+              </div>
+            </div>
+
+            {journeyData.stages.length === 0 ? (
+              <div className="text-xs text-purple-800/80 dark:text-purple-200/80">
+                No journey yet. Refresh to link this email to an application.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {journeyData.stages.map((stage, idx) => (
+                  <div key={stage.emailId || `${stage.category}-${idx}`} className="flex items-start gap-3">
                     <div className="flex flex-col items-center">
                       <div className={cn(
-                        "w-2 h-2 rounded-full mt-1",
+                        "w-2.5 h-2.5 rounded-full mt-1",
                         stage.category === 'applied' && "bg-blue-500",
                         stage.category === 'interviewed' && "bg-yellow-500",
                         stage.category === 'offers' && "bg-green-500",
-                        stage.category === 'rejected' && "bg-red-500"
+                        stage.category === 'rejected' && "bg-red-500",
+                        !['applied','interviewed','offers','rejected'].includes(stage.category) && "bg-purple-500"
                       )}></div>
-                      {idx < lifecycle.length - 1 && (
-                        <div className="w-0.5 h-8 bg-purple-200 dark:bg-purple-700"></div>
+                      {idx < journeyData.stages.length - 1 && (
+                        <div className="w-0.5 flex-1 bg-purple-200 dark:bg-purple-700 min-h-6"></div>
                       )}
                     </div>
-                    <div className="flex-1 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className={cn(
-                          "text-xs font-medium px-2 py-0.5 rounded-full",
-                          stage.category === 'applied' && "bg-blue-100 text-blue-800",
-                          stage.category === 'interviewed' && "bg-yellow-100 text-yellow-800",
-                          stage.category === 'offers' && "bg-green-100 text-green-800",
-                          stage.category === 'rejected' && "bg-red-100 text-red-800"
-                        )}>
-                          {stage.category}
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          {new Date(stage.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </span>
+
+                    <div className="flex-1 pb-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={cn(
+                            "text-xs font-medium px-2 py-0.5 rounded-full capitalize",
+                            stage.category === 'applied' && "bg-blue-100 text-blue-800",
+                            stage.category === 'interviewed' && "bg-yellow-100 text-yellow-800",
+                            stage.category === 'offers' && "bg-green-100 text-green-800",
+                            stage.category === 'rejected' && "bg-red-100 text-red-800",
+                            !['applied','interviewed','offers','rejected'].includes(stage.category) && "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200"
+                          )}>
+                            {stage.category}
+                          </span>
+                          <span className="text-xs text-purple-900/70 dark:text-purple-200/70 truncate">
+                            {getJourneyDescription(stage.category)}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                          {formatJourneyDate(stage.date)}
+                        </div>
                       </div>
-                      <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 truncate">
-                        {stage.subject}
-                      </p>
+
+                      {stage.subject ? (
+                        <div className="mt-1 text-xs text-gray-700 dark:text-zinc-300 truncate">
+                          {stage.subject}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 ))}
+
+                {journeyData.source === 'fallback' && (
+                  <div className="pt-1 space-y-2">
+                    <div className="text-[10px] text-purple-900/60 dark:text-purple-200/60">
+                      Showing local stages. Full journey appears after this email is linked across categories.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleLinkAcrossCategories}
+                      disabled={loadingLifecycle}
+                      className={cn(
+                        "text-xs font-medium px-3 py-1.5 rounded-md border",
+                        "border-purple-200 dark:border-purple-800 bg-white/70 dark:bg-zinc-900/20",
+                        "text-purple-800 dark:text-purple-200 hover:bg-white dark:hover:bg-zinc-900/30",
+                        "disabled:opacity-60 disabled:cursor-not-allowed"
+                      )}
+                    >
+                      Link across categories
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Gmail-Style Email Content */}
           <div className="border-t border-gray-200 dark:border-zinc-700 pt-4">
@@ -809,24 +1105,6 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
             </div>
           </div>
 
-          {/* Premium Feature Overlay */}
-          {userPlan !== 'premium' && (email.category === 'applied' || email.category === 'interviewed' || email.category === 'offers') && (
-            <div className="absolute inset-x-0 bottom-0 top-1/2 bg-gradient-to-t from-white dark:from-zinc-800 to-transparent flex flex-col items-center justify-end p-6 pointer-events-none">
-              <div className="bg-white dark:bg-zinc-700 p-4 rounded-lg shadow-xl text-center z-10 pointer-events-auto">
-                <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Unlock Actions with Premium</h4>
-                <p className="text-sm text-gray-600 dark:text-zinc-400 mb-4">
-                  Reply, Archive, and Misclassify important emails with a Premium plan.
-                </p>
-                <Button
-                  onClick={openPremiumModal}
-                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg rounded-full px-6 py-3 transition-all duration-300 flex items-center justify-center"
-                >
-                  <Crown className="h-4 w-4 mr-2" />
-                  Upgrade to Premium
-                </Button>
-              </div>
-            </div>
-          )}
         </DialogContent>
       </Dialog>
     </>

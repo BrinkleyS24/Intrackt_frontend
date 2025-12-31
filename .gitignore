@@ -1,3 +1,5 @@
 .env
 node_modules
 .parcel-cache
+popup/dist
+popup/popup/dist

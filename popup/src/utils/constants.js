@@ -6,7 +6,7 @@
 
 export const CONFIG = {
   ENDPOINTS: {
-    BACKEND_BASE_URL: 'https://gmail-tracker-backend-215378038667.us-central1.run.app', // Your production backend URL
+    BACKEND_BASE_URL: 'http://localhost:3000', // Local development backend URL
     AUTH_URL: '/api/auth/auth-url', // Endpoint for initiating Google OAuth (getting the auth URL)
     AUTH_TOKEN: '/api/auth/token', // Endpoint for exchanging OAuth code for refresh token
     SYNC_EMAILS: '/api/emails', // Primary endpoint for fetching/syncing new emails from Gmail and classification

@@ -6,9 +6,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { showNotification } from './Notification'; // For global toasts
-import { cn } from '../utils/cn'; // For conditional class names
 
-function QuotaBanner({ quota, userPlan, onUpgradeClick }) {
+function QuotaBanner({ quota, userPlan }) {
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
@@ -36,9 +35,13 @@ function QuotaBanner({ quota, userPlan, onUpgradeClick }) {
     }
   };
 
-  // Ensure quota and its properties are safely accessed
-  const isMaxQuota = quota?.usagePercentage === 100;
-  const isCloseToQuota = (quota?.usagePercentage >= 80 && quota?.usagePercentage < 100);
+  // Ensure quota and its properties are safely accessed (support both legacy + new shapes)
+  const limit = quota?.limit ?? 0;
+  const usage = quota?.usage ?? quota?.totalProcessed ?? 0;
+  const usagePercentage = quota?.usagePercentage ?? (limit ? Math.min(100, Math.round((usage / limit) * 100)) : 0);
+
+  const isMaxQuota = limit ? usagePercentage === 100 : false;
+  const isCloseToQuota = limit ? (usagePercentage >= 80 && usagePercentage < 100) : false;
 
   // Don't render if dismissed, user is premium, no quota data, or not close to quota
   if (dismissed || userPlan === 'premium' || !quota || (!isMaxQuota && !isCloseToQuota)) {
@@ -46,29 +49,20 @@ function QuotaBanner({ quota, userPlan, onUpgradeClick }) {
   }
 
   const message = isMaxQuota
-    ? `You've reached your email processing limit (${quota.usage || 0}/${quota.limit || 0}). Upgrade to Premium for unlimited tracking.`
-    : `You're close to your email processing limit (${quota.usage || 0}/${quota.limit || 0}). Upgrade for unlimited tracking.`;
+    ? `You've reached your tracking limit (${usage}/${limit}).`
+    : `You're close to your tracking limit (${usage}/${limit}).`;
 
-  const actionText = isMaxQuota ? "Upgrade Now" : "Dismiss";
+  const actionText = "Dismiss";
 
   return (
     <div className="px-4 py-2 bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300 flex items-center justify-between text-sm rounded-lg m-4 shadow-sm">
       <span className="flex-1 mr-4">{message}</span>
-      {isMaxQuota ? (
-        <button
-          className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-lg rounded-full px-4 py-2 transition-all duration-300 flex items-center justify-center text-xs font-semibold"
-          onClick={onUpgradeClick} // This prop should open the premium modal
-        >
-          {actionText}
-        </button>
-      ) : (
-        <button
-          className="border border-gray-300 dark:border-zinc-500 text-xs text-gray-600 dark:text-zinc-300 px-3 py-1 rounded-lg hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-50"
-          onClick={handleDismiss}
-        >
-          {actionText}
-        </button>
-      )}
+      <button
+        className="border border-gray-300 dark:border-zinc-500 text-xs text-gray-600 dark:text-zinc-300 px-3 py-1 rounded-lg hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-50"
+        onClick={handleDismiss}
+      >
+        {actionText}
+      </button>
     </div>
   );
 }

@@ -76,7 +76,13 @@ export async function fetchNewEmailsService(userEmail, userId, fullRefresh = fal
       };
     } else {
       console.error("❌ AppMailia AI: Failed to retrieve new emails from background:", response.error);
-      return { success: false, error: response.error };
+      // Pass through errorCode and requiresReauth for proper handling in the hook
+      return { 
+        success: false, 
+        error: response.error, 
+        errorCode: response.errorCode,
+        requiresReauth: response.requiresReauth 
+      };
     }
   } catch (error) {
     console.error("❌ AppMailia AI: Error sending FETCH_NEW_EMAILS message to background:", error);

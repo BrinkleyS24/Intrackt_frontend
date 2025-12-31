@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mail, BarChart3, FileText, Calendar, Gift, X, Home, LogOut, RefreshCw, Settings, Star } from "lucide-react";
+import { Mail, FileText, Calendar, Gift, X, Home, LogOut, RefreshCw, Star } from "lucide-react";
 import { cn } from "../utils/cn";
 import { EmailQuotaIndicator } from "./EmailQuotaIndicator";
 import { countUniqueThreads } from "../utils/grouping";
@@ -26,8 +26,6 @@ import { countUniqueThreads } from "../utils/grouping";
  * @property {boolean} isLoadingEmails
  * @property {string} userPlan
  * @property {object | null} quotaData
- * @property {() => void} onUpgradeClick
- * @property {() => void} onManageSubscription
  */
 
 const Button = ({ children, ...props }) => <button {...props}>{children}</button>;
@@ -44,8 +42,6 @@ export function Sidebar({
   isLoadingEmails,
   userPlan,
   quotaData,
-  onUpgradeClick,
-  onManageSubscription
 }) {
   const getEmailCount = (category) => {
     // Always count unique conversations/threads, not individual email messages
@@ -154,8 +150,6 @@ export function Sidebar({
           <EmailQuotaIndicator
             userPlan={userPlan}
             quotaData={quotaData}
-            onUpgradeClick={onUpgradeClick}
-            onManageSubscription={onManageSubscription}
           />
         </div>
         

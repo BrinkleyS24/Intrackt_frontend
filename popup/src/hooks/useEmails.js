@@ -249,7 +249,24 @@ export function useEmails(userEmail, userId, CONFIG) {
     try {
       const response = await fetchNewEmailsService(userEmail, userId, fullRefresh);
       if (!response.success) {
-        showNotification(`Failed to sync emails: ${response.error}`, "error");
+        // Check for auth errors that require re-authentication
+        if (response.errorCode === 'INVALID_GRANT' || response.requiresReauth) {
+          showNotification(
+            '🔐 Your Google session has expired. Please sign out and sign back in to continue syncing emails.',
+            'error',
+            null,
+            15000 // Show for 15 seconds
+          );
+        } else if (response.errorCode === 'INSUFFICIENT_SCOPES') {
+          showNotification(
+            '⚠️ Gmail permissions needed. Please sign out and sign in again to grant all permissions.',
+            'error',
+            null,
+            10000
+          );
+        } else {
+          showNotification(`Failed to sync emails: ${response.error}`, 'error');
+        }
         setIsSyncing(false);
       }
     } catch (error) {

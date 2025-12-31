@@ -19,6 +19,12 @@ import { groupEmailsByThread, countUniqueThreads } from '../utils/grouping';
 const stripHtml = (html) => {
   if (!html || typeof html !== 'string') return '';
   const doc = new DOMParser().parseFromString(html, 'text/html');
+  // Remove non-content elements that often contain large blocks of CSS/JS in email HTML
+  try {
+    doc.querySelectorAll('style,script,noscript').forEach((el) => el.remove());
+  } catch (_) {
+    // ignore
+  }
   const text = doc.body.textContent || "";
   // Collapse multiple whitespace characters (including newlines) into a single space for a clean preview
   return text.replace(/\s+/g, ' ').trim();

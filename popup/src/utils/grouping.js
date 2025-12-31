@@ -67,6 +67,78 @@ export function groupEmailsByThread(emails) {
     return domain;
   };
 
+  // Helper to extract actual company name from interview emails (especially from ATS platforms)
+  const extractCompanyFromInterview = (email) => {
+    const subject = email.subject || '';
+    const subjectLower = subject.toLowerCase();
+    const sender = email.from?.toLowerCase() || '';
+    
+    // Common ATS platforms that don't reveal company in sender domain
+    const atsPlatforms = ['dayforce', 'greenhouse', 'workday', 'smartrecruiters', 'lever', 'icims', 'fountain', 'rippling', 'ashbyhq'];
+    const senderDomain = getCompanyDomain(sender, email);
+    
+    // Helper: Normalize company names to handle variations
+    const normalizeCompany = (companyName) => {
+      let normalized = companyName.toLowerCase().trim();
+      
+      // CRITICAL FIX: Handle "I Squared Logistics" variations
+      // "I Squared Logistics", "I Squared", "I2Logistics", "I2Logistics.com" → "i_squared_logistics"
+      if (normalized.match(/i\s*(?:2|squared)\s*(?:logistics?)?/i)) {
+        return 'i_squared_logistics';
+      }
+      
+      // Remove common suffixes
+      normalized = normalized.replace(/\s+(inc|llc|corp|corporation|ltd|limited|co)\.?$/i, '');
+      
+      // Replace spaces with underscores
+      return normalized.replace(/\s+/g, '_');
+    };
+    
+    // If sender is from company domain (not ATS), use that
+    if (!atsPlatforms.includes(senderDomain)) {
+      return normalizeCompany(senderDomain);
+    }
+    
+    // ATS platform detected - extract company name from subject line
+    // Priority order: most specific patterns first
+    
+    // Pattern 1: "with [Company Name]" or "at [Company Name]"
+    // Examples: "Interview with I Squared Logistics", "Zoom Interview Schedule with I Squared Logistics"
+    let match = subjectLower.match(/(?:with|at)\s+([a-z][a-z0-9\s&]+?)(?:\s+on\s+|$|confirmed)/i);
+    if (match) {
+      const company = match[1].trim();
+      // Filter out generic words and single letters
+      if (company.length >= 5 && !['your', 'the', 'our', 'this', 'that'].includes(company)) {
+        return normalizeCompany(company);
+      }
+    }
+    
+    // Pattern 2: Extract from sender display name ONLY if it looks like a company (2+ words, not just first name)
+    // "I Squared Owner <owner@i2logistics.com>" → "i_squared_logistics"
+    const senderNameMatch = email.from?.match(/^([^<@]+?)\s+(?:Owner|Hiring|Recruiter|HR|Team|Manager)\s*</i);
+    if (senderNameMatch) {
+      const name = senderNameMatch[1].trim();
+      const words = name.split(/\s+/);
+      // Must be 2+ words to be a company name (avoids "Jillian Y" or "Brad P")
+      if (words.length >= 2 && name.length >= 5) {
+        return normalizeCompany(name);
+      }
+    }
+    
+    // Pattern 3: "Role/Position at [Company]"
+    match = subjectLower.match(/(?:role|position)\s+at\s+([a-z][a-z0-9\s&]+?)(?:\s|$)/i);
+    if (match) {
+      const company = match[1].trim();
+      if (company.length >= 5) {
+        return normalizeCompany(company);
+      }
+    }
+    
+    // Fallback: use ATS platform domain (will group all interviews from that platform together)
+    // This is intentional - if we can't extract company name, group by platform
+    return senderDomain;
+  };
+
   // Helper function to generate a grouping key
   const getGroupingKey = (email) => {
     const threadId = email.thread_id || email.threadId || email.thread || email.id;
@@ -75,17 +147,31 @@ export function groupEmailsByThread(emails) {
     const category = (email.category || '').toLowerCase();
     
     // PRIORITY 1.5: For ALL INTERVIEWED emails, use universal company + time grouping
-    // UNIVERSAL SOLUTION: Group ALL interview emails from the same company together
-    // Why: Interview processes span weeks/months (outreach→schedule→interview→followup)
-    // This prevents duplicate interview counts regardless of:
-    // - Subject variations (reminder, confirmation, scheduling, request)
-    // - Time spans (July initial contact, August interview, September followup)
-    // - Email types (direct recruiter vs platform notifications)
-    // - Sender variations (jake@ncsecu.org vs ncsecu@myworkday.com)
-    // Edge case: If someone interviews with same company twice in one job search,
-    // they probably want to see all communications together anyway
-    if (category === 'interviewed' && companyDomain) {
-      return `interview_${companyDomain}`;
+    // CRITICAL FIX: Use backend application_id if available (most reliable)
+    // Backend links emails to applications, so if two interview emails have the same
+    // application_id, they're definitely part of the same interview process
+    if (category === 'interviewed') {
+      // ALWAYS extract company identifier for consistent grouping
+      const companyIdentifier = extractCompanyFromInterview(email);
+      
+      // Check for backend application linking
+      const appId = email.application_id || email.applicationId;
+      
+      const groupKey = `interview_${companyIdentifier}`;
+      
+      // DEBUG: Log ALL interviewed emails to trace grouping
+      console.log('[INTERVIEW GROUPING]', {
+        subject: email.subject?.substring(0, 50),
+        from: email.from?.substring(0, 30),
+        companyIdentifier,
+        groupKey,
+        appId,
+        threadId: email.thread_id
+      });
+      
+      if (appId || companyIdentifier) {
+        return groupKey;
+      }
     }
     
     // PRIORITY 1: Use Gmail's native thread_id if available
@@ -134,7 +220,10 @@ export function groupEmailsByThread(emails) {
     let g = map.get(groupKey);
     if (!g) {
       g = { 
-        threadId: email.thread_id || email.threadId || email.thread || email.id, 
+        // Use groupKey as threadId to ensure uniqueness across different grouping strategies
+        // For native Gmail threads, groupKey IS the thread_id
+        // For interview grouping, groupKey is interview_${company}
+        threadId: groupKey, 
         emails: [], 
         latest: null, 
         earliest: null 
@@ -146,6 +235,7 @@ export function groupEmailsByThread(emails) {
     if (!g.latest || d > new Date(g.latest.date)) g.latest = email;
     if (!g.earliest || d < new Date(g.earliest.date)) g.earliest = email;
   }
+  
   
   const groups = [];
   for (const g of map.values()) {
@@ -168,6 +258,17 @@ export function groupEmailsByThread(emails) {
       latestEmail: latest,
       emails: g.emails, // Include all emails in this group for thread viewing
     });
+  }
+  
+  // DEBUG: Log final grouped result for interviewed category
+  const interviewGroups = groups.filter(g => g.threadId.startsWith('interview_'));
+  if (interviewGroups.length > 0) {
+    console.log('[GROUPING RESULT] Interview groups:', interviewGroups.map(g => ({
+      threadId: g.threadId,
+      subject: g.subject,
+      messageCount: g.messageCount,
+      emails: g.emails.map(e => ({ subject: e.subject?.substring(0, 40), from: e.from?.substring(0, 30) }))
+    })));
   }
   
   return groups.sort((a, b) => new Date(b.date) - new Date(a.date));

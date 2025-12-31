@@ -4,9 +4,6 @@ import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css'; // Import the main CSS file (Tailwind output)
 
-// Import subscription service to ensure it's available globally
-import './services/subscriptionService.js';
-
 // Find the root DOM element where the React app will be mounted
 const container = document.getElementById('root');
 

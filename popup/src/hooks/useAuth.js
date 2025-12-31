@@ -26,38 +26,6 @@ export const useAuth = (onPaymentStatusChange) => {
   const [loadingAuth, setLoadingAuth] = useState(true); // Indicate if auth state is still loading (INITIALIZED TO TRUE)
   const isLoggedIn = !!userEmail; // Derived state
 
-  // Function to check payment status from backend (using authenticated subscription status)
-  const checkPaymentStatus = useCallback(async () => {
-    if (!userEmail || !userId) {
-      return;
-    }
-    
-    try {
-      const response = await sendMessageToBackground({
-        type: 'CHECK_SUBSCRIPTION_STATUS',
-        userEmail: userEmail,
-        userId: userId
-      });
-      
-      if (response.success && response.subscription) {
-        const currentPlan = response.subscription.plan;
-        
-        if (currentPlan && currentPlan !== userPlan) {
-          const previousPlan = userPlan;
-          setUserPlan(currentPlan);
-          await chrome.storage.local.set({ userPlan: currentPlan });
-          showNotification('Payment confirmed! Premium features unlocked.', 'success');
-          
-          if (previousPlan === 'free' && currentPlan === 'premium' && onPaymentStatusChange) {
-            onPaymentStatusChange(currentPlan, previousPlan);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error checking subscription status:', error);
-    }
-  }, [userEmail, userId, userPlan, showNotification]);
-
   // Function to load and update current user state from chrome.storage.local
   // This is now the primary source of truth for the popup's UI state.
   const loadCurrentUserStateFromStorage = useCallback(async () => {
@@ -111,15 +79,6 @@ export const useAuth = (onPaymentStatusChange) => {
   useEffect(() => {
     loadCurrentUserStateFromStorage();
   }, [loadCurrentUserStateFromStorage]);
-
-  // Check payment status when popup opens and user is logged in
-  useEffect(() => {
-    // Check payment status if we have user credentials (don't wait for full auth ready)
-    if (userEmail && userId) {
-      checkPaymentStatus();
-    }
-  }, [userEmail, userId, checkPaymentStatus]);
-
 
   // Listen for changes in chrome.storage.local and update state
   // This listener ensures the UI state in the popup stays synchronized
