@@ -346,7 +346,7 @@ export function SubscriptionManager({ onBack, userPlan }) {
             <span className="text-sm font-medium">Payment Method</span>
             <div className="flex items-center space-x-2">
               <CreditCard className="h-4 w-4 text-gray-400" />
-              <span className="text-sm">•••• •••• •••• {subscriptionData.last4 || '••••'}</span>
+              <span className="text-sm">**** **** **** {subscriptionData.last4 || '****'}</span>
             </div>
           </div>
         </div>

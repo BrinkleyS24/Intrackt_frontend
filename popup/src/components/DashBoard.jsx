@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { FileText, Calendar, Gift, X, Flag, ArrowUp, ArrowDown, BarChart3, TrendingUp, Clock, Info, Target, Zap, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { formatDate } from '../utils/uiHelpers';
-import { groupEmailsByThread, countUniqueThreads } from '../utils/grouping';
+import { groupEmailsByThread, countUniqueThreads, countUniqueApplications } from '../utils/grouping';
 import { showNotification } from './Notification';
 import { CONFIG } from '../utils/constants';
 
@@ -194,7 +194,7 @@ function ApplicationJourneyCard({ journeys, onEmailSelect }) {
                 </p>
               </div>
               <div className="text-[10px] text-indigo-600 dark:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                View →
+                View >
               </div>
             </div>
           );
@@ -291,10 +291,10 @@ function CategoryDonutChart({ applied, interviewed, offers, rejected }) {
 function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDeltaPct, newApplicationsThisWeek, offersCount, emailsCur30, emailsPrev30, emailsCur7, emailsPrev7, applicationStats, Trend }) {
   const [currentSlide, setCurrentSlide] = useState(0);
   
-  const appsCur = countUniqueThreads(emailsCur30.filter(e => e.category?.toLowerCase().includes('appl')));
-  const appsPrev = countUniqueThreads(emailsPrev30.filter(e => e.category?.toLowerCase().includes('appl')));
-  const appsCur7 = countUniqueThreads(emailsCur7.filter(e => e.category?.toLowerCase().includes('appl')));
-  const appsPrev7 = countUniqueThreads(emailsPrev7.filter(e => e.category?.toLowerCase().includes('appl')));
+  const appsCur = countUniqueApplications(emailsCur30.filter(e => e.category?.toLowerCase().includes('appl')));
+  const appsPrev = countUniqueApplications(emailsPrev30.filter(e => e.category?.toLowerCase().includes('appl')));
+  const appsCur7 = countUniqueApplications(emailsCur7.filter(e => e.category?.toLowerCase().includes('appl')));
+  const appsPrev7 = countUniqueApplications(emailsPrev7.filter(e => e.category?.toLowerCase().includes('appl')));
   
   const monthDelta = appsPrev > 0 ? Math.round(((appsCur - appsPrev) / appsPrev) * 100) : (appsCur > 0 ? 100 : 0);
   const weekDelta = appsPrev7 > 0 ? Math.round(((appsCur7 - appsPrev7) / appsPrev7) * 100) : (appsCur7 > 0 ? 100 : 0);
@@ -785,23 +785,23 @@ function Dashboard({
   // Listen for scope error messages from background script
   useEffect(() => {
     const handleMessage = (message) => {
-      if (message.type === 'SCOPE_ERROR' || message.errorCode === 'INSUFFICIENT_SCOPES') {
-        showNotification(
-          '⚠️ Gmail permissions needed. Please sign out and sign in again to grant all permissions.',
-          'error',
-          null,
-          10000 // Show for 10 seconds
-        );
-      }
+        if (message.type === 'SCOPE_ERROR' || message.errorCode === 'INSUFFICIENT_SCOPES') {
+          showNotification(
+            'Gmail permissions needed. Please sign out and sign in again to grant all permissions.',
+            'error',
+            null,
+            10000 // Show for 10 seconds
+          );
+        }
       // Handle expired refresh token (INVALID_GRANT)
-      if (message.type === 'AUTH_ERROR' || message.errorCode === 'INVALID_GRANT') {
-        showNotification(
-          '🔐 Your Google session has expired. Please sign out and sign back in to continue syncing emails.',
-          'error',
-          null,
-          15000 // Show for 15 seconds - important message
-        );
-      }
+        if (message.type === 'AUTH_ERROR' || message.errorCode === 'INVALID_GRANT') {
+          showNotification(
+            'Your Google session has expired. Please sign out and sign back in to continue syncing emails.',
+            'error',
+            null,
+            15000 // Show for 15 seconds - important message
+          );
+        }
     };
 
     chrome.runtime.onMessage.addListener(handleMessage);
@@ -821,8 +821,8 @@ function Dashboard({
         throw new Error('Failed to get authentication token');
       }
 
-      const BACKEND_URL = 'http://localhost:3000';
-      const response = await fetch(`${BACKEND_URL}/api/emails/normalize-roles`, {
+      const backendBaseUrl = CONFIG?.ENDPOINTS?.BACKEND_BASE_URL || 'http://localhost:3000';
+      const response = await fetch(`${backendBaseUrl}/api/emails/normalize-roles`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -838,7 +838,6 @@ function Dashboard({
       const data = await response.json();
       
       if (data.success && data.mappings) {
-        console.log(`[Dashboard] Loaded ${Object.keys(data.mappings).length} role mappings (${data.cached} cached, ${data.new} new)`);
         return data.mappings;
       }
       return {};
@@ -1064,7 +1063,7 @@ function Dashboard({
     // Always use frontend categorization - applicationStats can be stale (doesn't update in real-time)
     // Frontend categorization reflects the actual emails the user has categorized
     // Backend applicationStats requires recalculation triggers that may lag behind email sync
-    return countUniqueThreads(allRelevantEmails);
+    return countUniqueApplications(allRelevantEmails);
   }, [allRelevantEmails]);
 
   const totalInterviewsAndOffers = useMemo(() => interviewedCount + offersCount, [interviewedCount, offersCount]);
@@ -1077,7 +1076,7 @@ function Dashboard({
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
     const recentApplications = (categorizedEmails.applied || categorizedEmails.Applied || []).filter(email => new Date(email.date) >= sevenDaysAgo);
-    return countUniqueThreads(recentApplications);
+    return countUniqueApplications(recentApplications);
   }, [categorizedEmails.applied, categorizedEmails.Applied]);
 
   const successRate = useMemo(() => {
@@ -1106,8 +1105,7 @@ function Dashboard({
 
   // Use the grouping logic to count UNIQUE company+position combinations, not just thread_ids
   const uniqueCount = (arr) => {
-    const grouped = groupEmailsByThread(arr);
-    return grouped.length;
+    return countUniqueApplications(arr);
   };
 
   // Calculate time ranges - must be inside useMemo to recalculate when allRelevantEmails changes
@@ -1399,8 +1397,8 @@ function Dashboard({
     
     return weeklyEmails.map((week, i) => ({ 
       week: `W${i + 1}`, 
-      applications: countUniqueThreads(week.appEmails), 
-      responses: countUniqueThreads(week.respEmails)
+      applications: countUniqueApplications(week.appEmails), 
+      responses: countUniqueApplications(week.respEmails)
     }));
   }, [allRelevantEmails, numWeeks, isPremium]);
   const Trend = ({ delta, timeframe = "previous period" }) => {
@@ -2775,10 +2773,21 @@ function Dashboard({
                     </li>
                   </ul>
                   <button
-                    disabled
+                    onClick={() => {
+                      const url = (CONFIG?.PREMIUM_DASHBOARD_URL || '').toString().trim();
+                      if (!url) {
+                        showNotification('Premium dashboard URL is not configured yet.', 'info');
+                        return;
+                      }
+                      try {
+                        chrome.tabs.create({ url });
+                      } catch (e) {
+                        window.open(url, '_blank', 'noopener,noreferrer');
+                      }
+                    }}
                     className="w-full px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-medium rounded-lg transition-all shadow-md hover:shadow-lg"
                   >
-                    Premium web dashboard coming soon
+                    Open premium dashboard
                   </button>
                 </div>
               </div>

@@ -5,8 +5,8 @@
  * to group related emails that might have different thread IDs.
  * 
  * FIX: Prevents duplicate interview counts by normalizing subject lines
- * Example: "Reminder - Q2 Software Engineer Interview" → "q2 software engineer interview"
- *          "Q2 Software Engineer Interview" → "q2 software engineer interview"
+ * Example: "Reminder - Q2 Software Engineer Interview" -> "q2 software engineer interview"
+ *          "Q2 Software Engineer Interview" -> "q2 software engineer interview"
  * Both now group together instead of counting as 2 separate interviews.
  */
 export function groupEmailsByThread(emails) {
@@ -72,6 +72,21 @@ export function groupEmailsByThread(emails) {
     const subject = email.subject || '';
     const subjectLower = subject.toLowerCase();
     const sender = email.from?.toLowerCase() || '';
+
+    // Prefer already-extracted/app-linked company name when available (most reliable for grouping)
+    // This helps keep calendar/Teams invite emails grouped with the same application even if the sender domain differs.
+    const extractedCompany = email.company_name || email.company;
+    if (extractedCompany) {
+      const normalizeCompanyDirect = (companyName) => {
+        let normalized = companyName.toLowerCase().trim();
+        if (normalized.match(/i\s*(?:2|squared)\s*(?:logistics?)?/i)) {
+          return 'i_squared_logistics';
+        }
+        normalized = normalized.replace(/\s+(inc|llc|corp|corporation|ltd|limited|co)\.?$/i, '');
+        return normalized.replace(/\s+/g, '_');
+      };
+      return normalizeCompanyDirect(extractedCompany);
+    }
     
     // Common ATS platforms that don't reveal company in sender domain
     const atsPlatforms = ['dayforce', 'greenhouse', 'workday', 'smartrecruiters', 'lever', 'icims', 'fountain', 'rippling', 'ashbyhq'];
@@ -82,7 +97,7 @@ export function groupEmailsByThread(emails) {
       let normalized = companyName.toLowerCase().trim();
       
       // CRITICAL FIX: Handle "I Squared Logistics" variations
-      // "I Squared Logistics", "I Squared", "I2Logistics", "I2Logistics.com" → "i_squared_logistics"
+    // "I Squared Logistics", "I Squared", "I2Logistics", "I2Logistics.com" -> "i_squared_logistics"
       if (normalized.match(/i\s*(?:2|squared)\s*(?:logistics?)?/i)) {
         return 'i_squared_logistics';
       }
@@ -114,7 +129,7 @@ export function groupEmailsByThread(emails) {
     }
     
     // Pattern 2: Extract from sender display name ONLY if it looks like a company (2+ words, not just first name)
-    // "I Squared Owner <owner@i2logistics.com>" → "i_squared_logistics"
+    // "I Squared Owner <owner@i2logistics.com>" -> "i_squared_logistics"
     const senderNameMatch = email.from?.match(/^([^<@]+?)\s+(?:Owner|Hiring|Recruiter|HR|Team|Manager)\s*</i);
     if (senderNameMatch) {
       const name = senderNameMatch[1].trim();
@@ -139,6 +154,51 @@ export function groupEmailsByThread(emails) {
     return senderDomain;
   };
 
+  const normalizeRole = (role) => {
+    let normalized = normalizeForKey(role);
+    // Drop trailing seniority/level tokens that frequently vary across emails for the same role
+    // (e.g., "Software Engineer I" vs "Software Engineer", "Engineer 2" vs "Engineer").
+    normalized = normalized.replace(/\s+(?:i|ii|iii|iv|v|1|2|3|4|5)$/i, '');
+    return normalized;
+  };
+
+  const extractRoleFromSubject = (email) => {
+    const subject = (email?.subject || '').toString();
+    if (!subject) return '';
+
+    const candidates = [];
+
+    // Prefer role hints in parentheses: "(Junior Software Development Engineer)"
+    const parenMatches = subject.match(/\(([^)]+)\)/g) || [];
+    for (const m of parenMatches) {
+      candidates.push(m.replace(/[()]/g, ''));
+    }
+
+    // Common separators where the role appears after: "Q2 | Software Engineer in Test - ..."
+    const pipeMatch = subject.match(/\|\s*([^|:]+?)(?:\s+-\s+|$)/);
+    if (pipeMatch?.[1]) candidates.push(pipeMatch[1]);
+
+    // Often role appears after the last " - ": "... - Software Test Engineer"
+    const dashParts = subject.split(' - ').map((s) => s.trim()).filter(Boolean);
+    if (dashParts.length >= 2) candidates.push(dashParts[dashParts.length - 1]);
+
+    // After colon segments: "Invitation: Software Test Engineer I Interview: 2nd Round ..."
+    const colonParts = subject.split(':').map((s) => s.trim()).filter(Boolean);
+    if (colonParts.length >= 2) candidates.push(colonParts[1]);
+
+    // Basic keyword filters to avoid picking a person's name or generic fragments
+    const roley = candidates
+      .map((c) => c.replace(/\s+/g, ' ').trim())
+      .filter((c) => c.length >= 6 && c.length <= 80)
+      .filter((c) => !/@/.test(c))
+      .filter((c) => !/(?:stacey|nicole|raymond|jake)\b/i.test(c))
+      .filter((c) => /(engineer|developer|manager|analyst|designer|product|test|qa|intern|associate|specialist|architect|director)\b/i.test(c))
+      .map((c) => c.replace(/\binterview\b.*$/i, '').trim())
+      .map((c) => c.replace(/\b(?:phone|video|zoom|teams|google meet)\b.*$/i, '').trim());
+
+    return normalizeRole(roley[0] || '');
+  };
+
   // Helper function to generate a grouping key
   const getGroupingKey = (email) => {
     const threadId = email.thread_id || email.threadId || email.thread || email.id;
@@ -156,18 +216,13 @@ export function groupEmailsByThread(emails) {
       
       // Check for backend application linking
       const appId = email.application_id || email.applicationId;
-      
-      const groupKey = `interview_${companyIdentifier}`;
-      
-      // DEBUG: Log ALL interviewed emails to trace grouping
-      console.log('[INTERVIEW GROUPING]', {
-        subject: email.subject?.substring(0, 50),
-        from: email.from?.substring(0, 30),
-        companyIdentifier,
-        groupKey,
-        appId,
-        threadId: email.thread_id
-      });
+      const positionKey = normalizeRole(email.position || email.job_title || '') || extractRoleFromSubject(email);
+
+      const groupKey = appId
+        ? `interview_app_${appId}`
+        : positionKey
+          ? `interview_${companyIdentifier}_${positionKey}`
+          : `interview_${companyIdentifier}`;
       
       if (appId || companyIdentifier) {
         return groupKey;
@@ -189,7 +244,7 @@ export function groupEmailsByThread(emails) {
     subject = subject.replace(/^(re:|fw:|fwd:|reminder\s*-\s*|follow[-\s]?up\s*-?\s*|\[action required\]\s*|\[reminder\]\s*|urgent\s*-?\s*)/gi, '');
     
     // Step 2: Remove personalized suffixes (recipient names) BEFORE lowercasing
-    subject = subject.replace(/[:;\-–—]\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)*\s*$/g, '');
+    subject = subject.replace(/[:;\-]\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s*$/g, '');
     
     // Step 3: NOW lowercase everything
     subject = subject.toLowerCase();
@@ -260,21 +315,53 @@ export function groupEmailsByThread(emails) {
     });
   }
   
-  // DEBUG: Log final grouped result for interviewed category
-  const interviewGroups = groups.filter(g => g.threadId.startsWith('interview_'));
-  if (interviewGroups.length > 0) {
-    console.log('[GROUPING RESULT] Interview groups:', interviewGroups.map(g => ({
-      threadId: g.threadId,
-      subject: g.subject,
-      messageCount: g.messageCount,
-      emails: g.emails.map(e => ({ subject: e.subject?.substring(0, 40), from: e.from?.substring(0, 30) }))
-    })));
-  }
-  
   return groups.sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
 export function countUniqueThreads(emails) {
   const groupedEmails = groupEmailsByThread(emails);
   return groupedEmails.length;
+}
+
+function normalizeForKey(value) {
+  return (value || '')
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^a-z0-9 ]/g, '')
+    .trim();
+}
+
+export function getApplicationKey(email) {
+  if (!email) return 'unknown';
+
+  const applicationId = (email.application_id || email.applicationId || '').toString().trim();
+  if (applicationId) return `app_${applicationId}`;
+
+  const companyRaw = email.company_name || email.company || '';
+  const positionRaw = email.position || email.job_title || '';
+  const company = normalizeForKey(companyRaw);
+  const position = normalizeForKey(positionRaw);
+  if (company && position) return `cp_${company}_${position}`;
+
+  const threadId = (email.thread_id || email.threadId || email.thread || '').toString().trim();
+  if (threadId) return `thread_${threadId}`;
+
+  const emailId = (email.id || '').toString().trim();
+  if (emailId) return `email_${emailId}`;
+
+  return 'unknown';
+}
+
+// Counts unique applications (not messages) using backend-linked application_id when available,
+// otherwise falling back to normalized company+position and then thread_id.
+export function countUniqueApplications(emails) {
+  const set = new Set();
+  for (const email of emails || []) {
+    set.add(getApplicationKey(email));
+  }
+  // Avoid counting "unknown" if that's all we have (prevents false positives from malformed data)
+  if (set.size > 1 && set.has('unknown')) set.delete('unknown');
+  return set.size;
 }

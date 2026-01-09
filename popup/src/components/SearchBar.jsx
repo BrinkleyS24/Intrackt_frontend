@@ -79,7 +79,7 @@ export default function SearchBar({ onEmailSelect }) {
               <div className="p-3 bg-gray-50">
                 <div className="font-medium text-gray-900">{app.company} - {app.position}</div>
                 <div className="text-sm text-gray-600 mt-1">
-                  {app.latestStatus} • {app.emailCount} email{app.emailCount !== 1 ? 's' : ''}
+                  {app.latestStatus} | {app.emailCount} email{app.emailCount !== 1 ? 's' : ''}
                 </div>
               </div>
               {app.emails.map((email) => (

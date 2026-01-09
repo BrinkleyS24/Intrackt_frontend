@@ -4,6 +4,8 @@ import { cn } from '../utils/cn';
 import { formatDate, getCategoryBadgeColor, getCategoryTitle } from '../utils/uiHelpers';
 import { groupEmailsByThread, countUniqueThreads } from '../utils/grouping';
 import { useEmailQuota } from '../hooks/useEmailQuota';
+import { CONFIG } from '../utils/constants';
+import { showNotification } from './Notification';
 
 export default function QuickView({
   categorizedEmails,
@@ -47,6 +49,29 @@ export default function QuickView({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              const url = (CONFIG?.PREMIUM_DASHBOARD_URL || '').toString().trim();
+              if (!url) {
+                showNotification('Premium dashboard URL is not configured yet.', 'info');
+                return;
+              }
+              try {
+                chrome.tabs.create({ url });
+              } catch (e) {
+                window.open(url, '_blank', 'noopener,noreferrer');
+              }
+            }}
+            className={cn(
+              'inline-flex items-center gap-2 px-3 py-2 rounded-md text-xs font-semibold border',
+              'border-purple-200 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20',
+              'text-purple-700 dark:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-900/30'
+            )}
+            title={userPlan === 'premium' ? 'Premium dashboard' : 'Upgrade'}
+            type="button"
+          >
+            {userPlan === 'premium' ? 'Premium' : 'Upgrade'}
+          </button>
           <button
             onClick={onRefresh}
             className={cn(

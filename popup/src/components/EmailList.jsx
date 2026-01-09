@@ -37,12 +37,14 @@ function EmailList({
   selectedEmail, 
   onEmailSelect, 
   totalEmails,
+  totalMessages,
   onMarkAllAsRead,
   isMarkingAllAsRead,
   // Optional prop: parent can signal if the entire category has unread threads
   hasUnreadCategory
 }) {
   const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'active', 'inactive'
+  const [showMarkAllConfirm, setShowMarkAllConfirm] = useState(false);
   
   const categoryTitle = getCategoryTitle(category);
   // Category color mapping for badges and accents
@@ -90,12 +92,13 @@ function EmailList({
   }, [threadGroups, activeFilter, category]);
   
   const displayCount = totalEmails !== undefined ? totalEmails : countUniqueThreads(emails);
+  const displayTotalMessages = typeof totalMessages === 'number' ? totalMessages : emails.length;
   
   // Get the appropriate label based on category
   const getCategoryLabel = (count) => {
     const labels = {
       applied: count === 1 ? 'application' : 'applications',
-      interviewed: count === 1 ? 'conversation' : 'conversations',
+      interviewed: count === 1 ? 'application' : 'applications',
       offers: count === 1 ? 'offer' : 'offers',
       rejected: count === 1 ? 'rejection' : 'rejections'
     };
@@ -112,16 +115,13 @@ function EmailList({
 
   const handleMarkAllAsRead = () => {
     if (!onMarkAllAsRead) return;
-    // Ask for explicit confirmation to avoid accidental bulk actions
-    try {
-      const confirmed = window.confirm(`Mark all emails in '${categoryTitle}' as read? This will mark every message in this category as read.`);
-      if (!confirmed) return;
-    } catch (e) {
-      // Window.confirm might be unavailable in some extension contexts; fallback to immediate action
-    }
-    if (hasUnreadEmails) {
-      onMarkAllAsRead(category);
-    }
+    if (!hasUnreadEmails) return;
+    setShowMarkAllConfirm(true);
+  };
+
+  const confirmMarkAllAsRead = () => {
+    setShowMarkAllConfirm(false);
+    onMarkAllAsRead(category);
   };
 
   return (
@@ -136,16 +136,19 @@ function EmailList({
             "inline-flex items-center px-2 py-1 rounded-full text-xs font-medium",
             style.badge
           )}>
-            {category === 'interviewed' && displayCount > 0
-              ? `${emails.length} message${emails.length !== 1 ? 's' : ''} in ${displayCount} ${getCategoryLabel(displayCount)}`
-              : `${displayCount} ${getCategoryLabel(displayCount)}`
-            }
+            {category === 'interviewed'
+              ? (displayCount > 0
+                  ? `${displayCount} ${getCategoryLabel(displayCount)}, ${displayTotalMessages} email${displayTotalMessages !== 1 ? 's' : ''}`
+                  : `0 ${getCategoryLabel(0)}`)
+              : `${displayCount} ${getCategoryLabel(displayCount)}`}
           </span>
         </div>
         {/* Explanatory subtext to clarify what the count represents */}
         <div className="mb-2">
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            Email threads grouped by conversation. May include multiple emails per application.
+            {category === 'interviewed'
+              ? 'Interview emails grouped by application. Uses linking when available; otherwise groups by company + role.'
+              : 'Email threads grouped by conversation. May include multiple emails per application.'}
           </p>
         </div>
         
@@ -206,6 +209,41 @@ function EmailList({
               <CheckCheck className="h-4 w-4" />
               <span>{isMarkingAllAsRead ? 'Marking...' : 'Mark all as read'}</span>
             </button>
+
+            {showMarkAllConfirm && (
+              <div className="mt-2 rounded-lg border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-900/40 p-3">
+                <div className="text-xs text-gray-700 dark:text-zinc-200">
+                  Mark all threads in <span className="font-semibold">{categoryTitle}</span> as read?
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={confirmMarkAllAsRead}
+                    disabled={isMarkingAllAsRead}
+                    className={cn(
+                      "px-3 py-1.5 rounded-md text-xs font-semibold",
+                      "bg-blue-600 hover:bg-blue-700 text-white",
+                      "disabled:opacity-60 disabled:cursor-not-allowed"
+                    )}
+                  >
+                    Confirm
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowMarkAllConfirm(false)}
+                    disabled={isMarkingAllAsRead}
+                    className={cn(
+                      "px-3 py-1.5 rounded-md text-xs font-medium",
+                      "border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800",
+                      "text-gray-700 dark:text-zinc-200 hover:bg-gray-100 dark:hover:bg-zinc-700/50",
+                      "disabled:opacity-60 disabled:cursor-not-allowed"
+                    )}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -269,7 +307,7 @@ function EmailList({
                       )}
                     </div>
 
-                    {/* Read-only Company • Position • Lifecycle • Active Status display */}
+                    {/* Read-only Company | Position | Lifecycle | Active Status display */}
                     {(email.company_name || email.position || (email.lifecycleStageCount && email.lifecycleStageCount > 1) || isActive) && (
                       <div className="flex items-center space-x-2 text-xs mt-2 text-gray-600">
                         {isActive && (
@@ -280,7 +318,7 @@ function EmailList({
                           </div>
                         )}
                         {isActive && (email.company_name || email.position || (email.lifecycleStageCount && email.lifecycleStageCount > 1)) && (
-                          <span>•</span>
+                          <span>|</span>
                         )}
                         {email.company_name && (
                           <div className="flex items-center space-x-1">
@@ -289,7 +327,7 @@ function EmailList({
                           </div>
                         )}
                         {email.company_name && email.position && (
-                          <span>•</span>
+                          <span>|</span>
                         )}
                         {email.position && (
                           <div className="flex items-center space-x-1">
@@ -299,7 +337,7 @@ function EmailList({
                         )}
                         {email.lifecycleStageCount && email.lifecycleStageCount > 1 && (
                           <>
-                            {(email.company_name || email.position) && <span>•</span>}
+                            {(email.company_name || email.position) && <span>|</span>}
                             <div className="flex items-center space-x-1 text-purple-600">
                               <TrendingUp className="h-3 w-3" />
                               <span className="font-medium">{email.lifecycleStageCount} stages</span>

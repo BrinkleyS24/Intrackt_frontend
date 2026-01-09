@@ -6,6 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { showNotification } from './Notification'; // For global toasts
+import { CONFIG } from '../utils/constants';
 
 function QuotaBanner({ quota, userPlan }) {
   const [dismissed, setDismissed] = useState(false);
@@ -57,6 +58,23 @@ function QuotaBanner({ quota, userPlan }) {
   return (
     <div className="px-4 py-2 bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300 flex items-center justify-between text-sm rounded-lg m-4 shadow-sm">
       <span className="flex-1 mr-4">{message}</span>
+      <button
+        className="mr-2 border border-yellow-300/60 dark:border-yellow-700 text-xs text-yellow-900 dark:text-yellow-200 px-3 py-1 rounded-lg hover:bg-yellow-200/60 dark:hover:bg-yellow-900/40 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-yellow-300 focus:ring-opacity-50"
+        onClick={() => {
+          const url = (CONFIG?.PREMIUM_DASHBOARD_URL || '').toString().trim();
+          if (!url) {
+            showNotification('Premium dashboard URL is not configured yet.', 'info');
+            return;
+          }
+          try {
+            chrome.tabs.create({ url });
+          } catch (e) {
+            window.open(url, '_blank', 'noopener,noreferrer');
+          }
+        }}
+      >
+        Upgrade
+      </button>
       <button
         className="border border-gray-300 dark:border-zinc-500 text-xs text-gray-600 dark:text-zinc-300 px-3 py-1 rounded-lg hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-50"
         onClick={handleDismiss}

@@ -6,9 +6,13 @@
 
 import React from 'react';
 
-function Pagination({ currentPage, totalPages, onPageChange, totalEmails, pageSize }) {
+function Pagination({ currentPage, totalPages, onPageChange, totalEmails, pageSize, itemLabel }) {
   const startRange = (currentPage - 1) * pageSize + 1;
   const endRange = Math.min(currentPage * pageSize, totalEmails);
+
+  const singular = itemLabel?.singular || 'conversation';
+  const plural = itemLabel?.plural || 'conversations';
+  const zero = itemLabel?.zero || 'No conversations';
 
   return (
     <footer className="border-t border-gray-200 dark:border-zinc-700 px-6 py-4 bg-white dark:bg-zinc-800 flex items-center justify-between text-sm">
@@ -22,8 +26,8 @@ function Pagination({ currentPage, totalPages, onPageChange, totalEmails, pageSi
       </button>
       <span id="pagination-info" className="text-gray-600 dark:text-zinc-400">
         {totalEmails === 0
-          ? "No conversations"
-          : `${startRange}-${endRange} of ${totalEmails} ${totalEmails === 1 ? 'conversation' : 'conversations'}`
+          ? zero
+          : `${startRange}-${endRange} of ${totalEmails} ${totalEmails === 1 ? singular : plural}`
         }
       </span>
       <button

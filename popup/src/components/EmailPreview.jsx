@@ -2,7 +2,7 @@
   * Enhanced EmailPreview Component with Gmail-like email display
   */
 import React, { useMemo, useState, useEffect } from 'react';
-import { Building2, Briefcase, Calendar, Clock, ExternalLink, Reply, Archive, Flag, X, Pencil, Check, TrendingUp, Star } from "lucide-react";
+import { Building2, Briefcase, Calendar, Clock, ExternalLink, Reply, Flag, X, Pencil, Check, TrendingUp } from "lucide-react";
 import { cn } from '../utils/cn';
 import { showNotification } from './Notification';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
@@ -41,6 +41,65 @@ const decodeEmailContent = (content) => {
     .replace(/[\u200B-\u200D\uFEFF]/g, '');
   
   return decoded;
+};
+
+// Safer decoder/sanitizer used by rendering code (keeps source ASCII-only and avoids leaking mojibake/control chars).
+const decodeEmailContentSafe = (content) => {
+  if (!content || typeof content !== 'string') return '';
+
+  let decoded = content;
+
+  // Handle double-encoded JSON strings
+  try {
+    if (decoded.startsWith('"') && decoded.endsWith('"')) {
+      decoded = JSON.parse(decoded);
+    }
+  } catch (_) {
+    // ignore
+  }
+
+  // Decode HTML entities
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = decoded;
+  decoded = textarea.value;
+
+  // Fix common mojibake sequences (UTF-8 decoded as Windows-1252).
+  decoded = decoded
+    .replace(/\u00e2\u20ac\u2122/g, "'") // â€™
+    .replace(/\u00e2\u20ac\u0153/g, '"') // â€œ
+    .replace(/\u00e2\u20ac\u009c/g, '"') // â€œ (variant)
+    .replace(/\u00e2\u20ac\u009d/g, '"') // â€ (variant)
+    .replace(/\u00e2\u20ac\u201c/g, '-') // â€“
+    .replace(/\u00e2\u20ac\u201d/g, '-') // â€—
+    .replace(/\u00e2\u20ac\u00a6/g, '...') // â€¦
+    .replace(/\u00e2\u20ac\u00a2/g, '*') // â€¢
+    .replace(/[\u200B-\u200D\uFEFF]/g, '');
+
+  // Strip control chars (keep \t \n \r).
+  decoded = decoded.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+
+  return decoded;
+};
+
+const stripHtmlToText = (html) => {
+  if (!html || typeof html !== 'string') return '';
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('style,script,noscript,head,meta,link,title,base').forEach((el) => el.remove());
+    const text = doc.body?.textContent || '';
+    return text.replace(/\s+/g, ' ').trim();
+  } catch (_) {
+    return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+};
+
+const looksLikeHtml = (text) => {
+  if (!text || typeof text !== 'string') return false;
+  const t = text.trim();
+  if (!t.includes('<') || !t.includes('>')) return false;
+  if (/<\s*(html|body|div|p|span|table|style|script|head|meta|link|br|hr|a|img)\b/i.test(t)) return true;
+  if (/<\/\s*[a-z][a-z0-9]*\s*>/i.test(t)) return true;
+  return false;
 };
 
 const isSafeLinkUrl = (url) => {
@@ -525,7 +584,7 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
   // Render a single email message body (html or plain)
   const renderSingleMessage = (msg) => {
     if (msg?.html_body) {
-      const decodedHTML = decodeEmailContent(msg.html_body);
+      const decodedHTML = decodeEmailContentSafe(msg.html_body);
       const styledHTML = sanitizeAndStyleEmailHTML(decodedHTML);
       if (styledHTML && styledHTML.trim()) {
         return (
@@ -545,7 +604,14 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
       }
     }
     if (msg?.body) {
-      const decodedText = decodeEmailContent(msg.body);
+      let decodedText = decodeEmailContentSafe(msg.body);
+
+      // Some stored emails may have HTML in `body` instead of `html_body` (legacy ingestion).
+      // Strip style/script and tags so users never see raw CSS/HTML in the viewer.
+      if (looksLikeHtml(decodedText)) {
+        decodedText = stripHtmlToText(decodedText);
+      }
+
       const cleanedText = cleanPlainTextEmail(decodedText);
       const formattedText = formatPlainTextEmail(cleanedText);
       if (formattedText && formattedText.trim()) {
@@ -628,6 +694,13 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
   // Lifecycle tracking state
   const [lifecycle, setLifecycle] = useState(null);
   const [loadingLifecycle, setLoadingLifecycle] = useState(false);
+
+  // Manual application closure state
+  const [closingApplication, setClosingApplication] = useState(false);
+  const [reopeningApplication, setReopeningApplication] = useState(false);
+  const [showClosePanel, setShowClosePanel] = useState(false);
+  const [closePreset, setClosePreset] = useState('no_response');
+  const [closeNote, setCloseNote] = useState('');
 
   // Fetch lifecycle when email with applicationId is opened
   useEffect(() => {
@@ -733,6 +806,109 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
     return 'Status update email received';
   };
 
+  const lastActivityDate = useMemo(() => {
+    const candidates = [];
+    if (email?.date) candidates.push(new Date(email.date));
+
+    for (const m of threadArr || []) {
+      if (!m?.date) continue;
+      const d = new Date(m.date);
+      if (!Number.isNaN(d.getTime())) candidates.push(d);
+    }
+
+    for (const s of journeyData?.stages || []) {
+      if (!s?.date) continue;
+      const d = new Date(s.date);
+      if (!Number.isNaN(d.getTime())) candidates.push(d);
+    }
+
+    if (candidates.length === 0) return null;
+    return new Date(Math.max(...candidates.map((d) => d.getTime())));
+  }, [email?.date, threadArr, journeyData?.stages]);
+
+  const staleDays = useMemo(() => {
+    if (!lastActivityDate) return null;
+    const ms = Date.now() - lastActivityDate.getTime();
+    if (ms < 0) return 0;
+    return Math.floor(ms / (1000 * 60 * 60 * 24));
+  }, [lastActivityDate]);
+
+  const openClosePanel = (source = 'manual') => {
+    if (!email?.applicationId) {
+      showNotification('This email is not linked to an application yet.', 'info');
+      return;
+    }
+    if (email?.isClosed && !email?.isUserClosed) {
+      showNotification('This application is closed by outcome and cannot be manually closed.', 'info');
+      return;
+    }
+
+    setClosePreset(source === 'stale' ? 'no_response' : 'rejected_verbal');
+    setCloseNote('');
+    setShowClosePanel(true);
+  };
+
+  const confirmCloseApplication = async () => {
+    if (!email?.applicationId) return;
+
+    const presetToLabel = {
+      no_response: 'No response',
+      rejected_verbal: 'Rejected verbally',
+      withdrew: 'Withdrew',
+      accepted_elsewhere: 'Accepted elsewhere',
+      position_filled: 'Position filled',
+      other: 'Other'
+    };
+
+    const parts = [];
+    const presetLabel = presetToLabel[closePreset] || 'Other';
+    if (presetLabel) parts.push(presetLabel);
+    const note = (closeNote || '').toString().trim();
+    if (note) parts.push(note);
+    const reason = parts.join(' - ').trim();
+
+    try {
+      setClosingApplication(true);
+      const resp = await sendMessageToBackground({
+        type: 'CLOSE_APPLICATION',
+        applicationId: email.applicationId,
+        emailId: email.id,
+        reason
+      });
+      if (resp?.success) {
+        setShowClosePanel(false);
+        showNotification('Application closed.', 'success');
+      } else {
+        showNotification(resp?.error || 'Failed to close application', 'error');
+      }
+    } catch (e) {
+      showNotification(e?.message || 'Failed to close application', 'error');
+    } finally {
+      setClosingApplication(false);
+    }
+  };
+
+  const handleReopenApplication = async () => {
+    if (!email?.applicationId) return;
+    try {
+      setReopeningApplication(true);
+      const resp = await sendMessageToBackground({
+        type: 'REOPEN_APPLICATION',
+        applicationId: email.applicationId,
+        emailId: email.id
+      });
+      if (resp?.success) {
+        showNotification('Application reopened.', 'success');
+      } else {
+        showNotification(resp?.error || 'Failed to reopen application', 'error');
+      }
+    } catch (e) {
+      showNotification(e?.message || 'Failed to reopen application', 'error');
+    } finally {
+      setReopeningApplication(false);
+    }
+  };
+
   const toggleReplyForm = () => {
     setShowReplyForm(v => !v);
   };
@@ -755,51 +931,7 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
     }
   };
 
-  // Star toggle state
-  const [isStarred, setIsStarred] = useState(email.is_starred || false);
-  const [isTogglingstar, setIsTogglingstar] = useState(false);
-
-  const handleStarClick = async () => {
-    if (isTogglingstar) return;
-
-    setIsTogglingstar(true);
-    const newStarredState = !isStarred;
-    
-    // Optimistic update
-    setIsStarred(newStarredState);
-
-    try {
-      const response = await sendMessageToBackground({
-        type: 'TOGGLE_STAR',
-        emailId: email.id,
-        isStarred: newStarredState
-      });
-
-      if (response.success) {
-        console.log(`Email ${newStarredState ? 'starred' : 'unstarred'} successfully`);
-      } else if (response.premiumOnly) {
-        // Revert optimistic update
-        setIsStarred(!newStarredState);
-        showNotification(response.error || 'Failed to toggle star', 'error');
-      } else {
-        // Revert optimistic update
-        setIsStarred(!newStarredState);
-        showNotification(response.error || 'Failed to toggle star', 'error');
-      }
-    } catch (error) {
-      console.error('Error toggling star:', error);
-      // Revert optimistic update
-      setIsStarred(!newStarredState);
-      showNotification('Failed to toggle star', 'error');
-    } finally {
-      setIsTogglingstar(false);
-    }
-  };
-
-  const handleArchiveClick = async () => {
-    await onArchive(email.thread_id);
-    onBack();
-  };
+  // NOTE: Archive/star UI actions are intentionally hidden for launch until fully wired.
 
   const handleOpenGmail = () => {
     if (email.gmail_link) {
@@ -931,20 +1063,34 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
               <Reply className="h-4 w-4" />
               <span>{showReplyForm ? 'Close Reply' : 'Reply'}</span>
             </Button>
-            <Button variant="outline" size="sm" className="flex items-center space-x-1" onClick={handleArchiveClick}>
-              <Archive className="h-4 w-4" />
-              <span>Archive</span>
-            </Button>
-            <Button 
-              variant={isStarred ? "default" : "outline"} 
-              size="sm" 
-              className={`flex items-center space-x-1 ${isStarred ? 'bg-yellow-500 hover:bg-yellow-600 text-white border-yellow-500' : ''}`}
-              onClick={handleStarClick}
-              disabled={isTogglingstar}
-            >
-              <Star className={`h-4 w-4 ${isStarred ? 'fill-current' : ''}`} />
-              <span>{isStarred ? 'Unstar' : 'Star'}</span>
-            </Button>
+
+            {email?.applicationId && email?.isUserClosed && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center space-x-1"
+                onClick={handleReopenApplication}
+                disabled={reopeningApplication}
+                title="Reopen this application"
+              >
+                <TrendingUp className="h-4 w-4" />
+                <span>{reopeningApplication ? 'Reopening...' : 'Reopen'}</span>
+              </Button>
+            )}
+
+            {email?.applicationId && !email?.isClosed && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center space-x-1"
+                onClick={() => openClosePanel('manual')}
+                disabled={closingApplication || showClosePanel}
+                title="Close this application"
+              >
+                <X className="h-4 w-4" />
+                <span>{closingApplication ? 'Closing...' : 'Close'}</span>
+              </Button>
+            )}
             <Button variant="outline" size="sm" className="flex items-center space-x-1" onClick={handleMisclassifyClick}>
               <Flag className="h-4 w-4" />
               <span>Misclassify</span>
@@ -954,6 +1100,94 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
               <span>Open in Gmail</span>
             </Button>
           </div>
+
+          {email?.applicationId && !email?.isClosed && typeof staleDays === 'number' && staleDays >= 60 && (
+            <div className="mt-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                No activity for {staleDays} days. If you heard back off-email, you can close this role.
+              </div>
+              <Button
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700 text-white flex-shrink-0"
+                onClick={() => openClosePanel('stale')}
+                disabled={closingApplication || showClosePanel}
+              >
+                Close
+              </Button>
+            </div>
+          )}
+
+          {showClosePanel && (
+            <div className="mt-3 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-gray-900 dark:text-white">Close application</div>
+                  <div className="mt-1 text-xs text-gray-600 dark:text-zinc-400">
+                    This doesn’t delete anything. It marks the role as closed (useful for phone rejections or long silence).
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200"
+                  onClick={() => setShowClosePanel(false)}
+                  aria-label="Cancel closing"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-1">
+                  <label className="block text-xs font-medium text-gray-700 dark:text-zinc-300 mb-1">Reason</label>
+                  <select
+                    value={closePreset}
+                    onChange={(e) => setClosePreset(e.target.value)}
+                    className="w-full rounded-md border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={closingApplication}
+                  >
+                    <option value="no_response">No response</option>
+                    <option value="rejected_verbal">Rejected verbally</option>
+                    <option value="withdrew">Withdrew</option>
+                    <option value="accepted_elsewhere">Accepted elsewhere</option>
+                    <option value="position_filled">Position filled</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-700 dark:text-zinc-300 mb-1">Note (optional)</label>
+                  <input
+                    type="text"
+                    value={closeNote}
+                    onChange={(e) => setCloseNote(e.target.value)}
+                    placeholder="Add context (optional)"
+                    className="w-full rounded-md border border-gray-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={closingApplication}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowClosePanel(false)}
+                  disabled={closingApplication}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="bg-gray-900 hover:bg-black text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-zinc-900"
+                  onClick={confirmCloseApplication}
+                  disabled={closingApplication}
+                >
+                  {closingApplication ? 'Closing...' : 'Confirm close'}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Reply Form */}
           {showReplyForm && (
@@ -1017,7 +1251,7 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
                 Application Journey
               </h4>
               <div className="text-xs text-purple-700 dark:text-purple-300">
-                {loadingLifecycle ? 'Loading…' : `${journeyData.stages.length} stage${journeyData.stages.length === 1 ? '' : 's'}`}
+                {loadingLifecycle ? 'Loading…' : `${journeyData.stages.length} event${journeyData.stages.length === 1 ? '' : 's'}`}
               </div>
             </div>
 
@@ -1043,33 +1277,36 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
                       )}
                     </div>
 
-                    <div className="flex-1 pb-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className={cn(
-                            "text-xs font-medium px-2 py-0.5 rounded-full capitalize",
-                            stage.category === 'applied' && "bg-blue-100 text-blue-800",
-                            stage.category === 'interviewed' && "bg-yellow-100 text-yellow-800",
-                            stage.category === 'offers' && "bg-green-100 text-green-800",
+                    <div className="flex-1 pb-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+                            <span className={cn(
+                              "text-xs font-medium px-2 py-0.5 rounded-full capitalize",
+                              stage.category === 'applied' && "bg-blue-100 text-blue-800",
+                              stage.category === 'interviewed' && "bg-yellow-100 text-yellow-800",
+                              stage.category === 'offers' && "bg-green-100 text-green-800",
                             stage.category === 'rejected' && "bg-red-100 text-red-800",
                             !['applied','interviewed','offers','rejected'].includes(stage.category) && "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200"
-                          )}>
-                            {stage.category}
-                          </span>
-                          <span className="text-xs text-purple-900/70 dark:text-purple-200/70 truncate">
-                            {getJourneyDescription(stage.category)}
-                          </span>
+                            )}>
+                              {stage.category}
+                            </span>
+                            <span className="text-xs text-purple-900/70 dark:text-purple-200/70 truncate min-w-0">
+                              {getJourneyDescription(stage.category)}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
+                            {formatJourneyDate(stage.date)}
+                          </div>
                         </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
-                          {formatJourneyDate(stage.date)}
-                        </div>
-                      </div>
 
-                      {stage.subject ? (
-                        <div className="mt-1 text-xs text-gray-700 dark:text-zinc-300 truncate">
-                          {stage.subject}
-                        </div>
-                      ) : null}
+                        {stage.subject ? (
+                          <div
+                            className="mt-1 text-xs text-gray-700 dark:text-zinc-300 break-words whitespace-normal"
+                            title={stage.subject}
+                          >
+                            {stage.subject}
+                          </div>
+                        ) : null}
                     </div>
                   </div>
                 ))}

@@ -115,7 +115,7 @@ export function useEmails(userEmail, userId, CONFIG) {
             setApplicationStats(msg.applicationStats);
           }
         } else {
-          console.error("❌ AppMailia AI: Email sync failed:", msg.error);
+          console.error('[popup] Email sync failed:', msg.error);
           showNotification(`Email sync failed: ${msg.error}`, 'error');
         }
       } else if (msg.type === 'EMAIL_STARRED_UPDATED') {
@@ -130,7 +130,6 @@ export function useEmails(userEmail, userId, CONFIG) {
           }
           return updated;
         });
-        console.log(`✅ AppMailia AI: Email ${emailId} star status updated to ${isStarred}`);
       }
     };
     chrome.runtime.onMessage.addListener(handleEmailsSynced);

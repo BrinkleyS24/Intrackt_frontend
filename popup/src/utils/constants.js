@@ -22,6 +22,7 @@ export const CONFIG = {
     // Note: SEND_EMAIL_REPLY is handled by the background script directly with Gmail API, not via a specific backend endpoint.
     // Note: QUOTA data is returned as part of the SYNC_EMAILS response, not a separate endpoint.
   },
+  PREMIUM_DASHBOARD_URL: process.env.PREMIUM_DASHBOARD_URL || '',
   PAGINATION: {
     PAGE_SIZE: 10, // Number of emails per page
   },

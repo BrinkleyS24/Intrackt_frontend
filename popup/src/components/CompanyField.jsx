@@ -145,7 +145,7 @@ const CompanyField = ({ email, userEmail, onUpdate, fieldName = 'company' }) => 
                 className="inline-flex items-center px-2 py-1 rounded text-[10px] bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400 flex-shrink-0"
                 title={`Corrected by user (was auto-extracted by ${extractionMethod})`}
               >
-                ✓ User
+                User
               </span>
             )}
             {!isCorrected && extractionMethod && (

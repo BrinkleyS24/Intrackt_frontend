@@ -45,6 +45,8 @@ const CONFIG_ENDPOINTS = {
   UPDATE_COMPANY_NAME: '/api/emails/:emailId/company', // PATCH endpoint for company name correction
   CORRECTION_ANALYTICS: '/api/emails/analytics/corrections', // GET endpoint for correction analytics
   APPLICATION_STATS: '/api/emails/applications/stats', // GET endpoint for application lifecycle statistics
+  CLOSE_APPLICATION: '/api/emails/applications/:applicationId/close',
+  REOPEN_APPLICATION: '/api/emails/applications/:applicationId/reopen',
 };
 
 // --- Authentication Readiness Promise ---
@@ -1301,6 +1303,60 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(response);
         } catch (error) {
           bgLogger.error('Error linking role emails:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'CLOSE_APPLICATION':
+        try {
+          const { applicationId, emailId, reason } = msg || {};
+          if (!applicationId) {
+            sendResponse({ success: false, error: 'Application ID is required' });
+            break;
+          }
+
+          const endpoint = CONFIG_ENDPOINTS.CLOSE_APPLICATION.replace(':applicationId', encodeURIComponent(applicationId));
+          const response = await apiFetch(endpoint, {
+            method: 'POST',
+            body: { reason, emailId }
+          });
+
+          try {
+            await refreshStoredEmailsCache();
+          } catch (e) {
+            bgLogger.warn?.('Failed to refresh stored emails after close-application:', e?.message);
+          }
+
+          sendResponse(response);
+        } catch (error) {
+          bgLogger.error('Error closing application:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'REOPEN_APPLICATION':
+        try {
+          const { applicationId, emailId } = msg || {};
+          if (!applicationId) {
+            sendResponse({ success: false, error: 'Application ID is required' });
+            break;
+          }
+
+          const endpoint = CONFIG_ENDPOINTS.REOPEN_APPLICATION.replace(':applicationId', encodeURIComponent(applicationId));
+          const response = await apiFetch(endpoint, {
+            method: 'POST',
+            body: { emailId }
+          });
+
+          try {
+            await refreshStoredEmailsCache();
+          } catch (e) {
+            bgLogger.warn?.('Failed to refresh stored emails after reopen-application:', e?.message);
+          }
+
+          sendResponse(response);
+        } catch (error) {
+          bgLogger.error('Error reopening application:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;

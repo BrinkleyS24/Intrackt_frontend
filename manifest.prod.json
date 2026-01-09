@@ -9,7 +9,7 @@
     "128": "icons/icon128.png"
   },
   "action": {
-    "default_popup": "popup/dist/index.html",
+    "default_popup": "popup/public/index.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -22,9 +22,9 @@
     "alarms"
   ],
   "host_permissions": [
-    "https://gmail-tracker-backend-215378038667.us-central1.run.app/",
-    "https://www.googleapis.com/",
-    "https://accounts.google.com/"
+    "https://gmail-tracker-backend-215378038667.us-central1.run.app/*",
+    "https://www.googleapis.com/*",
+    "https://accounts.google.com/*"
   ],
   "oauth2": {
     "client_id": "807157076800-qcgsknjcd45sigpufervigockvgnm06d.apps.googleusercontent.com",
@@ -37,10 +37,10 @@
     ]
   },
   "background": {
-    "service_worker": "popup/dist/background.js",
+    "service_worker": "background.js",
     "type": "module"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://*.googleapis.com https://gmail-tracker-backend-215378038667.us-central1.run.app https://securetoken.googleapis.com https://www.googleapis.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://gmail-tracker-backend-215378038667.us-central1.run.app https://*.googleapis.com https://www.googleapis.com https://accounts.google.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com;"
   }
 }

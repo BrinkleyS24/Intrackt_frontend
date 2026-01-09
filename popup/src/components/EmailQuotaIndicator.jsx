@@ -29,7 +29,7 @@ export function EmailQuotaIndicator({ userPlan, quotaData }) {
   }
 
   const progressColor = getProgressColor();
-  const totalLabel = quota.total === Infinity ? '∞' : quota.total;
+  const totalLabel = quota.total === Infinity ? 'Unlimited' : quota.total;
 
   return (
     <div className="p-3 bg-gray-50 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg shadow-sm space-y-3">
@@ -76,4 +76,3 @@ export function EmailQuotaIndicator({ userPlan, quotaData }) {
     </div>
   );
 }
-

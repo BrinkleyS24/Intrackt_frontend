@@ -5,7 +5,7 @@
  * of different views (Dashboard, Email List, Email Preview).
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import QuickView from './components/QuickView';
 import EmailList from './components/EmailList';
 import EmailPreview from './components/EmailPreview';
@@ -20,7 +20,7 @@ import { groupEmailsByThread } from './utils/grouping';
 import { getCategoryTitle } from './utils/uiHelpers';
 
 import { CONFIG } from './utils/constants';
-import { Briefcase } from 'lucide-react';
+import { Briefcase, Search, X } from 'lucide-react';
 
 const flattenCategorized = (categorized) => [
   ...(categorized?.applied || []),
@@ -29,6 +29,46 @@ const flattenCategorized = (categorized) => [
   ...(categorized?.rejected || []),
   ...(categorized?.irrelevant || []),
 ];
+
+const getPaginationLabel = (category) => {
+  const c = (category || '').toString().toLowerCase();
+  if (c === 'applied') return { singular: 'application', plural: 'applications', zero: 'No applications' };
+  if (c === 'interviewed') return { singular: 'application', plural: 'applications', zero: 'No applications' };
+  if (c === 'offers') return { singular: 'offer', plural: 'offers', zero: 'No offers' };
+  if (c === 'rejected') return { singular: 'rejection', plural: 'rejections', zero: 'No rejections' };
+  if (c === 'all') return { singular: 'conversation', plural: 'conversations', zero: 'No conversations' };
+  if (c === 'starred') return { singular: 'conversation', plural: 'conversations', zero: 'No conversations' };
+  return { singular: 'conversation', plural: 'conversations', zero: 'No conversations' };
+};
+
+// NOTE: This component must be defined at module scope (not inside App)
+// to avoid input focus loss from remounts during re-renders.
+const ListSearchBar = React.memo(function ListSearchBar({ value, onChange, placeholder }) {
+  return (
+    <div className="mt-3">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full pl-10 pr-10 py-2 text-sm border border-gray-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        {value && (
+          <button
+            onClick={() => onChange('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-zinc-200"
+            title="Clear search"
+            type="button"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});
 
 // Small app-scoped logger to centralize popup logs and make them easy to silence
 const appLogger = {
@@ -46,6 +86,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState(1);
   const [categoryBeforePreview, setCategoryBeforePreview] = useState('home');
   const [allApplicationsFilter, setAllApplicationsFilter] = useState('all'); // all|applied|interviewed|offers|rejected
+  const [listSearchQuery, setListSearchQuery] = useState('');
 
   const {
     userEmail,
@@ -197,6 +238,7 @@ function App() {
     setSelectedCategory(category);
     setSelectedEmail(null);
     setCurrentPage(1);
+    setListSearchQuery('');
     if (category === 'all') {
       setAllApplicationsFilter('all');
     }
@@ -206,6 +248,37 @@ function App() {
     } catch (e) {
       // ignore
     }
+  }, []);
+
+  const normalizedListSearchQuery = useMemo(() => (listSearchQuery || '').toString().trim().toLowerCase(), [listSearchQuery]);
+
+  const handleListSearchChange = useCallback((next) => {
+    setListSearchQuery(next);
+    setCurrentPage(1);
+  }, []);
+
+  const filterConversationGroups = useCallback((groups, query) => {
+    if (!query) return groups;
+    const q = query.toLowerCase();
+    return (groups || []).filter((g) => {
+      const latest = g?.latestEmail || {};
+      const haystack = [
+        g?.subject,
+        g?.from,
+        latest?.from,
+        latest?.sender,
+        latest?.company_name,
+        latest?.position,
+        latest?.body,
+        latest?.html_body,
+        g?.preview
+      ]
+        .filter(Boolean)
+        .map((v) => v.toString().toLowerCase())
+        .join(' ');
+
+      return haystack.includes(q);
+    });
   }, []);
 
   const handleEmailSelect = useCallback((email, group = null) => {
@@ -319,6 +392,7 @@ function App() {
                 selectedEmail={selectedEmail}
                 onEmailSelect={handleEmailSelect}
                 totalEmails={totalConversations}
+                totalMessages={groupedConversations.reduce((sum, conv) => sum + (conv.emails?.length || 0), 0)}
                 onMarkAllAsRead={markEmailsAsReadForCategory}
                 isMarkingAllAsRead={markingAllAsRead}
                 hasUnreadCategory={false}
@@ -330,6 +404,7 @@ function App() {
                   onPageChange={setCurrentPage}
                   totalEmails={totalConversations}
                   pageSize={CONFIG.PAGINATION.PAGE_SIZE}
+                  itemLabel={getPaginationLabel('starred')}
                 />
               )}
             </>
@@ -350,8 +425,9 @@ function App() {
             : categorizedEmails[allApplicationsFilter] || [];
 
         const groupedConversations = groupEmailsByThread(emailsAll);
-        const totalConversations = groupedConversations.length;
-        const paginatedConversations = groupedConversations.slice(
+        const filteredConversations = filterConversationGroups(groupedConversations, normalizedListSearchQuery);
+        const totalConversations = filteredConversations.length;
+        const paginatedConversations = filteredConversations.slice(
           (currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE,
           currentPage * CONFIG.PAGINATION.PAGE_SIZE
         );
@@ -370,39 +446,46 @@ function App() {
                   </button>
                  <div className="text-sm font-semibold text-gray-900 dark:text-white">{allPageTitle}</div>
                  <div className="w-12" />
+                </div>
+
+               <div className="mt-3 flex flex-wrap gap-2">
+                 {[
+                   { id: 'all', label: 'All' },
+                   { id: 'applied', label: 'Applied' },
+                   { id: 'interviewed', label: 'Interviews' },
+                   { id: 'offers', label: 'Offers' },
+                   { id: 'rejected', label: 'Rejected' },
+                 ].map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        setAllApplicationsFilter(t.id);
+                        handleListSearchChange('');
+                      }}
+                      className={
+                        allApplicationsFilter === t.id
+                          ? 'px-3 py-1.5 text-xs font-medium rounded-full bg-blue-600 text-white'
+                          : 'px-3 py-1.5 text-xs font-medium rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-700/40'
+                      }
+                    >
+                      {t.label}
+                    </button>
+                  ))}
                </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                {[
-                  { id: 'all', label: 'All' },
-                  { id: 'applied', label: 'Applied' },
-                  { id: 'interviewed', label: 'Interviews' },
-                  { id: 'offers', label: 'Offers' },
-                  { id: 'rejected', label: 'Rejected' },
-                ].map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => {
-                      setAllApplicationsFilter(t.id);
-                      setCurrentPage(1);
-                    }}
-                    className={
-                      allApplicationsFilter === t.id
-                        ? 'px-3 py-1.5 text-xs font-medium rounded-full bg-blue-600 text-white'
-                        : 'px-3 py-1.5 text-xs font-medium rounded-full bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-700/40'
-                    }
-                  >
-                    {t.label}
-                  </button>
-                ))}
+               <ListSearchBar
+                 value={listSearchQuery}
+                 onChange={handleListSearchChange}
+                 placeholder={`Search ${allPageTitle.toLowerCase()}...`}
+               />
               </div>
-            </div>
             <EmailList
               emails={paginatedEmails}
               category={allApplicationsFilter === 'all' ? 'all' : allApplicationsFilter}
               selectedEmail={selectedEmail}
               onEmailSelect={handleEmailSelect}
               totalEmails={totalConversations}
+              totalMessages={filteredConversations.reduce((sum, conv) => sum + (conv.emails?.length || 0), 0)}
               onMarkAllAsRead={allApplicationsFilter === 'all' ? undefined : markEmailsAsReadForCategory}
               isMarkingAllAsRead={markingAllAsRead}
               hasUnreadCategory={Boolean(
@@ -422,6 +505,7 @@ function App() {
                 onPageChange={setCurrentPage}
                 totalEmails={totalConversations}
                 pageSize={CONFIG.PAGINATION.PAGE_SIZE}
+                itemLabel={getPaginationLabel(allApplicationsFilter === 'all' ? 'all' : allApplicationsFilter)}
               />
             )}
           </>
@@ -431,8 +515,9 @@ function App() {
         {
           const emailsForCategory = categorizedEmails[selectedCategory] || [];
           const groupedConversations = groupEmailsByThread(emailsForCategory);
-          const totalConversations = groupedConversations.length;
-          const paginatedConversations = groupedConversations.slice(
+          const filteredConversations = filterConversationGroups(groupedConversations, normalizedListSearchQuery);
+          const totalConversations = filteredConversations.length;
+          const paginatedConversations = filteredConversations.slice(
             (currentPage - 1) * CONFIG.PAGINATION.PAGE_SIZE,
             currentPage * CONFIG.PAGINATION.PAGE_SIZE
           );
@@ -448,6 +533,11 @@ function App() {
                 >
                   Back
                 </button>
+                <ListSearchBar
+                  value={listSearchQuery}
+                  onChange={handleListSearchChange}
+                  placeholder={`Search ${getCategoryTitle(selectedCategory).toLowerCase()}...`}
+                />
               </div>
               <EmailList
                 emails={paginatedEmails}
@@ -455,6 +545,7 @@ function App() {
                 selectedEmail={selectedEmail}
                 onEmailSelect={handleEmailSelect}
                 totalEmails={totalConversations}
+                totalMessages={filteredConversations.reduce((sum, conv) => sum + (conv.emails?.length || 0), 0)}
                 onMarkAllAsRead={markEmailsAsReadForCategory}
                 isMarkingAllAsRead={markingAllAsRead}
                 hasUnreadCategory={Boolean(unreadCounts && unreadCounts[selectedCategory])}
@@ -466,6 +557,7 @@ function App() {
                   onPageChange={setCurrentPage}
                   totalEmails={totalConversations}
                   pageSize={CONFIG.PAGINATION.PAGE_SIZE}
+                  itemLabel={getPaginationLabel(selectedCategory)}
                 />
               )}
             </>
