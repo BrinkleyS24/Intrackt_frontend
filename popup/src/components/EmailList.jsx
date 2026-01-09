@@ -4,7 +4,7 @@
  * Mirrors the provided UI design.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCheck, Building2, Briefcase, TrendingUp } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { formatDate, getCategoryTitle } from '../utils/uiHelpers';
@@ -45,6 +45,17 @@ function EmailList({
 }) {
   const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'active', 'inactive'
   const [showMarkAllConfirm, setShowMarkAllConfirm] = useState(false);
+
+  // Prevent filter state from "sticking" when switching to categories that don't expose the filter UI.
+  useEffect(() => {
+    const c = (category || '').toString().toLowerCase();
+    const supportsActiveFilter = c === 'applied' || c === 'interviewed';
+    if (!supportsActiveFilter && activeFilter !== 'all') {
+      setActiveFilter('all');
+    }
+    // Also close any open confirmations when navigating between categories.
+    setShowMarkAllConfirm(false);
+  }, [category]);
   
   const categoryTitle = getCategoryTitle(category);
   // Category color mapping for badges and accents
