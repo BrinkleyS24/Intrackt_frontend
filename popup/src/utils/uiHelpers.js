@@ -11,10 +11,34 @@
  * @param {string} dateStr - The raw date string (e.g., ISO format).
  * @returns {string} The formatted date string (e.g., "Today", "Yesterday", "2 days ago", or "6/19/2024").
  */
+export function parseEmailDate(dateValue) {
+  if (dateValue == null) return null;
+  if (dateValue instanceof Date) return dateValue;
+
+  if (typeof dateValue === 'number' && Number.isFinite(dateValue)) {
+    const d = new Date(dateValue);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  const raw = String(dateValue).trim();
+  if (!raw) return null;
+
+  const hasTimezoneSuffix = /([zZ]|[+-]\d{2}:?\d{2})$/.test(raw);
+  const looksIsoNoTimezone =
+    /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw) && !hasTimezoneSuffix;
+
+  const normalized = looksIsoNoTimezone
+    ? `${raw.replace(' ', 'T')}Z`
+    : raw;
+
+  const d = new Date(normalized);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export function formatDate(dateStr) {
   if (!dateStr) return "N/A";
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) {
+  const date = parseEmailDate(dateStr);
+  if (!date) {
     console.warn("Invalid date string provided to formatDate:", dateStr);
     return "Invalid Date";
   }
@@ -148,7 +172,9 @@ export function getTimeSinceOldestPending(followUpSuggestions) {
   const pending = followUpSuggestions.filter(s => !s.followedUp && !s.responded);
   if (pending.length === 0) return "N/A";
 
-  const validTimestamps = pending.map(e => new Date(e.date).getTime()).filter(timestamp => !isNaN(timestamp));
+  const validTimestamps = pending
+    .map((e) => parseEmailDate(e.date)?.getTime())
+    .filter((timestamp) => typeof timestamp === 'number' && !Number.isNaN(timestamp));
   if (validTimestamps.length === 0) return "N/A";
 
   const oldestTimestamp = Math.min(...validTimestamps);

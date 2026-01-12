@@ -1231,19 +1231,17 @@ function Dashboard({
       return sorted[lo] * (1 - w) + sorted[hi] * w;
     };
 
-    const getCompanyDisplay = (e) =>
-      e.company_name_corrected ||
-      e.companyNameCorrected ||
-      e.company_name ||
-      e.companyName ||
-      e.company ||
-      'Unknown company';
+    const getCompanyDisplay = (e) => {
+      const candidates = [e?.company_name, e?.companyName, e?.company];
+      const found = candidates.find((v) => typeof v === 'string' && v.trim());
+      return found || 'Unknown company';
+    };
 
-    const getPositionDisplay = (e) =>
-      e.position_corrected ||
-      e.positionCorrected ||
-      e.position ||
-      'Unknown role';
+    const getPositionDisplay = (e) => {
+      const candidates = [e?.position, e?.job_title];
+      const found = candidates.find((v) => typeof v === 'string' && v.trim());
+      return found || 'Unknown role';
+    };
 
     const getKey = (e) =>
       e.application_id ||

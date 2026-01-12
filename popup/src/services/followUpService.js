@@ -15,7 +15,7 @@ export async function getFollowUpStateService() {
     const result = await chrome.storage.local.get({ followedUpMap: {}, respondedMap: {} });
     return result;
   } catch (error) {
-    console.error("❌ AppMailia AI: Error getting follow-up state from local storage:", error);
+    console.error("❌ ThreadHQ: Error getting follow-up state from local storage:", error);
     return { followedUpMap: {}, respondedMap: {} };
   }
 }
@@ -33,7 +33,7 @@ export async function markFollowedUpService(threadId) {
     await chrome.storage.local.set({ followedUpMap });
     return now;
   } catch (error) {
-    console.error("❌ AppMailia AI: Error marking followed up in local storage:", error);
+    console.error("❌ ThreadHQ: Error marking followed up in local storage:", error);
     throw error;
   }
 }
@@ -69,7 +69,7 @@ export async function updateRespondedStateService(threadId, isChecked, currentFo
     await chrome.storage.local.set({ respondedMap, followedUpMap });
     return { followedUpAt: followedUpMap[threadId] || null };
   } catch (error) {
-    console.error("❌ AppMailia AI: Error updating responded state in local storage:", error);
+    console.error("❌ ThreadHQ: Error updating responded state in local storage:", error);
     throw error;
   }
 }
@@ -81,7 +81,7 @@ export async function updateRespondedStateService(threadId, isChecked, currentFo
  */
 export async function fetchFollowUpSuggestionsService(userEmail) {
   if (!userEmail) {
-    console.warn("AppMailia AI: Cannot fetch follow-up suggestions - no user email.");
+    console.warn("ThreadHQ: Cannot fetch follow-up suggestions - no user email.");
     return [];
   }
   try {
@@ -92,11 +92,11 @@ export async function fetchFollowUpSuggestionsService(userEmail) {
     if (response.success && Array.isArray(response.suggestions)) {
       return response.suggestions;
     } else {
-      console.error("❌ AppMailia AI: Failed to fetch follow-up suggestions from background:", response.error);
+      console.error("❌ ThreadHQ: Failed to fetch follow-up suggestions from background:", response.error);
       return [];
     }
   } catch (error) {
-    console.error("❌ AppMailia AI: Error fetching follow-up suggestions:", error);
+    console.error("❌ ThreadHQ: Error fetching follow-up suggestions:", error);
     return [];
   }
 }

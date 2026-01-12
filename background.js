@@ -1,6 +1,6 @@
 /**
  * @file background.js
- * @description This script handles background tasks for the AppMailia AI extension,
+ * @description This script handles background tasks for the ThreadHQ extension,
  * including email synchronization, user authentication, and misclassification reporting.
  * It operates as a service worker, listening for alarms and messages from the popup.
  */
@@ -17,11 +17,122 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 // --- Constants ---
-const SYNC_INTERVAL_MINUTES = 15; // How often to sync emails
+const SYNC_INTERVAL_MINUTES = 5; // How often to sync emails
 const UNDO_TIMEOUT_MS = 10000; // 10 seconds for undo toast
 // Watchdog to detect unusually long-running sync locks
 const STUCK_LOCK_THRESHOLD_MIN = 15; // minutes a sync may run before considered stuck
 const WATCHDOG_INTERVAL_MIN = 5; // how often to check for stuck syncs
+
+// --- OS Notifications (service worker) ---
+// These notifications show even when the popup UI is closed, as long as Chrome is running.
+const NOTIFICATIONS_ENABLED_KEY = 'appmailiaNotificationsEnabledV1';
+const NOTIFICATIONS_INITIALIZED_KEY = 'appmailiaNotificationsInitializedV1';
+
+const CATEGORY_NOTIFICATION_META = {
+  applied: { title: 'Application tracked', plural: 'applications', badgeColor: [37, 99, 235, 255] },
+  interviewed: { title: 'Interview detected', plural: 'interviews', badgeColor: [202, 138, 4, 255] },
+  offers: { title: 'Offer detected', plural: 'offers', badgeColor: [22, 163, 74, 255] },
+  rejected: { title: 'Rejection detected', plural: 'rejections', badgeColor: [220, 38, 38, 255] },
+};
+
+function normalizeCategoryKey(value) {
+  return (value || '').toString().trim().toLowerCase();
+}
+
+function flattenCategorizedEmails(categorizedEmails) {
+  if (!categorizedEmails) return [];
+  return [
+    ...(categorizedEmails.applied || []),
+    ...(categorizedEmails.interviewed || []),
+    ...(categorizedEmails.offers || []),
+    ...(categorizedEmails.rejected || []),
+  ];
+}
+
+async function maybeNotifyNewEmails(prevCategorizedEmails, nextCategorizedEmails, syncInProgress) {
+  // Avoid spamming while a long sync is still running; notify only on completion/manual refresh.
+  if (syncInProgress === true) return;
+
+  let enabled = true;
+  let initialized = false;
+  try {
+    const state = await chrome.storage.local.get([NOTIFICATIONS_ENABLED_KEY, NOTIFICATIONS_INITIALIZED_KEY]);
+    if (typeof state?.[NOTIFICATIONS_ENABLED_KEY] === 'boolean') enabled = state[NOTIFICATIONS_ENABLED_KEY];
+    initialized = !!state?.[NOTIFICATIONS_INITIALIZED_KEY];
+  } catch (_) {
+    // ignore
+  }
+  if (!enabled) return;
+
+  // One-time initialization: establish a baseline so existing stored emails don't trigger a burst of notifications.
+  if (!initialized) {
+    try {
+      await chrome.storage.local.set({ [NOTIFICATIONS_INITIALIZED_KEY]: true });
+    } catch (_) {
+      // ignore
+    }
+    return;
+  }
+
+  const prevIds = new Set(flattenCategorizedEmails(prevCategorizedEmails).map((e) => e?.id).filter(Boolean));
+  const nextAll = flattenCategorizedEmails(nextCategorizedEmails);
+  const brandNew = nextAll.filter((e) => e?.id && !prevIds.has(e.id));
+  if (brandNew.length === 0) return;
+
+  const byCategory = { applied: [], interviewed: [], offers: [], rejected: [] };
+  for (const email of brandNew) {
+    const cat = normalizeCategoryKey(email.category);
+    if (byCategory[cat]) byCategory[cat].push(email);
+  }
+
+  // Determine the "highest" severity category for badge coloring.
+  const severity = { applied: 1, interviewed: 2, offers: 3, rejected: 3 };
+  let topCategory = 'applied';
+  for (const [cat, list] of Object.entries(byCategory)) {
+    if (list.length === 0) continue;
+    if ((severity[cat] || 0) > (severity[topCategory] || 0)) topCategory = cat;
+  }
+
+  for (const [cat, list] of Object.entries(byCategory)) {
+    if (!list || list.length === 0) continue;
+    const meta = CATEGORY_NOTIFICATION_META[cat] || { title: 'Update detected', plural: 'updates' };
+    const sorted = [...list].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const sample = sorted[0] || {};
+    const company = (sample.company_name || sample.company || 'Unknown company').toString();
+    const position = (sample.position || sample.job_title || 'Unknown role').toString();
+
+    const title = meta.title;
+    const message =
+      list.length === 1
+        ? `${company} — ${position}`
+        : `${list.length} new ${meta.plural}. Latest: ${company} — ${position}`;
+
+    try {
+      chrome.notifications.create(`appmailia_${cat}_${sample.id || Date.now()}`, {
+        type: 'basic',
+        iconUrl: 'icons/icon128.png',
+        title,
+        message,
+        priority: 1,
+      });
+    } catch (e) {
+      bgLogger.warn('Failed to create notification:', e?.message);
+    }
+  }
+
+  // Optional: show a small badge count as a secondary, color-coded signal.
+  try {
+    if (chrome.action?.setBadgeText) {
+      chrome.action.setBadgeText({ text: String(brandNew.length) });
+      const color = CATEGORY_NOTIFICATION_META[topCategory]?.badgeColor;
+      if (color && chrome.action?.setBadgeBackgroundColor) {
+        chrome.action.setBadgeBackgroundColor({ color });
+      }
+    }
+  } catch (_) {
+    // ignore
+  }
+}
 
 // Define your backend endpoints.
 const CONFIG_ENDPOINTS = {
@@ -31,6 +142,7 @@ const CONFIG_ENDPOINTS = {
   AUTH_TOKEN: '/api/auth/token',
   SYNC_EMAILS: '/api/emails',
   FETCH_STORED_EMAILS: '/api/emails/stored-emails', // This endpoint is not used by background script directly for fetching
+  REPAIR_APPLICATION_LINKS: '/api/emails/applications/:applicationId/repair-links',
   FOLLOWUP_NEEDED: '/api/emails/followup-needed',
   SYNC_STATUS: '/api/emails/sync-status',
   // Backfill endpoints removed
@@ -122,7 +234,7 @@ async function apiFetch(endpoint, options = {}) {
       bgLogger.error("Failed to get fresh Firebase ID token:", error);
       
       if (error.code === 'auth/user-token-expired' || error.code === 'auth/invalid-user-token') {
-        console.warn("AppMailia AI: Unrecoverable auth token error. Forcing user logout.");
+        console.warn("ThreadHQ: Unrecoverable auth token error. Forcing user logout.");
 
         await signOut(auth);
 
@@ -161,7 +273,7 @@ async function apiFetch(endpoint, options = {}) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`❌ AppMailia AI: API Error ${response.status} from ${url}:`, errorText);
+      console.error(`❌ ThreadHQ: API Error ${response.status} from ${url}:`, errorText);
       
       // Try to parse error as JSON to preserve errorCode and other fields
       try {
@@ -191,7 +303,7 @@ async function apiFetch(endpoint, options = {}) {
     if (error.errorCode || error.requiresReauth) {
       return error;
     }
-    console.error(`❌ AppMailia AI: Network or parsing error for ${url}:`, error);
+    console.error(`❌ ThreadHQ: Network or parsing error for ${url}:`, error);
     throw new Error(`Network or server error: ${error.message}`);
   }
 }
@@ -201,9 +313,28 @@ async function apiFetch(endpoint, options = {}) {
  */
 async function refreshStoredEmailsCache(syncInProgress = undefined) {
   try {
+    // Snapshot prior cache before fetching so we can detect newly-added emails.
+    let previousCache = null;
+    try {
+      const prev = await chrome.storage.local.get([
+        'appliedEmails',
+        'interviewedEmails',
+        'offersEmails',
+        'rejectedEmails',
+      ]);
+      previousCache = {
+        applied: prev.appliedEmails || [],
+        interviewed: prev.interviewedEmails || [],
+        offers: prev.offersEmails || [],
+        rejected: prev.rejectedEmails || [],
+      };
+    } catch (_) {
+      previousCache = null;
+    }
+
     const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, { 
       method: 'POST',
-      body: { limit: 999 } // CRITICAL FIX: Fetch all emails, not just default 50
+      body: { limit: 5000 } // Premium users may have deeper history; backend clamps per-plan.
     });
     if (response.success && response.categorizedEmails) {
       // One-time backfill: older stored emails may not have been linked into `email_applications` yet,
@@ -224,7 +355,12 @@ async function refreshStoredEmailsCache(syncInProgress = undefined) {
           ...(response.categorizedEmails.rejected || []),
         ];
 
-        const needsLinking = allRelevant.some(e => !e.applicationId && e.company_name && e.position);
+        const needsLinking = allRelevant.some(e => {
+          if (e?.applicationId) return false;
+          const company = e?.company_name;
+          const position = e?.position;
+          return !!(company && position);
+        });
         if (!needsLinking) {
           try {
             await chrome.storage.local.set({ [APP_LINK_BACKFILL_KEY]: true });
@@ -259,11 +395,17 @@ async function refreshStoredEmailsCache(syncInProgress = undefined) {
         // Refetch once so cached emails include `applicationId` and updated `isClosed`.
         const refreshed = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, {
           method: 'POST',
-          body: { limit: 999 }
+          body: { limit: 5000 }
         });
         if (refreshed.success && refreshed.categorizedEmails) {
           response.categorizedEmails = refreshed.categorizedEmails;
         }
+      }
+
+      try {
+        await maybeNotifyNewEmails(previousCache, response.categorizedEmails, syncInProgress);
+      } catch (e) {
+        bgLogger.warn('Notification check failed:', e?.message);
       }
 
       await chrome.storage.local.set({
@@ -281,7 +423,7 @@ async function refreshStoredEmailsCache(syncInProgress = undefined) {
       });
     }
   } catch (e) {
-    console.warn('AppMailia AI Background: refreshStoredEmailsCache failed:', e?.message);
+    console.warn('ThreadHQ Background: refreshStoredEmailsCache failed:', e?.message);
   }
 }
 
@@ -305,7 +447,7 @@ async function pollSyncStatusAndRefresh(maxSeconds = 60, intervalMs = 10000) {
         }
       }
     } catch (e) {
-      console.warn('AppMailia AI Background: sync-status polling error:', e?.message);
+      console.warn('ThreadHQ Background: sync-status polling error:', e?.message);
     }
     await new Promise(r => setTimeout(r, intervalMs));
   }
@@ -342,7 +484,7 @@ async function checkSyncWatchdog() {
       });
     }
   } catch (e) {
-    console.warn('AppMailia AI Background: watchdog check failed:', e?.message);
+    console.warn('ThreadHQ Background: watchdog check failed:', e?.message);
   }
 }
 
@@ -378,7 +520,7 @@ async function sendGmailReply(threadId, to, subject, body, userEmail, userId) { 
 async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
   // Ensure userEmail and userId are provided before making the API call
   if (!userEmail || !userId) {
-    console.error('❌ AppMailia AI Background: Cannot trigger email sync, userEmail or userId is missing.');
+    console.error('❌ ThreadHQ Background: Cannot trigger email sync, userEmail or userId is missing.');
     return { success: false, error: 'User email or ID missing for sync.' };
   }
 
@@ -405,6 +547,25 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
   lastSyncStartTs = Date.now();
 
   try {
+    // Snapshot prior cache before syncing so we can detect newly-added emails and notify on completion.
+    let previousCache = null;
+    try {
+      const prev = await chrome.storage.local.get([
+        'appliedEmails',
+        'interviewedEmails',
+        'offersEmails',
+        'rejectedEmails',
+      ]);
+      previousCache = {
+        applied: prev.appliedEmails || [],
+        interviewed: prev.interviewedEmails || [],
+        offers: prev.offersEmails || [],
+        rejected: prev.rejectedEmails || [],
+      };
+    } catch (_) {
+      previousCache = null;
+    }
+
     const response = await apiFetch(CONFIG_ENDPOINTS.SYNC_EMAILS, {
       method: 'POST',
     body: { userEmail, userId, fullRefresh, email: userEmail }
@@ -429,6 +590,11 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
       // CRITICAL FIX: Only update chrome.storage if sync is NOT in progress
       // This prevents overwriting fresh local data with stale database data
       if (!response.sync?.inProgress) {
+        try {
+          await maybeNotifyNewEmails(previousCache, response.categorizedEmails, false);
+        } catch (e) {
+          bgLogger.warn('Notification check failed:', e?.message);
+        }
         
         // Save categorized emails to chrome.storage.local
         await chrome.storage.local.set({
@@ -488,13 +654,13 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
 
       // If backend indicates a background sync is in progress, start polling without blocking
       if (response.sync?.inProgress) {
-        pollSyncStatusAndRefresh().catch(e => console.warn('AppMailia AI Background: polling failed:', e?.message));
+        pollSyncStatusAndRefresh().catch(e => console.warn('ThreadHQ Background: polling failed:', e?.message));
       }
       return { success: true, categorizedEmails: response.categorizedEmails, quota: response.quota };
     } else {
       // Check if this is a scope or auth error requiring re-authentication
       if (response.errorCode === 'INSUFFICIENT_SCOPES' || response.errorCode === 'INVALID_GRANT' || response.requiresReauth) {
-        console.error('❌ AppMailia AI Background: Auth error - user needs to re-authenticate:', response.errorCode);
+        console.error('❌ ThreadHQ Background: Auth error - user needs to re-authenticate:', response.errorCode);
         
         // Send appropriate message type based on error
         const messageType = response.errorCode === 'INVALID_GRANT' ? 'AUTH_ERROR' : 'SCOPE_ERROR';
@@ -513,11 +679,11 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         return { success: false, error: response.error, errorCode: response.errorCode || 'INSUFFICIENT_SCOPES', requiresReauth: true };
       }
       
-      console.error('❌ AppMailia AI Background: Backend sync failed or returned no emails:', response.error);
+      console.error('❌ ThreadHQ Background: Backend sync failed or returned no emails:', response.error);
       return { success: false, error: response.error || "Backend sync failed or returned no emails." };
     }
   } catch (error) {
-    console.error('❌ AppMailia AI Background: Error during email sync:', error);
+    console.error('❌ ThreadHQ Background: Error during email sync:', error);
     
     // Check if the error response has scope/auth error information
     if (error.errorCode === 'INSUFFICIENT_SCOPES' || error.errorCode === 'INVALID_GRANT' || error.requiresReauth) {
@@ -607,7 +773,7 @@ async function monitorPaymentFlow(tabId, userEmail, userId) {
           resolve({ success: true, sessionCompleted: true, plan: 'premium' });
         }
       } catch (error) {
-        console.warn('⚠️ AppMailia AI Background: Error checking subscription status during payment flow:', error);
+        console.warn('⚠️ ThreadHQ Background: Error checking subscription status during payment flow:', error);
       }
     }, 3000); // Check every 3 seconds
 
@@ -650,7 +816,7 @@ async function refreshSubscriptionStatus(userEmail, userId) {
       });
     }
   } catch (error) {
-    console.error('❌ AppMailia AI Background: Error refreshing subscription status:', error);
+    console.error('❌ ThreadHQ Background: Error refreshing subscription status:', error);
   }
 }
 
@@ -677,7 +843,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // For any message type *other than* LOGIN_GOOGLE_OAUTH, we expect user info to be present.
     // If not, we respond with an error.
     if (!isUserAuthenticated && !hasCachedUserInfo && msg.type !== 'LOGIN_GOOGLE_OAUTH') {
-      console.warn(`AppMailia AI Background: User not authenticated or user info not cached for message type: ${msg.type}.`);
+      console.warn(`ThreadHQ Background: User not authenticated or user info not cached for message type: ${msg.type}.`);
       sendResponse({ success: false, error: "User not authenticated or user info not available." });
       return;
     }
@@ -747,7 +913,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse({ success: true, userEmail: user.email, userName: tokenResponse.userName, userPlan: tokenResponse.userPlan, userId: user.uid });
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error during Google OAuth login:', error);
+          console.error('❌ ThreadHQ Background: Error during Google OAuth login:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -759,7 +925,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // onAuthStateChanged listener will handle clearing storage.
           sendResponse({ success: true });
         } catch (error) {
-          console.error("❌ AppMailia AI Background: Error during logout:", error);
+          console.error("❌ ThreadHQ Background: Error during logout:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -777,7 +943,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error fetching user plan:', error);
+          console.error('❌ ThreadHQ Background: Error fetching user plan:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -802,14 +968,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse(response);
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error updating user plan:', error);
+          console.error('❌ ThreadHQ Background: Error updating user plan:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
 
       case 'FETCH_STORED_EMAILS':
         // This message is now primarily handled by the popup reading directly from chrome.storage.local.
-        console.warn("AppMailia AI Background: Received FETCH_STORED_EMAILS, but popup should read directly from local storage.");
+        console.warn("ThreadHQ Background: Received FETCH_STORED_EMAILS, but popup should read directly from local storage.");
         sendResponse({ success: true, message: "Handled by popup's direct storage access." });
         break;
 
@@ -819,7 +985,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const syncResult = await triggerEmailSync(currentUserEmail, currentUserId, msg.fullRefresh);
           sendResponse(syncResult); // Send back { success: true, categorizedEmails: {...}, quota: {...} }
         } catch (error) {
-          console.error("❌ AppMailia AI Background: Error fetching new emails:", error);
+          console.error("❌ ThreadHQ Background: Error fetching new emails:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -839,7 +1005,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: response.error || 'Quota data not found in response.' });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error fetching quota data:', error);
+          console.error('❌ ThreadHQ Background: Error fetching quota data:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -857,7 +1023,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: response.error || 'Follow-up suggestions not found.' });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error fetching follow-up suggestions:', error);
+          console.error('❌ ThreadHQ Background: Error fetching follow-up suggestions:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -883,7 +1049,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse(response);
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error marking suggestion action:', error);
+          console.error('❌ ThreadHQ Background: Error marking suggestion action:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -902,7 +1068,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           sendResponse(response);
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error snoozing suggestion:', error);
+          console.error('❌ ThreadHQ Background: Error snoozing suggestion:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -920,7 +1086,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           sendResponse(response);
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error undoing suggestion action:', error);
+          console.error('❌ ThreadHQ Background: Error undoing suggestion action:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -936,7 +1102,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: sendResult.error, needsReauth: sendResult.needsReauth });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error sending email reply:', error);
+          console.error('❌ ThreadHQ Background: Error sending email reply:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -952,7 +1118,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse(response);
         } catch (error) {
-          console.error("❌ AppMailia AI Background: Error archiving email:", error);
+          console.error("❌ ThreadHQ Background: Error archiving email:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -987,7 +1153,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse(response);
         } catch (error) {
-          console.error("❌ AppMailia AI Background: Error reporting misclassification:", error);
+          console.error("❌ ThreadHQ Background: Error reporting misclassification:", error);
           // Notify popup of network/communication error
           chrome.runtime.sendMessage({
             type: 'SHOW_NOTIFICATION',
@@ -1028,7 +1194,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse(response);
         } catch (error) {
-          console.error("❌ AppMailia AI Background: Error undoing misclassification:", error);
+          console.error("❌ ThreadHQ Background: Error undoing misclassification:", error);
           // Notify popup of network/communication error
           chrome.runtime.sendMessage({
             type: 'SHOW_NOTIFICATION',
@@ -1060,7 +1226,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(response);
 
         } catch (error) {
-          console.error("❌ AppMailia AI Background: Error in MARK_SINGLE_EMAIL_AS_READ:", error);
+          console.error("❌ ThreadHQ Background: Error in MARK_SINGLE_EMAIL_AS_READ:", error);
           const message = error?.message || 'Unknown error';
           // Provide a clearer signal for auth issues so UI can prompt login
           if (message.includes('401') || message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('session expired')) {
@@ -1088,7 +1254,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               body: { category: capitalizeFirst(category) }
             });
           } catch (persistErr) {
-            console.warn('AppMailia AI Background: Backend mark-as-read-category failed, aborting local update:', persistErr?.message);
+            console.warn('ThreadHQ Background: Backend mark-as-read-category failed, aborting local update:', persistErr?.message);
             sendResponse({ success: false, error: persistErr.message });
             return;
           }
@@ -1109,11 +1275,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           // Save updated emails back to local storage
           await chrome.storage.local.set({ [`${category}Emails`]: updatedCategoryEmails });
-          console.log(`✅ AppMailia AI Background: Marked emails in category '${category}' as read in local storage.`);
+          console.log(`✅ ThreadHQ Background: Marked emails in category '${category}' as read in local storage.`);
 
           sendResponse({ success: true, message: `Emails in ${category} marked as read.` });
         } catch (error) {
-          console.error("❌ AppMailia AI Background: Error marking emails as read:", error);
+          console.error("❌ ThreadHQ Background: Error marking emails as read:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1160,7 +1326,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse(response);
         } catch (error) {
-          console.error("❌ AppMailia AI Background: Error updating company name:", error);
+          console.error("❌ ThreadHQ Background: Error updating company name:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1180,7 +1346,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse(response);
         } catch (error) {
-          console.error("❌ AppMailia AI Background: Error fetching correction analytics:", error);
+          console.error("❌ ThreadHQ Background: Error fetching correction analytics:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1227,7 +1393,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse(response);
         } catch (error) {
-          console.error("❌ AppMailia AI Background: Error updating position:", error);
+          console.error("❌ ThreadHQ Background: Error updating position:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1248,7 +1414,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, user: null });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error getting current user:', error);
+          console.error('❌ ThreadHQ Background: Error getting current user:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1361,6 +1527,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
+      case 'REPAIR_APPLICATION_LINKS':
+        try {
+          const { applicationId } = msg || {};
+          if (!applicationId) {
+            sendResponse({ success: false, error: 'Application ID is required' });
+            break;
+          }
+
+          const endpoint = CONFIG_ENDPOINTS.REPAIR_APPLICATION_LINKS.replace(':applicationId', encodeURIComponent(applicationId));
+          const response = await apiFetch(endpoint, { method: 'POST' });
+
+          try {
+            await refreshStoredEmailsCache();
+          } catch (e) {
+            bgLogger.warn?.('Failed to refresh stored emails after repair-links:', e?.message);
+          }
+
+          sendResponse(response);
+        } catch (error) {
+          bgLogger.error('Error repairing application links:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
       case 'GET_ID_TOKEN':
         try {
           const user = auth.currentUser;
@@ -1371,7 +1561,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: 'User not authenticated' });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error getting ID token:', error);
+          console.error('❌ ThreadHQ Background: Error getting ID token:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1379,7 +1569,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case '__DISABLED_PAYMENT_SUCCESS__':
         try {
           // Add a delay to allow webhook processing to complete
-          console.log('🔄 AppMailia AI Background: Waiting 3 seconds for webhook processing...');
+          console.log('🔄 ThreadHQ Background: Waiting 3 seconds for webhook processing...');
           await new Promise(resolve => setTimeout(resolve, 3000));
           
           // Refresh user plan data after successful payment
@@ -1390,14 +1580,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           
           if (response.success) {
             await chrome.storage.local.set({ userPlan: response.plan });
-            console.log('✅ AppMailia AI Background: User plan refreshed after payment:', response.plan);
+            console.log('✅ ThreadHQ Background: User plan refreshed after payment:', response.plan);
             sendResponse({ success: true, plan: response.plan });
           } else {
-            console.error('❌ AppMailia AI Background: Failed to refresh user plan after payment:', response.error);
+            console.error('❌ ThreadHQ Background: Failed to refresh user plan after payment:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error refreshing user plan after payment:', error);
+          console.error('❌ ThreadHQ Background: Error refreshing user plan after payment:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1411,14 +1601,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log('✅ AppMailia AI Background: Payment status checked:', response.plan);
+            console.log('✅ ThreadHQ Background: Payment status checked:', response.plan);
             sendResponse({ success: true, plan: response.plan });
           } else {
-            console.error('❌ AppMailia AI Background: Failed to check payment status:', response.error);
+            console.error('❌ ThreadHQ Background: Failed to check payment status:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error checking payment status:', error);
+          console.error('❌ ThreadHQ Background: Error checking payment status:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1431,14 +1621,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log('✅ AppMailia AI Background: Subscription status checked:', response.subscription);
+            console.log('✅ ThreadHQ Background: Subscription status checked:', response.subscription);
             sendResponse({ success: true, subscription: response.subscription });
           } else {
-            console.error('❌ AppMailia AI Background: Failed to check subscription status:', response.error);
+            console.error('❌ ThreadHQ Background: Failed to check subscription status:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error checking subscription status:', error);
+          console.error('❌ ThreadHQ Background: Error checking subscription status:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1452,14 +1642,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log('✅ AppMailia AI Background: Checkout session created:', response.url);
+            console.log('✅ ThreadHQ Background: Checkout session created:', response.url);
             sendResponse({ success: true, url: response.url });
           } else {
-            console.error('❌ AppMailia AI Background: Failed to create checkout session:', response.error);
+            console.error('❌ ThreadHQ Background: Failed to create checkout session:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error creating checkout session:', error);
+          console.error('❌ ThreadHQ Background: Error creating checkout session:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1472,14 +1662,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log('✅ AppMailia AI Background: Setup intent created:', response.client_secret);
+            console.log('✅ ThreadHQ Background: Setup intent created:', response.client_secret);
             sendResponse({ success: true, client_secret: response.client_secret });
           } else {
-            console.error('❌ AppMailia AI Background: Failed to create setup intent:', response.error);
+            console.error('❌ ThreadHQ Background: Failed to create setup intent:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error creating setup intent:', error);
+          console.error('❌ ThreadHQ Background: Error creating setup intent:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1487,7 +1677,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case '__DISABLED_OPEN_CUSTOMER_PORTAL__':
         try {
           const { return_url } = msg;
-          console.log('🎫 AppMailia AI Background: Creating customer portal session');
+          console.log('🎫 ThreadHQ Background: Creating customer portal session');
           
           const response = await apiFetch('/api/subscriptions/create-portal-session', {
             method: 'POST',
@@ -1497,7 +1687,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success && response.url) {
-            console.log('✅ AppMailia AI Background: Portal session created');
+            console.log('✅ ThreadHQ Background: Portal session created');
             
             // Open portal in new tab
             const tab = await chrome.tabs.create({
@@ -1505,14 +1695,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               active: true
             });
             
-            console.log('🪟 AppMailia AI Background: Portal opened in tab:', tab.id);
+            console.log('🪟 ThreadHQ Background: Portal opened in tab:', tab.id);
             sendResponse({ success: true, tabId: tab.id });
           } else {
-            console.error('❌ AppMailia AI Background: Failed to create portal session:', response.error);
+            console.error('❌ ThreadHQ Background: Failed to create portal session:', response.error);
             sendResponse({ success: false, error: response.error || 'Failed to create portal session' });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error creating portal session:', error);
+          console.error('❌ ThreadHQ Background: Error creating portal session:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1520,7 +1710,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case '__DISABLED_OPEN_PAYMENT_WINDOW__':
         try {
           const { url } = msg;
-          console.log('🪟 AppMailia AI Background: Opening payment window:', url);
+          console.log('🪟 ThreadHQ Background: Opening payment window:', url);
           
           // Open Stripe checkout in a new tab
           const tab = await chrome.tabs.create({
@@ -1532,55 +1722,55 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const paymentResult = await monitorPaymentFlow(tab.id, currentUserEmail, currentUserId);
           sendResponse(paymentResult);
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error opening payment window:', error);
+          console.error('❌ ThreadHQ Background: Error opening payment window:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
 
       case '__DISABLED_OPEN_PORTAL_WINDOW__':
         // Portal functionality removed - using fully in-extension approach
-        console.log('⚠️ AppMailia AI Background: Portal window opening removed - using in-extension approach');
+        console.log('⚠️ ThreadHQ Background: Portal window opening removed - using in-extension approach');
         sendResponse({ success: false, error: 'Portal functionality removed for fully in-extension approach' });
         break;
 
       case '__DISABLED_CANCEL_SUBSCRIPTION__':
         try {
-          console.log('🗑️ AppMailia AI Background: Canceling subscription');
+          console.log('🗑️ ThreadHQ Background: Canceling subscription');
           
           const response = await apiFetch('/api/subscriptions/cancel', {
             method: 'POST'
           });
           
           if (response.success) {
-            console.log('✅ AppMailia AI Background: Subscription canceled successfully');
+            console.log('✅ ThreadHQ Background: Subscription canceled successfully');
             sendResponse({ success: true, subscription: response.subscription });
           } else {
-            console.error('❌ AppMailia AI Background: Failed to cancel subscription:', response.error);
+            console.error('❌ ThreadHQ Background: Failed to cancel subscription:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error canceling subscription:', error);
+          console.error('❌ ThreadHQ Background: Error canceling subscription:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
 
       case '__DISABLED_RESUME_SUBSCRIPTION__':
         try {
-          console.log('🔄 AppMailia AI Background: Resuming subscription');
+          console.log('🔄 ThreadHQ Background: Resuming subscription');
           
           const response = await apiFetch('/api/subscriptions/resume', {
             method: 'POST'
           });
           
           if (response.success) {
-            console.log('✅ AppMailia AI Background: Subscription resumed successfully');
+            console.log('✅ ThreadHQ Background: Subscription resumed successfully');
             sendResponse({ success: true, subscription: response.subscription });
           } else {
-            console.error('❌ AppMailia AI Background: Failed to resume subscription:', response.error);
+            console.error('❌ ThreadHQ Background: Failed to resume subscription:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error resuming subscription:', error);
+          console.error('❌ ThreadHQ Background: Error resuming subscription:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1594,7 +1784,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             return;
           }
 
-          console.log('🔍 AppMailia AI Background: Searching emails with query:', query);
+          console.log('🔍 ThreadHQ Background: Searching emails with query:', query);
           
           const response = await apiFetch('/api/emails/search', {
             method: 'GET',
@@ -1602,7 +1792,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log('✅ AppMailia AI Background: Search completed, found', response.totalResults, 'results');
+            console.log('✅ ThreadHQ Background: Search completed, found', response.totalResults, 'results');
             sendResponse({ 
               success: true, 
               applications: response.applications,
@@ -1610,11 +1800,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               query: response.query
             });
           } else {
-            console.error('❌ AppMailia AI Background: Search failed:', response.error);
+            console.error('❌ ThreadHQ Background: Search failed:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error searching emails:', error);
+          console.error('❌ ThreadHQ Background: Error searching emails:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1628,7 +1818,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             return;
           }
 
-          console.log(`⭐ AppMailia AI Background: ${isStarred ? 'Starring' : 'Unstarring'} email ${emailId}`);
+          console.log(`⭐ ThreadHQ Background: ${isStarred ? 'Starring' : 'Unstarring'} email ${emailId}`);
           
           const response = await apiFetch(`/api/emails/${emailId}/star`, {
             method: 'POST',
@@ -1636,7 +1826,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log(`✅ AppMailia AI Background: Email ${isStarred ? 'starred' : 'unstarred'} successfully`);
+            console.log(`✅ ThreadHQ Background: Email ${isStarred ? 'starred' : 'unstarred'} successfully`);
             
             // Update local storage to reflect star change
             const storage = await chrome.storage.local.get([
@@ -1671,20 +1861,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               emailId: response.emailId
             });
           } else if (response.premiumOnly) {
-            console.log('⚠️ AppMailia AI Background: Premium subscription required to star emails');
+            console.log('⚠️ ThreadHQ Background: Premium subscription required to star emails');
             sendResponse({ success: false, error: response.error, premiumOnly: true });
           } else {
-            console.error('❌ AppMailia AI Background: Star toggle failed:', response.error);
+            console.error('❌ ThreadHQ Background: Star toggle failed:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ AppMailia AI Background: Error toggling star:', error);
+          console.error('❌ ThreadHQ Background: Error toggling star:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
 
       default:
-        console.warn('AppMailia AI: Unhandled message type:', msg.type);
+        console.warn('ThreadHQ: Unhandled message type:', msg.type);
         sendResponse({ success: false, error: 'Unhandled message type.' });
     }
   })(); // End of async IIFE
@@ -1697,13 +1887,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // --- Configure Firebase Auth Persistence ---
 setPersistence(auth, indexedDBLocalPersistence)
   .then(() => {
-    console.log("✅ AppMailia AI Background: Firebase Auth persistence set to IndexedDB.");
+    console.log("✅ ThreadHQ Background: Firebase Auth persistence set to IndexedDB.");
     onAuthStateChanged(auth, async (user) => {
       // Resolve the authReadyPromise once the initial auth state is determined
       authReadyResolve();
 
       if (user) {
-        console.log("✅ AppMailia AI Background: Auth State Changed - User logged in:", user.email, "UID:", user.uid);
+        console.log("✅ ThreadHQ Background: Auth State Changed - User logged in:", user.email, "UID:", user.uid);
         // Ensure userEmail and userId are immediately available in local storage
         await chrome.storage.local.set({
           userEmail: user.email,
@@ -1720,12 +1910,12 @@ setPersistence(auth, indexedDBLocalPersistence)
             });
             if (response.success) {
               await chrome.storage.local.set({ userPlan: response.plan });
-              console.log("✅ AppMailia AI Background: User plan fetched and stored:", response.plan);
+              console.log("✅ ThreadHQ Background: User plan fetched and stored:", response.plan);
             } else {
-              console.error("❌ AppMailia AI Background: Failed to fetch user plan during auth state change:", response.error);
+              console.error("❌ ThreadHQ Background: Failed to fetch user plan during auth state change:", response.error);
             }
           } catch (error) {
-            console.error("❌ AppMailia AI Background: Network/communication error fetching user plan during auth state change:", error);
+            console.error("❌ ThreadHQ Background: Network/communication error fetching user plan during auth state change:", error);
           }
           // After a user logs in (or re-authenticates), decide whether to do a full refresh
           // If last sync is stale (> 24h) or unknown, force full refresh to catch up
@@ -1742,10 +1932,10 @@ setPersistence(auth, indexedDBLocalPersistence)
           }
           await triggerEmailSync(user.email, user.uid, shouldFull);
         } else {
-          console.log("AppMailia AI Background: Anonymous user detected. Not fetching plan or syncing emails.");
+          console.log("ThreadHQ Background: Anonymous user detected. Not fetching plan or syncing emails.");
         }
       } else {
-        console.log("✅ AppMailia AI Background: Auth State Changed - User logged out.");
+        console.log("✅ ThreadHQ Background: Auth State Changed - User logged out.");
         await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']); // Clear all cached data on logout
       }
       // Notify the popup that auth state is ready (after all initial processing)
@@ -1753,21 +1943,21 @@ setPersistence(auth, indexedDBLocalPersistence)
     });
   })
   .catch((error) => {
-    console.error("❌ AppMailia AI Background: Error setting Firebase Auth persistence:", error);
+    console.error("❌ ThreadHQ Background: Error setting Firebase Auth persistence:", error);
     // Even if persistence fails, still listen for auth state changes
     onAuthStateChanged(auth, async (user) => {
       // Resolve the authReadyPromise even if persistence setup failed
       authReadyResolve();
 
       if (user) {
-        console.log("AppMailia AI Background: Auth State Changed (without persistence) - User logged in:", user.email);
+        console.log("ThreadHQ Background: Auth State Changed (without persistence) - User logged in:", user.email);
         await chrome.storage.local.set({ userEmail: user.email, userName: user.displayName || user.email, userId: user.uid });
         // Still try to sync emails even if persistence failed
         if (!user.isAnonymous) {
           await triggerEmailSync(user.email, user.uid, false);
         }
       } else {
-        console.log("AppMailia AI Background: Auth State Changed (without persistence) - User logged out.");
+        console.log("ThreadHQ Background: Auth State Changed (without persistence) - User logged out.");
         await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']);
       }
       chrome.runtime.sendMessage({ type: 'AUTH_READY', success: true, loggedOut: !user });
@@ -1781,7 +1971,7 @@ chrome.alarms.create('syncWatchdog', { periodInMinutes: WATCHDOG_INTERVAL_MIN })
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'syncEmails') {
-    console.log('⏰ AppMailia AI: Syncing emails via alarm...');
+    console.log('⏰ ThreadHQ: Syncing emails via alarm...');
     const user = auth.currentUser;
     if (user && !user.isAnonymous) {
       try {
@@ -1789,14 +1979,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         if (result.userEmail && result.userId) {
           await triggerEmailSync(result.userEmail, result.userId, false); // No full refresh on alarm
         } else {
-          console.warn('AppMailia AI: User not logged in or user info missing for alarm sync.');
+          console.warn('ThreadHQ: User not logged in or user info missing for alarm sync.');
         }
       } catch (error) {
-        console.error('❌ AppMailia AI: Error during alarm-triggered email sync:', error);
+        console.error('❌ ThreadHQ: Error during alarm-triggered email sync:', error);
         chrome.runtime.sendMessage({ type: 'EMAILS_SYNCED', success: false, error: error.message });
       }
     } else {
-      console.log('AppMailia AI: Skipping email sync for unauthenticated or anonymous user.');
+      console.log('ThreadHQ: Skipping email sync for unauthenticated or anonymous user.');
     }
   } else if (alarm.name === 'syncWatchdog') {
     // Periodic stuck-lock check

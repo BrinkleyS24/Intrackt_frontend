@@ -4,6 +4,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Building2, Briefcase, Calendar, Clock, ExternalLink, Reply, Flag, X, Pencil, Check, TrendingUp } from "lucide-react";
 import { cn } from '../utils/cn';
+import { parseEmailDate } from '../utils/uiHelpers';
 import { showNotification } from './Notification';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
 import CompanyField from './CompanyField';
@@ -522,7 +523,7 @@ const DialogContent = ({ children, className }) => (
 );
 
 const DialogHeader = ({ children, className }) => (
-  <div className={cn("flex flex-col space-y-1.5 text-center sm:text-left p-6 border-b border-gray-200 dark:border-zinc-700", className)}>
+  <div className={cn("flex flex-col space-y-1.5 text-center sm:text-left p-6 pr-16 border-b border-gray-200 dark:border-zinc-700", className)}>
     {children}
   </div>
 );
@@ -569,7 +570,7 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
 
   const formatDate = (dateStr) => {
     if (!dateStr) return 'N/A';
-    const date = new Date(dateStr);
+    const date = parseEmailDate(dateStr) || new Date(dateStr);
     if (isNaN(date.getTime())) return 'Invalid Date';
     return date.toLocaleDateString('en-US', {
       weekday: 'long',
@@ -757,7 +758,13 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
     }
 
     // Sort oldest -> newest for a "journey" feel.
-    localStages.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    localStages.sort((a, b) => {
+      const aTime = (parseEmailDate(a.date) || new Date(a.date)).getTime();
+      const bTime = (parseEmailDate(b.date) || new Date(b.date)).getTime();
+      if (Number.isNaN(aTime)) return 1;
+      if (Number.isNaN(bTime)) return -1;
+      return aTime - bTime;
+    });
 
     // De-dupe by emailId to avoid duplicates when threadArr contains the same message twice.
     const seen = new Set();
@@ -771,6 +778,14 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
     return { stages: deduped, source: 'fallback' };
   }, [email, lifecycle, threadArr]);
 
+  const showRepairJourney = useMemo(() => {
+    if (journeyData?.source !== 'application') return false;
+    if (!email?.applicationId) return false;
+    const stages = Array.isArray(journeyData?.stages) ? journeyData.stages : [];
+    const appliedCount = stages.filter((s) => (s?.category || '').toString().toLowerCase() === 'applied').length;
+    return appliedCount > 1 || stages.length >= 8;
+  }, [journeyData, email?.applicationId]);
+
   const handleLinkAcrossCategories = async () => {
     if (!email?.id) {
       showNotification('Cannot link: missing email id', 'error');
@@ -780,7 +795,7 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
       setLoadingLifecycle(true);
       const resp = await sendMessageToBackground({ type: 'LINK_APPLICATION_ROLE', emailId: email.id });
       if (resp?.success) {
-        showNotification('Linking complete. Refreshing…', 'success');
+        showNotification('Linking complete. Refreshing...', 'success');
       } else {
         showNotification(resp?.error || 'Failed to link across categories', 'error');
       }
@@ -791,8 +806,28 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
     }
   };
 
+  const handleRepairApplicationLinks = async () => {
+    if (!email?.applicationId) {
+      showNotification('This email is not linked to an application yet.', 'info');
+      return;
+    }
+    try {
+      setLoadingLifecycle(true);
+      const resp = await sendMessageToBackground({ type: 'REPAIR_APPLICATION_LINKS', applicationId: email.applicationId });
+      if (resp?.success) {
+        showNotification('Repair complete. Refreshing...', 'success');
+      } else {
+        showNotification(resp?.error || 'Failed to repair application links', 'error');
+      }
+    } catch (e) {
+      showNotification(e?.message || 'Failed to repair application links', 'error');
+    } finally {
+      setLoadingLifecycle(false);
+    }
+  };
+
   const formatJourneyDate = (dateStr) => {
-    const d = new Date(dateStr);
+    const d = parseEmailDate(dateStr) || new Date(dateStr);
     if (!dateStr || isNaN(d.getTime())) return '—';
     return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
@@ -808,17 +843,17 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
 
   const lastActivityDate = useMemo(() => {
     const candidates = [];
-    if (email?.date) candidates.push(new Date(email.date));
+    if (email?.date) candidates.push(parseEmailDate(email.date) || new Date(email.date));
 
     for (const m of threadArr || []) {
       if (!m?.date) continue;
-      const d = new Date(m.date);
+      const d = parseEmailDate(m.date) || new Date(m.date);
       if (!Number.isNaN(d.getTime())) candidates.push(d);
     }
 
     for (const s of journeyData?.stages || []) {
       if (!s?.date) continue;
-      const d = new Date(s.date);
+      const d = parseEmailDate(s.date) || new Date(s.date);
       if (!Number.isNaN(d.getTime())) candidates.push(d);
     }
 
@@ -1328,6 +1363,25 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
                       )}
                     >
                       Link across categories
+                    </button>
+                  </div>
+                )}
+
+                {showRepairJourney && (
+                  <div className="pt-2">
+                    <button
+                      type="button"
+                      onClick={handleRepairApplicationLinks}
+                      disabled={loadingLifecycle}
+                      className={cn(
+                        "text-xs font-medium px-3 py-1.5 rounded-md border",
+                        "border-purple-200 dark:border-purple-800 bg-white/70 dark:bg-zinc-900/20",
+                        "text-purple-800 dark:text-purple-200 hover:bg-white dark:hover:bg-zinc-900/30",
+                        "disabled:opacity-60 disabled:cursor-not-allowed"
+                      )}
+                      title="If unrelated emails appear in this journey, this will unlink and rebuild links for the application."
+                    >
+                      Repair journey
                     </button>
                   </div>
                 )}

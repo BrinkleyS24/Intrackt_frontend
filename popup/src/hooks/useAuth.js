@@ -68,7 +68,7 @@ export const useAuth = (onPaymentStatusChange) => {
         setQuotaData(null);
       }
     } catch (error) {
-      console.error("❌ AppMailia AI: Error fetching quota data:", error);
+      console.error("❌ ThreadHQ: Error fetching quota data:", error);
       setQuotaData(null); // Clear quota on error
     }
   }, [userEmail, userId]); // Depend on userEmail and userId
@@ -124,12 +124,12 @@ export const useAuth = (onPaymentStatusChange) => {
       if (response.success) {
         // The chrome.storage.onChanged listener will pick up updates from background script
       } else {
-        console.error("❌ AppMailia AI: Error during Google OAuth login process:", response.error);
+        console.error("❌ ThreadHQ: Error during Google OAuth login process:", response.error);
         showNotification(`Login failed: ${response.error}`, "error");
         setLoadingAuth(false); // Stop loading on error
       }
     } catch (error) {
-      console.error("❌ AppMailia AI: Error during Google OAuth login process:", error);
+      console.error("❌ ThreadHQ: Error during Google OAuth login process:", error);
       showNotification(`Login failed: ${error.message || "Network error during login."}`, "error");
       setLoadingAuth(false); // Stop loading on error
     }
@@ -154,7 +154,7 @@ export const useAuth = (onPaymentStatusChange) => {
         showNotification("Logged out successfully!", "info");
         // State will be cleared by chrome.storage.onChanged listener
       } catch (error) {
-        console.error("❌ AppMailia AI: Error during logout:", error);
+        console.error("❌ ThreadHQ: Error during logout:", error);
         showNotification(`Logout failed: ${error.message}`, "error");
       }
     }, []),

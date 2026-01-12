@@ -23,7 +23,7 @@ export async function sendMessageToBackground(message, retries = 3, delay = 200)
 
         // If the receiving end does not exist, and we have retries left, wait and try again
         if (errorMessage.includes("receiving end") && i < retries - 1) {
-          console.warn(`AppMailia AI: Background script not ready, retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
+          console.warn(`ThreadHQ: Background script not ready, retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue; // Try sending the message again
         }
@@ -39,7 +39,7 @@ export async function sendMessageToBackground(message, retries = 3, delay = 200)
       console.error("Error sending message to background script:", error);
       // Propagate a more specific error if it's a communication issue
       if (error.message.includes("receiving end") && i < retries - 1) {
-        console.warn(`AppMailia AI: Failed to connect to background script, retrying... (Attempt ${i + 1}/${retries})`);
+        console.warn(`ThreadHQ: Failed to connect to background script, retrying... (Attempt ${i + 1}/${retries})`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue; // Try sending the message again
       }

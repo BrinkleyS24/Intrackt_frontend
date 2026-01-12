@@ -1,10 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "AppMailia AI - Job Tracker",
-  "version": "1.2.0",
-  "description": "Self-learning AI that tracks job applications from Gmail. Auto-detects interviews, offers & rejections. Gets smarter from your corrections.",
+  "name": "ThreadHQ",
+  "version": "1.0.0",
+  "description": "An always-on job application tracker that works directly in your inbox. It automatically detects job-related emails—applications, interviews, offers, and rejections—and keeps your job search organized without manual tracking or spreadsheets. You’ll get real-time notifications when your application status changes and a clear view of everything you’ve applied to, all in one place. No forms. No dashboards to maintain. Just apply to jobs and ThreadHQ tracks the rest in the background. Perfect for job seekers who want clarity, visibility, and peace of mind during their search.",
   "icons": {
     "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
@@ -12,6 +13,7 @@
     "default_popup": "popup/public/index.html",
     "default_icon": {
       "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
@@ -19,7 +21,8 @@
   "permissions": [
     "identity",
     "storage",
-    "alarms"
+    "alarms",
+    "notifications"
   ],
   "host_permissions": [
     "http://localhost:3000/*",

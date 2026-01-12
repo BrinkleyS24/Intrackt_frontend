@@ -43,7 +43,7 @@ export default function QuickView({
     <div className="px-4 py-4 space-y-4">
       <div className="flex items-center justify-between">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-gray-900 dark:text-white">AppMailia AI</div>
+          <div className="text-sm font-semibold text-gray-900 dark:text-white">ThreadHQ</div>
           <div className="text-xs text-gray-600 dark:text-zinc-400">
             {isSyncing ? 'Syncing in background…' : 'Up to date'}
           </div>

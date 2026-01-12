@@ -16,7 +16,7 @@ import Modals from './components/Modals';
 
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
-import { groupEmailsByThread } from './utils/grouping';
+import { groupEmailsByThread, getApplicationKey } from './utils/grouping';
 import { getCategoryTitle } from './utils/uiHelpers';
 
 import { CONFIG } from './utils/constants';
@@ -291,7 +291,24 @@ function App() {
       // If we have a group with emails, use those (this includes custom-grouped threads)
       let threadMessages;
       if (group && group.emails && group.emails.length > 0) {
-        threadMessages = [...group.emails].sort((a, b) => new Date(b.date) - new Date(a.date)); // newest -> oldest
+        const groupEmails = [...group.emails];
+
+        // Defensive: if the grouping algorithm accidentally merged unrelated emails,
+        // only show messages that match the selected email's application identity.
+        const selectedKey = getApplicationKey(email);
+        let scoped = groupEmails;
+        if (selectedKey && selectedKey !== 'unknown') {
+          const matches = groupEmails.filter((e) => getApplicationKey(e) === selectedKey);
+          if (matches.length > 0) scoped = matches;
+        } else {
+          const threadId = email.thread_id || email.threadId || email.thread;
+          if (threadId) {
+            const matches = groupEmails.filter((e) => (e.thread_id || e.threadId || e.thread) === threadId);
+            if (matches.length > 0) scoped = matches;
+          }
+        }
+
+        threadMessages = scoped.sort((a, b) => new Date(b.date) - new Date(a.date)); // newest -> oldest
       } else {
         // Fallback: search by thread_id (for emails not in grouped view)
         const threadId = email.thread_id || email.threadId || email.thread;

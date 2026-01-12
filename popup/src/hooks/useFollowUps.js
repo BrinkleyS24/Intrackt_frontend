@@ -38,7 +38,7 @@ export function useFollowUps(userEmail, userId, userPlan) { // Accept userPlan a
   // Function to load follow-up suggestions from the backend
   const loadFollowUpSuggestions = useCallback(async () => {
     if (!userEmail || !userId) {
-      console.warn("AppMailia AI: Cannot load follow-up suggestions - user not logged in or ID missing.");
+      console.warn("ThreadHQ: Cannot load follow-up suggestions - user not logged in or ID missing.");
       setFollowUpSuggestions([]);
       return;
     }
@@ -149,7 +149,7 @@ export function useFollowUps(userEmail, userId, userPlan) { // Accept userPlan a
 
       setFollowUpSuggestions(filteredSuggestions);
     } catch (error) {
-      console.error("❌ AppMailia AI: Error fetching follow-up suggestions:", error);
+      console.error("❌ ThreadHQ: Error fetching follow-up suggestions:", error);
       // Show specific error if it's a premium feature error
       if (error.message && error.message.includes("Premium feature")) {
         showNotification("Follow-up suggestions: Premium feature. Upgrade to unlock.", "info");

@@ -8,7 +8,7 @@
  * would be implemented here.
  */
 
-console.log("AppMailia AI Content Script loaded on this page.");
+console.log("ThreadHQ Content Script loaded on this page.");
 
 // Example: You might add listeners or modify the DOM here in the future
 // document.addEventListener('DOMContentLoaded', () => {

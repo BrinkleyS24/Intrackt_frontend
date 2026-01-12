@@ -4,7 +4,7 @@
  * primarily through the background script to fetch from the backend
  * a    return response;
   } catch (error) {
-    console.error("❌ AppMailia AI: Error sending SEND_EMAIL_REPLY message to background:", error);
+    console.error("❌ ThreadHQ: Error sending SEND_EMAIL_REPLY message to background:", error);
     return { success: false, error: error.message };
   }nage local storage caching.
  */
@@ -38,7 +38,7 @@ export async function fetchStoredEmailsService() {
 
     return categorizedEmails;
   } catch (error) {
-    console.error("❌ AppMailia AI: Error fetching stored emails from local storage:", error);
+    console.error("❌ ThreadHQ: Error fetching stored emails from local storage:", error);
     // Return empty categories on error to prevent UI breakage
     return { applied: [], interviewed: [], offers: [], rejected: [], irrelevant: [] };
   }
@@ -55,7 +55,7 @@ export async function fetchStoredEmailsService() {
 export async function fetchNewEmailsService(userEmail, userId, fullRefresh = false) {
   try {
     if (!userEmail || !userId) {
-      console.error('❌ AppMailia AI: User email or ID not provided for fetchNewEmailsService.');
+      console.error('❌ ThreadHQ: User email or ID not provided for fetchNewEmailsService.');
       return { success: false, error: 'User email or ID missing.' };
     }
 
@@ -75,7 +75,7 @@ export async function fetchNewEmailsService(userEmail, userId, fullRefresh = fal
         quota: response.quota // Quota data from backend
       };
     } else {
-      console.error("❌ AppMailia AI: Failed to retrieve new emails from background:", response.error);
+      console.error("❌ ThreadHQ: Failed to retrieve new emails from background:", response.error);
       // Pass through errorCode and requiresReauth for proper handling in the hook
       return { 
         success: false, 
@@ -85,7 +85,7 @@ export async function fetchNewEmailsService(userEmail, userId, fullRefresh = fal
       };
     }
   } catch (error) {
-    console.error("❌ AppMailia AI: Error sending FETCH_NEW_EMAILS message to background:", error);
+    console.error("❌ ThreadHQ: Error sending FETCH_NEW_EMAILS message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -118,7 +118,7 @@ export async function sendEmailReplyService(threadId, recipient, subject, body, 
     }
     return response; // may contain fallback flag or error
   } catch (error) {
-    console.error("❌ AppMailia AI: Error sending SEND_EMAIL_REPLY message to background:", error);
+    console.error("❌ ThreadHQ: Error sending SEND_EMAIL_REPLY message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -139,7 +139,7 @@ export async function reportMisclassificationService(reportPayload) {
     });
     return response;
   } catch (error) {
-    console.error("❌ AppMailia AI: Error sending REPORT_MISCLASSIFICATION message to background:", error);
+    console.error("❌ ThreadHQ: Error sending REPORT_MISCLASSIFICATION message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -159,7 +159,7 @@ export async function undoMisclassificationService(undoData) {
     });
     return response;
   } catch (error) {
-    console.error("❌ AppMailia AI: Error sending UNDO_MISCLASSIFICATION message to background:", error);
+    console.error("❌ ThreadHQ: Error sending UNDO_MISCLASSIFICATION message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -181,7 +181,7 @@ export async function archiveEmailService(threadId, userEmail) {
     });
     return response;
   } catch (error) {
-    console.error("❌ AppMailia AI: Error sending ARCHIVE_EMAIL message to background:", error);
+    console.error("❌ ThreadHQ: Error sending ARCHIVE_EMAIL message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -203,7 +203,7 @@ export async function markEmailsAsReadService(category, userId) {
     });
     return response;
   } catch (error) {
-    console.error("❌ AppMailia AI: Error sending MARK_AS_READ message to background:", error);
+    console.error("❌ ThreadHQ: Error sending MARK_AS_READ message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -226,7 +226,7 @@ export async function markEmailAsReadService(emailId) {
     return response;
   } catch (error) {
     // Log the error and re-throw it so the UI layer can handle it (e.g., show a notification).
-    console.error("❌ AppMailia AI: Error in markEmailAsReadService:", error);
+    console.error("❌ ThreadHQ: Error in markEmailAsReadService:", error);
     throw error;
   }
 }
@@ -251,7 +251,7 @@ export async function updateCompanyNameService(emailId, companyName, userEmail) 
     });
     return response;
   } catch (error) {
-    console.error("❌ AppMailia AI: Error sending UPDATE_COMPANY_NAME message to background:", error);
+    console.error("❌ ThreadHQ: Error sending UPDATE_COMPANY_NAME message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -274,7 +274,7 @@ export async function getCorrectionAnalyticsService(userEmail, since = null) {
     });
     return response;
   } catch (error) {
-    console.error("❌ AppMailia AI: Error sending GET_CORRECTION_ANALYTICS message to background:", error);
+    console.error("❌ ThreadHQ: Error sending GET_CORRECTION_ANALYTICS message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -299,7 +299,7 @@ export async function updatePositionService(emailId, position, userEmail) {
     });
     return response;
   } catch (error) {
-    console.error("❌ AppMailia AI: Error sending UPDATE_POSITION message to background:", error);
+    console.error("❌ ThreadHQ: Error sending UPDATE_POSITION message to background:", error);
     return { success: false, error: error.message };
   }
 }

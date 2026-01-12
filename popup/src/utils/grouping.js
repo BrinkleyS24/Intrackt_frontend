@@ -11,6 +11,22 @@
  */
 export function groupEmailsByThread(emails) {
   const map = new Map();
+
+  const GENERIC_SENDER_DOMAINS = new Set([
+    'gmail',
+    'googlemail',
+    'outlook',
+    'hotmail',
+    'live',
+    'msn',
+    'yahoo',
+    'icloud',
+    'me',
+    'aol',
+    'protonmail'
+  ]);
+
+  const isGenericDomain = (domain) => GENERIC_SENDER_DOMAINS.has((domain || '').toString().trim().toLowerCase());
   
   // Helper function to extract company domain from email
   const getCompanyDomain = (email, emailObject = null) => {
@@ -212,12 +228,13 @@ export function groupEmailsByThread(emails) {
     // application_id, they're definitely part of the same interview process
     if (category === 'interviewed') {
       // ALWAYS extract company identifier for consistent grouping
-      const companyIdentifier = extractCompanyFromInterview(email);
+      const companyIdentifierRaw = extractCompanyFromInterview(email);
+      const companyIdentifier = isGenericDomain(companyIdentifierRaw) ? '' : companyIdentifierRaw;
       
       // Check for backend application linking
-      const appId = email.application_id || email.applicationId;
       const positionKey = normalizeRole(email.position || email.job_title || '') || extractRoleFromSubject(email);
 
+      const appId = email.application_id || email.applicationId;
       const groupKey = appId
         ? `interview_app_${appId}`
         : positionKey
@@ -227,6 +244,12 @@ export function groupEmailsByThread(emails) {
       if (appId || companyIdentifier) {
         return groupKey;
       }
+
+      // If we couldn't confidently extract a company identifier, fall back to thread id
+      // (prevents grouping unrelated calendar invites that come from the user's own email).
+      if (threadId && threadId !== email.id) {
+        return `thread_${threadId}`;
+      }
     }
     
     // PRIORITY 1: Use Gmail's native thread_id if available
@@ -235,6 +258,22 @@ export function groupEmailsByThread(emails) {
     // This handles direct recruiter email chains (like SECU)
     if (threadId && threadId !== email.id) {
       return `thread_${threadId}`;
+    }
+
+    // PRIORITY 2: If we have a backend application link but no usable Gmail thread, group by application.
+    const appId = email.application_id || email.applicationId;
+    if (appId && ['applied', 'offers', 'rejected'].includes(category)) {
+      return `app_${appId}`;
+    }
+    
+    // PRIORITY 2: When we have extracted company+position, group by that rather than subject.
+    // This reduces false merges for generic subjects and improves the "All" view.
+    const companyRaw = email.company_name || email.company || '';
+    const positionRaw = email.position || email.job_title || '';
+    const companyKey = normalizeForKey(companyRaw);
+    const positionKey = normalizeForKey(positionRaw);
+    if (companyKey && positionKey) {
+      return `cp_${companyKey}_${positionKey}`;
     }
     
     // PRIORITY 3: Standard subject-based grouping with normalization (for non-interviewed or non-notification emails)
@@ -260,8 +299,8 @@ export function groupEmailsByThread(emails) {
       .replace(/\s+/g, ' ')
       .trim();
     
-    // Group by company domain + normalized subject
-    if (companyDomain && subject) {
+    // Group by company domain + normalized subject (avoid generic personal email providers)
+    if (companyDomain && subject && !isGenericDomain(companyDomain)) {
       return `company_${companyDomain}_${subject}`;
     }
     
