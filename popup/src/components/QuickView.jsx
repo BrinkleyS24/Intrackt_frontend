@@ -4,7 +4,7 @@ import { cn } from '../utils/cn';
 import { formatDate, getCategoryBadgeColor, getCategoryTitle } from '../utils/uiHelpers';
 import { groupEmailsByThread, countUniqueThreads } from '../utils/grouping';
 import { useEmailQuota } from '../hooks/useEmailQuota';
-import { CONFIG } from '../utils/constants';
+import { getPremiumDashboardUrl } from '../utils/runtimeConfig';
 import { showNotification } from './Notification';
 
 export default function QuickView({
@@ -17,7 +17,7 @@ export default function QuickView({
   onOpenAll,
   onOpenEmail,
 }) {
-  const { quota, getWarningMessage } = useEmailQuota(quotaData, userPlan);
+  const { quota, getWarningMessage, getProgressColor, percentage } = useEmailQuota(quotaData, userPlan);
 
   const counts = useMemo(() => {
     const applied = countUniqueThreads(categorizedEmails.applied || []);
@@ -39,23 +39,31 @@ export default function QuickView({
     return sorted.slice(0, 5);
   }, [categorizedEmails]);
 
+  const quotaText =
+    userPlan === 'premium' || !quota || quota.total === Infinity ? null : `${Math.min(quota.used, quota.total)}/${quota.total}`;
+
+  const scannedButNoTracked =
+    !isSyncing &&
+    (quota?.used || 0) > 0 &&
+    (counts.applied + counts.interviewed + counts.offers + counts.rejected) === 0;
+
   return (
     <div className="px-4 py-4 space-y-4">
       <div className="flex items-center justify-between">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-gray-900 dark:text-white">ThreadHQ</div>
-          <div className="text-xs text-gray-600 dark:text-zinc-400">
-            {isSyncing ? 'Syncing in background…' : 'Up to date'}
-          </div>
+          <div className="text-xs text-gray-600 dark:text-zinc-400">{isSyncing ? 'Syncing in background...' : 'Up to date'}</div>
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => {
-              const url = (CONFIG?.PREMIUM_DASHBOARD_URL || '').toString().trim();
+            onClick={async () => {
+              const url = await getPremiumDashboardUrl();
+
               if (!url) {
                 showNotification('Premium dashboard URL is not configured yet.', 'info');
                 return;
               }
+
               try {
                 chrome.tabs.create({ url });
               } catch (e) {
@@ -80,6 +88,7 @@ export default function QuickView({
               'text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-700/50'
             )}
             title="Refresh"
+            type="button"
           >
             <RefreshCw className={cn('h-3.5 w-3.5', isSyncing && 'animate-spin')} />
             Refresh
@@ -92,6 +101,7 @@ export default function QuickView({
               'text-gray-700 dark:text-zinc-200 hover:bg-gray-50 dark:hover:bg-zinc-700/50'
             )}
             title="Sign out"
+            type="button"
           >
             Sign out
           </button>
@@ -105,15 +115,25 @@ export default function QuickView({
           { key: 'offers', label: 'Offers', value: counts.offers, className: 'text-green-600 dark:text-green-400' },
           { key: 'rejected', label: 'Rejected', value: counts.rejected, className: 'text-red-600 dark:text-red-400' },
         ].map((c) => (
-          <div
-            key={c.key}
-            className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-2 text-center"
-          >
+          <div key={c.key} className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2 py-2 text-center">
             <div className={cn('text-lg font-bold leading-none', c.className)}>{c.value}</div>
             <div className="mt-1 text-[10px] text-gray-600 dark:text-zinc-400 leading-tight">{c.label}</div>
           </div>
         ))}
       </div>
+
+      {quotaText && (
+        <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2">
+          <div className="flex items-center justify-between text-xs text-gray-700 dark:text-zinc-200">
+            <span className="font-medium">Quota</span>
+            <span className="tabular-nums">{quotaText}</span>
+          </div>
+          <div className="mt-2 h-2 w-full rounded-full bg-gray-100 dark:bg-zinc-700 overflow-hidden">
+            <div className={cn('h-full transition-all', getProgressColor())} style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }} />
+          </div>
+          {getWarningMessage() && <div className="mt-2 text-[11px] text-gray-600 dark:text-zinc-400">{getWarningMessage()}</div>}
+        </div>
+      )}
 
       <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-3">
         <div className="flex items-center justify-between mb-2">
@@ -121,7 +141,13 @@ export default function QuickView({
         </div>
 
         {recentThreads.length === 0 ? (
-          <div className="text-sm text-gray-600 dark:text-zinc-400">No tracked applications yet.</div>
+          <div className="text-sm text-gray-600 dark:text-zinc-400">
+            {isSyncing
+              ? 'Syncing emails...'
+              : scannedButNoTracked
+                ? `Scanned ${quota.used} emails, but no job-related messages were detected yet.`
+                : 'No tracked applications yet.'}
+          </div>
         ) : (
           <div className="space-y-2">
             {recentThreads.map((t) => {
@@ -138,20 +164,19 @@ export default function QuickView({
                     'hover:bg-gray-50 dark:hover:bg-zinc-700/40 px-3 py-2'
                   )}
                   onClick={() => onOpenEmail(email, t)}
+                  type="button"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                        {company} — {position}
+                        {company} - {position}
                       </div>
                       <div className="text-xs text-gray-600 dark:text-zinc-400 truncate">{t.subject}</div>
                     </div>
                     <div className="flex-shrink-0 text-xs text-gray-500 dark:text-zinc-400">{formatDate(t.date)}</div>
                   </div>
                   <div className="mt-2">
-                    <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[10px]', getCategoryBadgeColor(category))}>
-                      {title}
-                    </span>
+                    <span className={cn('inline-flex px-2 py-0.5 rounded-full text-[10px]', getCategoryBadgeColor(category))}>{title}</span>
                   </div>
                 </button>
               );
@@ -162,19 +187,11 @@ export default function QuickView({
 
       <button
         onClick={onOpenAll}
-        className={cn(
-          'w-full rounded-lg px-4 py-3 text-sm font-semibold',
-          'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
-        )}
+        className={cn('w-full rounded-lg px-4 py-3 text-sm font-semibold', 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm')}
+        type="button"
       >
         View all applications
       </button>
-
-      {quotaData && quota.warningLevel !== 'none' && (
-        <div className="text-xs text-gray-700 dark:text-zinc-200">
-          {getWarningMessage()}
-        </div>
-      )}
     </div>
   );
 }

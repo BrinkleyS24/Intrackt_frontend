@@ -27,9 +27,7 @@
   "host_permissions": [
     "https://gmail-tracker-backend-215378038667.us-central1.run.app/*",
     "http://localhost:3000/*",
-    "http://localhost:5173/*",
     "http://127.0.0.1:3000/*",
-    "http://127.0.0.1:5173/*",
     "https://www.googleapis.com/*",
     "https://accounts.google.com/*"
   ],
@@ -47,16 +45,6 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "http://localhost/*",
-        "http://127.0.0.1/*"
-      ],
-      "js": ["content.js"],
-      "run_at": "document_start"
-    }
-  ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://gmail-tracker-backend-215378038667.us-central1.run.app http://localhost:3000 http://127.0.0.1:3000 https://www.googleapis.com https://accounts.google.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com;"
   }

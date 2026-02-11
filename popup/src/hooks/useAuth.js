@@ -13,8 +13,6 @@ import { showNotification } from '../components/Notification';
 // REMOVED: import { onAuthStateChanged } from 'firebase/auth'; // No longer needed here
 
 // The 'auth' instance is no longer passed as a parameter.
-// useAuth.js
-import { useState, useCallback, useEffect } from 'react';
 
 export const useAuth = (onPaymentStatusChange) => {
   const [userEmail, setUserEmail] = useState(null);
@@ -30,12 +28,13 @@ export const useAuth = (onPaymentStatusChange) => {
   // This is now the primary source of truth for the popup's UI state.
   const loadCurrentUserStateFromStorage = useCallback(async () => {
     try {
-      const result = await chrome.storage.local.get(['userEmail', 'userName', 'userId', 'userPlan']);
+      const result = await chrome.storage.local.get(['userEmail', 'userName', 'userId', 'userPlan', 'quotaData']);
 
       setUserEmail(result.userEmail || null);
       setUserName(result.userName || null);
       setUserId(result.userId || null);
       setUserPlan(result.userPlan || 'free');
+      setQuotaData(result.quotaData || null);
       
       // Mark auth as ready once initial state is loaded from storage
       setIsAuthReady(true);
@@ -54,19 +53,11 @@ export const useAuth = (onPaymentStatusChange) => {
       return;
     }
     try {
-      // Send a specific message to background to fetch only quota data
-      const response = await sendMessageToBackground({
-        type: "FETCH_QUOTA_DATA", // Corrected: New message type
-        userEmail: userEmail,
-        userId: userId,
-      });
-
-      if (response.success && response.quota) {
-        setQuotaData(response.quota);
-      } else {
-        console.error("Failed to fetch quota data:", response.error);
-        setQuotaData(null);
-      }
+      // Source of truth: background sync writes `quotaData` to chrome.storage.local.
+      // Reading from storage avoids showing quota usage that doesn't match the UI email lists.
+      const stored = await chrome.storage.local.get(['quotaData']);
+      setQuotaData(stored.quotaData || null);
+      return { success: true, quota: stored.quotaData || null };
     } catch (error) {
       console.error("❌ ThreadHQ: Error fetching quota data:", error);
       setQuotaData(null); // Clear quota on error
@@ -86,7 +77,7 @@ export const useAuth = (onPaymentStatusChange) => {
   useEffect(() => {
     const handleStorageChange = (changes, namespace) => {
       if (namespace === 'local') {
-        if (changes.userEmail || changes.userName || changes.userPlan || changes.userId) {
+        if (changes.userEmail || changes.userName || changes.userPlan || changes.userId || changes.quotaData) {
           loadCurrentUserStateFromStorage();
         }
       }
@@ -122,7 +113,9 @@ export const useAuth = (onPaymentStatusChange) => {
     try {
       const response = await sendMessageToBackground({ type: 'LOGIN_GOOGLE_OAUTH' });
       if (response.success) {
-        // The chrome.storage.onChanged listener will pick up updates from background script
+        // Prefer immediate UI update instead of waiting for storage change events.
+        await loadCurrentUserStateFromStorage();
+        setLoadingAuth(false);
       } else {
         console.error("❌ ThreadHQ: Error during Google OAuth login process:", response.error);
         showNotification(`Login failed: ${response.error}`, "error");
@@ -133,7 +126,7 @@ export const useAuth = (onPaymentStatusChange) => {
       showNotification(`Login failed: ${error.message || "Network error during login."}`, "error");
       setLoadingAuth(false); // Stop loading on error
     }
-  }, []);
+  }, [loadCurrentUserStateFromStorage]);
 
   return {
     userEmail,

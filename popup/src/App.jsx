@@ -5,7 +5,7 @@
  * of different views (Dashboard, Email List, Email Preview).
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import QuickView from './components/QuickView';
 import EmailList from './components/EmailList';
 import EmailPreview from './components/EmailPreview';
@@ -87,6 +87,7 @@ function App() {
   const [categoryBeforePreview, setCategoryBeforePreview] = useState('home');
   const [allApplicationsFilter, setAllApplicationsFilter] = useState('all'); // all|applied|interviewed|offers|rejected
   const [listSearchQuery, setListSearchQuery] = useState('');
+  const hasTriggeredLoginSyncRef = useRef(false);
 
   const {
     userEmail,
@@ -130,7 +131,9 @@ function App() {
     markingAllAsRead
   } = useEmails(userEmail, userId, CONFIG);
 
-  const isLoadingApp = loadingAuth || initialLoading;
+  // Avoid blocking the whole UI while emails are syncing.
+  // Only block during the active authentication handshake.
+  const isLoadingApp = loadingAuth && !isLoggedIn;
 
   // Keep the currently-open preview email in sync with refreshed backend state
   // (e.g., when applicationId/isClosed appears after linking/backfill).
@@ -140,14 +143,19 @@ function App() {
 
     const all = flattenCategorized(categorizedEmails);
     const updated = all.find(e => e.id === selectedEmail.id);
-    if (!updated) return;
+    if (!updated) {
+      // If the email was removed (e.g., misclassified to Irrelevant and deleted), close the preview.
+      setSelectedEmail(null);
+      setSelectedCategory(categoryBeforePreview || 'home');
+      return;
+    }
 
     setSelectedEmail(prev => {
       if (!prev) return prev;
       // Preserve the assembled threadMessages from the preview, but refresh all other fields.
       return { ...updated, threadMessages: prev.threadMessages };
     });
-  }, [categorizedEmails, selectedEmail?.id, selectedCategory]);
+  }, [categorizedEmails, selectedEmail?.id, selectedCategory, categoryBeforePreview]);
 
   // Load last selected category from storage once auth is ready
   useEffect(() => {
@@ -181,6 +189,36 @@ function App() {
     await fetchStoredEmails();
     // Avoid double-triggering sync here; background starts sync on auth state change
           fetchQuotaData();
+
+          // If the local cache is empty (common for new users or after clearing data),
+          // trigger a lightweight incremental sync immediately so emails appear quickly
+          // instead of waiting for the next alarm tick or backend polling to finish.
+          if (!hasTriggeredLoginSyncRef.current) {
+            try {
+              const cached = await chrome.storage.local.get([
+                'appliedEmails',
+                'interviewedEmails',
+                'offersEmails',
+                'rejectedEmails',
+                'irrelevantEmails',
+              ]);
+              const cachedCount =
+                (cached.appliedEmails || []).length +
+                (cached.interviewedEmails || []).length +
+                (cached.offersEmails || []).length +
+                (cached.rejectedEmails || []).length +
+                (cached.irrelevantEmails || []).length;
+
+              if (cachedCount === 0) {
+                hasTriggeredLoginSyncRef.current = true;
+                fetchNewEmails(false).catch(() => {});
+              }
+            } catch (_) {
+              // If storage is unavailable, best-effort attempt the sync once.
+              hasTriggeredLoginSyncRef.current = true;
+              fetchNewEmails(false).catch(() => {});
+            }
+          }
         } catch (error) {
           showNotification("Failed to load initial data.", "error");
         }
@@ -189,7 +227,7 @@ function App() {
       }
     };
     initialDataFetch();
-  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData]);
+  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData, fetchNewEmails]);
 
   useEffect(() => {
     const handleBackgroundMessage = (message) => {
@@ -349,8 +387,15 @@ function App() {
   const handleMisclassificationSubmit = useCallback(async (emailData, newCategory) => {
     closeMisclassificationModal();
     await handleReportMisclassification(emailData, newCategory);
-    await fetchStoredEmails();
-  }, [handleReportMisclassification, closeMisclassificationModal, fetchStoredEmails]);
+
+    const normalized = (newCategory || '').toString().trim().toLowerCase();
+    if (normalized === 'irrelevant') {
+      // The user is explicitly telling us this is not job-related. Close the preview
+      // immediately so they don't keep seeing the irrelevant content.
+      setSelectedEmail(null);
+      setSelectedCategory(categoryBeforePreview || 'home');
+    }
+  }, [handleReportMisclassification, closeMisclassificationModal, categoryBeforePreview]);
 
   const handleReplySubmit = useCallback(async (threadId, recipient, subject, body) => {
     await handleSendEmailReply(threadId, recipient, subject, body);
@@ -613,7 +658,7 @@ function App() {
 
   return (
     <div className="h-[600px] max-h-[600px] overflow-hidden bg-gray-100 dark:bg-zinc-900 text-gray-900 dark:text-white font-inter">
-      {isLoadingApp && <LoadingOverlay message="Loading data..." />}
+      {isLoadingApp && <LoadingOverlay message="Signing in..." />}
       <Notification />
       <div className="h-full overflow-y-auto">{renderMainContent()}</div>
 

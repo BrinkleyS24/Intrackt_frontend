@@ -34,6 +34,8 @@ export function useEmails(userEmail, userId, CONFIG) {
   // State to indicate if email operations are in progress (e.g., fetching, sending)
   const [initialLoading, setInitialLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  // Heartbeat used to detect whether background sync is still alive (polling updates).
+  const [syncHeartbeat, setSyncHeartbeat] = useState(0);
   // State to determine if the current view is a filtered view of emails
   const [isFilteredView, setIsFilteredView] = useState(false);
   // State to hold emails after applying search and time range filters
@@ -46,6 +48,7 @@ export function useEmails(userEmail, userId, CONFIG) {
   const [undoToastVisible, setUndoToastVisible] = useState(false);
   // Ref to store the timeout ID for the misclassification undo toast
   const misclassificationTimerRef = useRef(null);
+  const hasLoadedOnceRef = useRef(false);
 
   // Generic loading flag replacing prior undefined setLoadingEmails usage
   const [loadingEmails, setLoadingEmails] = useState(false);
@@ -104,7 +107,13 @@ export function useEmails(userEmail, userId, CONFIG) {
       if (msg.type === 'EMAILS_SYNCED') { 
         const stillSyncing = typeof msg.syncInProgress === 'boolean' ? msg.syncInProgress : false;
         setIsSyncing(stillSyncing);
+        if (stillSyncing) {
+          setSyncHeartbeat((h) => h + 1);
+        }
         if (msg.success) {
+          // If we get a successful sync message, the UI can render immediately.
+          hasLoadedOnceRef.current = true;
+          setInitialLoading(false);
           setCategorizedEmails(msg.categorizedEmails);
           calculateUnreadCounts(msg.categorizedEmails);
           // NEW: Update category totals from sync message
@@ -139,15 +148,17 @@ export function useEmails(userEmail, userId, CONFIG) {
   // WATCHDOG: Reset sync state if it gets stuck (e.g., service worker restart)
   useEffect(() => {
     if (isSyncing) {
-      const SYNC_TIMEOUT = 120000; // 2 minutes
+      // Syncing a 30-day window can legitimately take several minutes in production.
+      // Only consider it "stuck" if we haven't received a heartbeat update for a long time.
+      const SYNC_TIMEOUT = 10 * 60 * 1000; // 10 minutes
       const timeout = setTimeout(() => {
-        console.warn('[useEmails] Sync timeout detected - resetting sync state after 2 minutes');
+        console.warn('[useEmails] Sync timeout detected - resetting sync state after 10 minutes without updates');
         setIsSyncing(false);
         showNotification('Sync timed out. Try refreshing manually.', 'warning');
       }, SYNC_TIMEOUT);
       return () => clearTimeout(timeout);
     }
-  }, [isSyncing]);
+  }, [isSyncing, syncHeartbeat]);
 
   useEffect(() => {
     const counts = {
@@ -216,11 +227,14 @@ export function useEmails(userEmail, userId, CONFIG) {
    */
   // 2. Update `fetchStoredEmails` to control the 'initialLoading' state
   const fetchStoredEmails = useCallback(async () => {
-    setInitialLoading(true);
+    // Only show the full-page loader on the first load; later refreshes should not
+    // interrupt typing/focus (e.g., search bar) or cause a "blank" screen flash.
+    if (!hasLoadedOnceRef.current) setInitialLoading(true);
     try {
       const stored = await fetchStoredEmailsService();
       setCategorizedEmails(stored);
       calculateUnreadCounts(stored);
+      hasLoadedOnceRef.current = true;
       
       // NEW: Retrieve category totals from local storage
       const result = await chrome.storage.local.get(['categoryTotals', 'applicationStats']);
@@ -379,6 +393,7 @@ export function useEmails(userEmail, userId, CONFIG) {
           threadId: reportPayload.threadId,
           originalCategory: reportPayload.originalCategory,
           misclassifiedIntoCategory: reportPayload.correctedCategory, // Store the category it was moved INTO
+          gmailMessageId: result.gmailMessageId || null, // Present when Irrelevant deletes the email row
         });
         setUndoToastVisible(true);
         misclassificationTimerRef.current = setTimeout(() => {
@@ -386,7 +401,9 @@ export function useEmails(userEmail, userId, CONFIG) {
           setLastMisclassifiedEmail(null);
         }, 10000); // Undo toast visible for 10 seconds
 
-        await fetchStoredEmails(); // Re-fetch emails to reflect the category change
+        // Ensure the UI reflects the latest background cache. This is especially
+        // important for "Irrelevant" where the backend deletes the email row.
+        await fetchStoredEmails();
       } else {
         showNotification(`Failed to report misclassification: ${result.error}`, "error");
       }

@@ -1,12 +1,8 @@
 /**
  * @file popup/src/services/emailService.js
- * @description Centralized service for interacting with email data,
- * primarily through the background script to fetch from the backend
- * a    return response;
-  } catch (error) {
-    console.error("❌ ThreadHQ: Error sending SEND_EMAIL_REPLY message to background:", error);
-    return { success: false, error: error.message };
-  }nage local storage caching.
+ * @description Centralized service for email operations. The popup:
+ * - Reads cached email data from `chrome.storage.local` for fast initial render
+ * - Delegates network-backed actions (sync, reply, misclassification, etc.) to the background service worker
  */
 
 import { sendMessageToBackground } from '../utils/chromeMessaging';

@@ -5,6 +5,7 @@ import { formatDate } from '../utils/uiHelpers';
 import { groupEmailsByThread, countUniqueThreads, countUniqueApplications } from '../utils/grouping';
 import { showNotification } from './Notification';
 import { CONFIG } from '../utils/constants';
+import { getPremiumDashboardUrl } from '../utils/runtimeConfig';
 
 /**
  * Helper functions for category styling
@@ -821,7 +822,16 @@ function Dashboard({
         throw new Error('Failed to get authentication token');
       }
 
-      const backendBaseUrl = CONFIG?.ENDPOINTS?.BACKEND_BASE_URL || 'http://localhost:3000';
+      // Prefer the background script's backend base URL (supports localhost override for development).
+      let backendBaseUrl = CONFIG?.ENDPOINTS?.BACKEND_BASE_URL || 'https://gmail-tracker-backend-215378038667.us-central1.run.app';
+      try {
+        const backendResp = await chrome.runtime.sendMessage({ type: 'GET_BACKEND_BASE_URL' });
+        if (backendResp?.success && typeof backendResp.backendBaseUrl === 'string' && backendResp.backendBaseUrl.trim()) {
+          backendBaseUrl = backendResp.backendBaseUrl.trim();
+        }
+      } catch (_) {
+        // Fall back to config default.
+      }
       const response = await fetch(`${backendBaseUrl}/api/emails/normalize-roles`, {
         method: 'POST',
         headers: {
@@ -907,7 +917,12 @@ function Dashboard({
         
         // Refresh suggestions from backend after delay (in case user doesn't undo)
         setTimeout(() => {
-          chrome.runtime.sendMessage({ type: 'FETCH_FOLLOWUP_SUGGESTIONS' });
+          try {
+            const p = chrome.runtime.sendMessage({ type: 'FETCH_FOLLOWUP_SUGGESTIONS' });
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+          } catch (_) {
+            // ignore: popup might be closing / background may be restarting
+          }
         }, 6000); // Wait for undo window to expire
       } else {
         // If failed, restore the suggestion
@@ -949,7 +964,12 @@ function Dashboard({
         
         // Refresh suggestions from backend after a short delay
         setTimeout(() => {
-          chrome.runtime.sendMessage({ type: 'FETCH_FOLLOWUP_SUGGESTIONS' });
+          try {
+            const p = chrome.runtime.sendMessage({ type: 'FETCH_FOLLOWUP_SUGGESTIONS' });
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+          } catch (_) {
+            // ignore: popup might be closing / background may be restarting
+          }
         }, 500);
       } else {
         throw new Error(response?.error || 'Failed to snooze suggestion');
@@ -2771,8 +2791,9 @@ function Dashboard({
                     </li>
                   </ul>
                   <button
-                    onClick={() => {
-                      const url = (CONFIG?.PREMIUM_DASHBOARD_URL || '').toString().trim();
+                    onClick={async () => {
+                      const url = await getPremiumDashboardUrl();
+
                       if (!url) {
                         showNotification('Premium dashboard URL is not configured yet.', 'info');
                         return;

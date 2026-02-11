@@ -23,6 +23,34 @@ const UNDO_TIMEOUT_MS = 10000; // 10 seconds for undo toast
 const STUCK_LOCK_THRESHOLD_MIN = 15; // minutes a sync may run before considered stuck
 const WATCHDOG_INTERVAL_MIN = 5; // how often to check for stuck syncs
 
+// In MV3, `chrome.runtime.sendMessage()` returns a Promise if no callback is provided.
+// If the popup is closed there may be no listeners, which can otherwise cause
+// an unhandled rejection ("Receiving end does not exist") in the service worker console.
+function safeRuntimeSendMessage(message) {
+  try {
+    chrome.runtime.sendMessage(message, () => {
+      void chrome.runtime.lastError;
+    });
+  } catch (_) {
+    // ignore
+  }
+}
+
+// Broadcast auth state to all content scripts so the web app stays in sync.
+function broadcastAuthStateToContentScripts(loggedIn, email) {
+  chrome.tabs.query({}, (tabs) => {
+    for (const tab of tabs) {
+      try {
+        chrome.tabs.sendMessage(tab.id, { type: 'AUTH_STATE_CHANGED', loggedIn, email }, () => {
+          void chrome.runtime.lastError; // suppress "no receiver" errors
+        });
+      } catch (_) {
+        // tab may not have content script
+      }
+    }
+  });
+}
+
 // --- OS Notifications (service worker) ---
 // These notifications show even when the popup UI is closed, as long as Chrome is running.
 const NOTIFICATIONS_ENABLED_KEY = 'appmailiaNotificationsEnabledV1';
@@ -136,8 +164,7 @@ async function maybeNotifyNewEmails(prevCategorizedEmails, nextCategorizedEmails
 
 // Define your backend endpoints.
 const CONFIG_ENDPOINTS = {
-  BACKEND_BASE_URL: 'http://localhost:3000', // Development backend URL
-  // To switch to production, set to: 'https://gmail-tracker-backend-215378038667.us-central1.run.app'
+  BACKEND_BASE_URL: 'https://gmail-tracker-backend-215378038667.us-central1.run.app',
   AUTH_URL: '/api/auth/auth-url',
   AUTH_TOKEN: '/api/auth/token',
   SYNC_EMAILS: '/api/emails',
@@ -169,6 +196,106 @@ const authReadyPromise = new Promise(resolve => {
   authReadyResolve = resolve;
 });
 
+// --- Backend base URL override (dev-only) ---
+// We intentionally restrict overrides to localhost to avoid malicious redirects.
+const BACKEND_BASE_URL_STORAGE_KEY = 'backendBaseUrlOverride';
+const DEFAULT_BACKEND_BASE_URL = CONFIG_ENDPOINTS.BACKEND_BASE_URL;
+let backendBaseUrl = DEFAULT_BACKEND_BASE_URL;
+
+// --- Premium dashboard URL override (dev-only) ---
+// This lets you test the premium web app locally without rebuilding the extension.
+// Allowed:
+// - https://... anywhere
+// - http://localhost / http://127.0.0.1 (dev only)
+const PREMIUM_DASHBOARD_URL_STORAGE_KEY = 'premiumDashboardUrlOverride';
+const DEFAULT_PREMIUM_DASHBOARD_URL = (process.env.PREMIUM_DASHBOARD_URL || '').toString().trim();
+let premiumDashboardUrl = DEFAULT_PREMIUM_DASHBOARD_URL;
+
+function isAllowedBackendBaseUrlOverride(url) {
+  if (!url || typeof url !== 'string') return false;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (_) {
+    return false;
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+  const host = parsed.hostname;
+  const isLocal =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host === '[::1]';
+  return isLocal;
+}
+
+function isAllowedPremiumDashboardUrlOverride(url) {
+  if (!url || typeof url !== 'string') return false;
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch (_) {
+    return false;
+  }
+  if (parsed.protocol === 'https:') return true;
+  if (parsed.protocol !== 'http:') return false;
+  const host = parsed.hostname;
+  const isLocal =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '0.0.0.0' ||
+    host === '[::1]';
+  return isLocal;
+}
+
+function normalizeBaseUrl(url) {
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
+let backendBaseUrlReadyResolve;
+const backendBaseUrlReadyPromise = new Promise((resolve) => {
+  backendBaseUrlReadyResolve = resolve;
+});
+
+(async () => {
+  try {
+    const stored = await chrome.storage?.local?.get([BACKEND_BASE_URL_STORAGE_KEY]);
+    const override = stored?.[BACKEND_BASE_URL_STORAGE_KEY];
+    if (isAllowedBackendBaseUrlOverride(override)) {
+      backendBaseUrl = normalizeBaseUrl(override);
+      try { console.log('[bg][info]', `Using backend base URL override: ${backendBaseUrl}`); } catch (_) {}
+    } else if (override) {
+      try { console.warn('[bg][warn]', `Ignoring unsafe backend base URL override: ${String(override)}`); } catch (_) {}
+    }
+  } catch (e) {
+    try { console.warn('[bg][warn]', 'Failed to load backend base URL override:', e?.message || e); } catch (_) {}
+  } finally {
+    backendBaseUrlReadyResolve();
+  }
+})();
+
+let premiumDashboardUrlReadyResolve;
+const premiumDashboardUrlReadyPromise = new Promise((resolve) => {
+  premiumDashboardUrlReadyResolve = resolve;
+});
+
+(async () => {
+  try {
+    const stored = await chrome.storage?.local?.get([PREMIUM_DASHBOARD_URL_STORAGE_KEY]);
+    const override = stored?.[PREMIUM_DASHBOARD_URL_STORAGE_KEY];
+    if (isAllowedPremiumDashboardUrlOverride(override)) {
+      premiumDashboardUrl = normalizeBaseUrl(override);
+      try { console.log('[bg][info]', `Using premium dashboard URL override: ${premiumDashboardUrl}`); } catch (_) {}
+    } else if (override) {
+      try { console.warn('[bg][warn]', `Ignoring unsafe premium dashboard URL override: ${String(override)}`); } catch (_) {}
+    }
+  } catch (e) {
+    try { console.warn('[bg][warn]', 'Failed to load premium dashboard URL override:', e?.message || e); } catch (_) {}
+  } finally {
+    premiumDashboardUrlReadyResolve();
+  }
+})();
+
 // --- Sync de-duplication state ---
 let syncInFlight = false;
 let lastSyncStartTs = 0;
@@ -178,8 +305,14 @@ let tokenRefreshPromise = null;
 
 async function getFreshToken(user) {
   if (!tokenRefreshPromise) {
-    tokenRefreshPromise = user.getIdToken(true)
-      .finally(() => { tokenRefreshPromise = null; });
+    // Avoid forcing refresh on every request; Firebase refreshes tokens automatically.
+    // If we hit a rare edge-case where the cached token is invalid, fall back to a forced refresh once.
+    tokenRefreshPromise = user
+      .getIdToken()
+      .catch(() => user.getIdToken(true))
+      .finally(() => {
+        tokenRefreshPromise = null;
+      });
   }
   return tokenRefreshPromise;
 }
@@ -215,10 +348,8 @@ const bgLogger = {
 async function apiFetch(endpoint, options = {}) {
   // Wait for authentication to be ready before proceeding
   await authReadyPromise;
+  await backendBaseUrlReadyPromise;
 
-  // SECURITY: DEV_BACKEND override removed to prevent malicious redirect attacks
-  // For local development, modify CONFIG_ENDPOINTS.BACKEND_BASE_URL directly in code
-  
   const user = auth.currentUser;
   const headers = {
     'Content-Type': 'application/json',
@@ -238,7 +369,7 @@ async function apiFetch(endpoint, options = {}) {
 
         await signOut(auth);
 
-        chrome.runtime.sendMessage({
+        safeRuntimeSendMessage({
           type: 'FORCE_LOGOUT',
           reason: 'Your session has expired. Please log in again.'
         });
@@ -254,7 +385,7 @@ async function apiFetch(endpoint, options = {}) {
 
 
   // Build URL with optional query params support
-  let url = `${CONFIG_ENDPOINTS.BACKEND_BASE_URL}${endpoint}`;
+  let url = `${backendBaseUrl}${endpoint}`;
   if (options.query && typeof options.query === 'object') {
     const qs = new URLSearchParams(options.query).toString();
     if (qs) {
@@ -311,7 +442,8 @@ async function apiFetch(endpoint, options = {}) {
 /**
  * Fetch stored emails from backend and update local cache, then notify popup.
  */
-async function refreshStoredEmailsCache(syncInProgress = undefined) {
+async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}) {
+  const { skipBackfill = false, skipNotify = false } = options || {};
   try {
     // Snapshot prior cache before fetching so we can detect newly-added emails.
     let previousCache = null;
@@ -332,118 +464,175 @@ async function refreshStoredEmailsCache(syncInProgress = undefined) {
       previousCache = null;
     }
 
-    const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, { 
+    // While a sync is in progress, keep these refreshes lightweight to avoid hammering the backend.
+    // We'll do one full refresh once the sync completes.
+    const isSyncing = syncInProgress === true;
+    const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, {
       method: 'POST',
-      body: { limit: 5000 } // Premium users may have deeper history; backend clamps per-plan.
+      body: { limit: isSyncing ? 200 : 5000 }, // backend clamps per-plan
     });
     if (response.success && response.categorizedEmails) {
-      // One-time backfill: older stored emails may not have been linked into `email_applications` yet,
-      // which prevents Application Journey timelines and can cause incorrect "Active" labeling.
-      const APP_LINK_BACKFILL_KEY = 'appLinksBackfilledV1';
-      const tryBackfill = async () => {
-        try {
-          const state = await chrome.storage.local.get([APP_LINK_BACKFILL_KEY]);
-          if (state && state[APP_LINK_BACKFILL_KEY]) return false;
-        } catch (_) {
-          // ignore
-        }
-
-        const allRelevant = [
-          ...(response.categorizedEmails.applied || []),
-          ...(response.categorizedEmails.interviewed || []),
-          ...(response.categorizedEmails.offers || []),
-          ...(response.categorizedEmails.rejected || []),
-        ];
-
-        const needsLinking = allRelevant.some(e => {
-          if (e?.applicationId) return false;
-          const company = e?.company_name;
-          const position = e?.position;
-          return !!(company && position);
-        });
-        if (!needsLinking) {
-          try {
-            await chrome.storage.local.set({ [APP_LINK_BACKFILL_KEY]: true });
-          } catch (_) {
-            // ignore
-          }
-          return false;
-        }
-
-        try {
-          bgLogger.info('[backfill] Running one-time application linking backfill...');
-          const backfillRes = await apiFetch('/api/emails/applications/backfill', {
-            method: 'POST',
-            body: { limit: 5000 }
-          });
-          if (backfillRes && backfillRes.success) {
-            try {
-              await chrome.storage.local.set({ [APP_LINK_BACKFILL_KEY]: true });
-            } catch (_) {
-              // ignore
-            }
-            return true;
-          }
-        } catch (e) {
-          bgLogger.warn?.('[backfill] Backfill failed:', e?.message);
-        }
-        return false;
-      };
-
-      const didBackfill = await tryBackfill();
-      if (didBackfill) {
-        // Refetch once so cached emails include `applicationId` and updated `isClosed`.
-        const refreshed = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, {
-          method: 'POST',
-          body: { limit: 5000 }
-        });
-        if (refreshed.success && refreshed.categorizedEmails) {
-          response.categorizedEmails = refreshed.categorizedEmails;
-        }
-      }
-
-      try {
-        await maybeNotifyNewEmails(previousCache, response.categorizedEmails, syncInProgress);
-      } catch (e) {
-        bgLogger.warn('Notification check failed:', e?.message);
-      }
-
+      // Update cache + UI immediately. Any optional backfill happens asynchronously after users see emails.
       await chrome.storage.local.set({
         appliedEmails: response.categorizedEmails.applied || [],
         interviewedEmails: response.categorizedEmails.interviewed || [],
         offersEmails: response.categorizedEmails.offers || [],
         rejectedEmails: response.categorizedEmails.rejected || [],
         irrelevantEmails: response.categorizedEmails.irrelevant || [],
+        // Keep totals in sync with DB so the dashboard doesn't depend on local array size.
+        ...(response.categoryTotals ? { categoryTotals: response.categoryTotals } : {}),
       });
-      chrome.runtime.sendMessage({
+
+      safeRuntimeSendMessage({
         type: 'EMAILS_SYNCED',
         success: true,
         categorizedEmails: response.categorizedEmails,
-  syncInProgress,
+        ...(response.categoryTotals ? { categoryTotals: response.categoryTotals } : {}),
+        syncInProgress,
       });
+
+      // Best-effort notifications (never block the UI update).
+      if (!isSyncing && !skipNotify) {
+        try {
+          await maybeNotifyNewEmails(previousCache, response.categorizedEmails, syncInProgress);
+        } catch (e) {
+          bgLogger.warn('Notification check failed:', e?.message);
+        }
+      }
+
+      // Optional one-time backfill: do not block initial render.
+      if (!isSyncing && !skipBackfill) {
+        (async () => {
+          const APP_LINK_BACKFILL_KEY = 'appLinksBackfilledV1';
+          try {
+            const state = await chrome.storage.local.get([APP_LINK_BACKFILL_KEY]);
+            if (state && state[APP_LINK_BACKFILL_KEY]) return;
+          } catch (_) {
+            // ignore
+          }
+
+          const allRelevant = [
+            ...(response.categorizedEmails.applied || []),
+            ...(response.categorizedEmails.interviewed || []),
+            ...(response.categorizedEmails.offers || []),
+            ...(response.categorizedEmails.rejected || []),
+          ];
+
+          const needsLinking = allRelevant.some((e) => {
+            if (e?.applicationId) return false;
+            const company = e?.company_name;
+            const position = e?.position;
+            return !!(company && position);
+          });
+
+          if (!needsLinking) {
+            try {
+              await chrome.storage.local.set({ [APP_LINK_BACKFILL_KEY]: true });
+            } catch (_) {
+              // ignore
+            }
+            return;
+          }
+
+          try {
+            bgLogger.info('[backfill] Running one-time application linking backfill...');
+            const backfillRes = await apiFetch('/api/emails/applications/backfill', {
+              method: 'POST',
+              body: { limit: 5000 },
+            });
+            if (!backfillRes || !backfillRes.success) return;
+
+            try {
+              await chrome.storage.local.set({ [APP_LINK_BACKFILL_KEY]: true });
+            } catch (_) {
+              // ignore
+            }
+
+            // Refetch once so cached emails include `applicationId` and updated `isClosed`.
+            const refreshed = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, {
+              method: 'POST',
+              body: { limit: 5000 },
+            });
+            if (refreshed.success && refreshed.categorizedEmails) {
+              await chrome.storage.local.set({
+                appliedEmails: refreshed.categorizedEmails.applied || [],
+                interviewedEmails: refreshed.categorizedEmails.interviewed || [],
+                offersEmails: refreshed.categorizedEmails.offers || [],
+                rejectedEmails: refreshed.categorizedEmails.rejected || [],
+                irrelevantEmails: refreshed.categorizedEmails.irrelevant || [],
+              });
+              safeRuntimeSendMessage({
+                type: 'EMAILS_SYNCED',
+                success: true,
+                categorizedEmails: refreshed.categorizedEmails,
+                syncInProgress: false,
+              });
+            }
+          } catch (e) {
+            bgLogger.warn?.('[backfill] Backfill failed:', e?.message || e);
+          }
+        })();
+      }
+
+      const totalRelevantCount =
+        typeof response.totalRelevantCount === 'number'
+          ? response.totalRelevantCount
+          : typeof response.totalCount === 'number'
+            ? response.totalCount
+            : [
+                ...(response.categorizedEmails.applied || []),
+                ...(response.categorizedEmails.interviewed || []),
+                ...(response.categorizedEmails.offers || []),
+                ...(response.categorizedEmails.rejected || []),
+              ].length;
+
+      return { success: true, totalRelevantCount };
     }
   } catch (e) {
     console.warn('ThreadHQ Background: refreshStoredEmailsCache failed:', e?.message);
   }
+  return { success: false, totalRelevantCount: 0 };
 }
 
 /**
  * Poll the sync status and periodically refresh stored emails until complete or timeout.
  * FIXED: Reduced polling from 2s to 10s to avoid exhausting Gmail API quota
  */
-async function pollSyncStatusAndRefresh(maxSeconds = 60, intervalMs = 10000) {
+async function pollSyncStatusAndRefresh(maxSeconds = 15 * 60, intervalMs = 10000, options = {}) {
+  const { waitForStart = false, waitForStartMs = 60_000 } = options || {};
   const start = Date.now();
+  let lastRefreshAt = 0;
+  let hasAnyStoredEmails = false;
+  let sawInProgress = false;
+  const EARLY_REFRESH_MS = 10_000; // fast updates so users see their first emails quickly
+  const STEADY_REFRESH_MS = 60_000; // reduce backend load once we have any results
   while (Date.now() - start < maxSeconds * 1000) {
     try {
     const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
       if (status?.success) {
         if (status.sync?.inProgress) {
-          // Pull latest stored emails incrementally
-      await refreshStoredEmailsCache(true);
+          sawInProgress = true;
+          // While syncing, refresh cached emails sparingly to reduce backend load.
+          // This prevents production-only stalls caused by repeated heavy /stored-emails queries.
+          const now = Date.now();
+          const refreshInterval = hasAnyStoredEmails ? STEADY_REFRESH_MS : EARLY_REFRESH_MS;
+          if (now - lastRefreshAt >= refreshInterval) {
+            lastRefreshAt = now;
+            const refreshed = await refreshStoredEmailsCache(true);
+            if ((refreshed?.totalRelevantCount || 0) > 0) {
+              hasAnyStoredEmails = true;
+            }
+          }
         } else {
-          // One final refresh at completion
-      await refreshStoredEmailsCache(false);
-          return;
+          // If we're waiting for a sync to *start*, do not treat an early "false" as terminal.
+          // This avoids a race where we poll before the backend acquires the sync lock.
+          if (waitForStart && !sawInProgress && (Date.now() - start) < waitForStartMs) {
+            // keep polling
+          } else {
+            // One final refresh at completion
+            await refreshStoredEmailsCache(false);
+            return;
+          }
         }
       }
     } catch (e) {
@@ -476,7 +665,7 @@ async function checkSyncWatchdog() {
 
     if (mins >= STUCK_LOCK_THRESHOLD_MIN) {
       // Let the UI know the sync might be stuck; include snapshot for context
-      chrome.runtime.sendMessage({
+      safeRuntimeSendMessage({
         type: 'SYNC_STUCK',
         minutesInProgress: Math.round(mins),
         thresholdMinutes: STUCK_LOCK_THRESHOLD_MIN,
@@ -528,7 +717,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
   if (syncInFlight) {
     // Return current cached emails immediately instead of hitting backend again
     const cached = await chrome.storage.local.get([
-      'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData'
+      'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails', 'quotaData'
     ]);
     return {
       success: true,
@@ -537,6 +726,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         interviewed: cached.interviewedEmails || [],
         offers: cached.offersEmails || [],
         rejected: cached.rejectedEmails || [],
+        irrelevant: cached.irrelevantEmails || [],
       },
       quota: cached.quotaData || null,
       sync: { inProgress: true }
@@ -547,6 +737,13 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
   lastSyncStartTs = Date.now();
 
   try {
+    // Sidecar polling: improves "time to first emails" during long-running sync calls.
+    // In Cloud Run, /api/emails often performs an inline sync that can take minutes; while
+    // that request is in-flight, we can poll /sync-status + refresh /stored-emails to
+    // progressively populate the popup.
+    pollSyncStatusAndRefresh(15 * 60, 10_000, { waitForStart: true, waitForStartMs: 60_000 })
+      .catch((e) => bgLogger.warn?.('ThreadHQ Background: sidecar polling failed:', e?.message || e));
+
     // Snapshot prior cache before syncing so we can detect newly-added emails and notify on completion.
     let previousCache = null;
     try {
@@ -571,20 +768,20 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
     body: { userEmail, userId, fullRefresh, email: userEmail }
     });
 
-    // NEW: Fetch application statistics in parallel
+    // Fetch application stats without blocking initial email visibility.
+    // On cold Cloud Run instances, this endpoint can add noticeable latency.
     let applicationStats = null;
-    try {
-      const statsResponse = await apiFetch(CONFIG_ENDPOINTS.APPLICATION_STATS, {
-        method: 'GET'
-      });
-      if (statsResponse.success && statsResponse.stats) {
-        applicationStats = statsResponse.stats;
-        bgLogger.info('Application stats fetched:', applicationStats);
+    const applicationStatsPromise = (async () => {
+      try {
+        const statsResponse = await apiFetch(CONFIG_ENDPOINTS.APPLICATION_STATS, { method: 'GET' });
+        if (statsResponse.success && statsResponse.stats) {
+          return statsResponse.stats;
+        }
+      } catch (error) {
+        bgLogger.warn?.('Failed to fetch application stats (non-fatal):', error?.message || error);
       }
-    } catch (error) {
-      bgLogger.error('Failed to fetch application stats:', error);
-      // Continue without stats - this is not critical
-    }
+      return null;
+    })();
 
     if (response.success && response.categorizedEmails) {
       // CRITICAL FIX: Only update chrome.storage if sync is NOT in progress
@@ -609,7 +806,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         bgLogger.info('Emails and quota cached successfully in local storage.');
 
         // Notify the popup that emails have been synced and cached
-        chrome.runtime.sendMessage({
+        safeRuntimeSendMessage({
           type: 'EMAILS_SYNCED',
           success: true,
           categorizedEmails: response.categorizedEmails,
@@ -632,30 +829,119 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         const cached = await chrome.storage.local.get([
           'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'
         ]);
-        
-        // Notify UI with current cached data (not stale backend data)
-        chrome.runtime.sendMessage({
+        const cachedCount =
+          (cached.appliedEmails || []).length +
+          (cached.interviewedEmails || []).length +
+          (cached.offersEmails || []).length +
+          (cached.rejectedEmails || []).length +
+          (cached.irrelevantEmails || []).length;
+
+        // If the cache is empty but the backend already returned categorizedEmails for this call,
+        // seed the cache with those emails so the user doesn't see "0 emails" with nonzero quota.
+        const responseCount =
+          (response.categorizedEmails?.applied || []).length +
+          (response.categorizedEmails?.interviewed || []).length +
+          (response.categorizedEmails?.offers || []).length +
+          (response.categorizedEmails?.rejected || []).length +
+          (response.categorizedEmails?.irrelevant || []).length;
+
+        const shouldPrimeCacheFromResponse = cachedCount === 0 && responseCount > 0;
+        if (shouldPrimeCacheFromResponse) {
+          await chrome.storage.local.set({
+            appliedEmails: response.categorizedEmails.applied || [],
+            interviewedEmails: response.categorizedEmails.interviewed || [],
+            offersEmails: response.categorizedEmails.offers || [],
+            rejectedEmails: response.categorizedEmails.rejected || [],
+            irrelevantEmails: response.categorizedEmails.irrelevant || [],
+            quotaData: response.quota || null,
+            categoryTotals: response.categoryTotals || null,
+            applicationStats: applicationStats || null,
+          });
+        }
+
+        const emailsForUi = shouldPrimeCacheFromResponse
+          ? {
+              applied: response.categorizedEmails.applied || [],
+              interviewed: response.categorizedEmails.interviewed || [],
+              offers: response.categorizedEmails.offers || [],
+              rejected: response.categorizedEmails.rejected || [],
+              irrelevant: response.categorizedEmails.irrelevant || [],
+            }
+          : {
+              applied: cached.appliedEmails || [],
+              interviewed: cached.interviewedEmails || [],
+              offers: cached.offersEmails || [],
+              rejected: cached.rejectedEmails || [],
+              irrelevant: cached.irrelevantEmails || [],
+            };
+
+        // Notify UI with current cached data (or primed response data) without blocking sync.
+        safeRuntimeSendMessage({
           type: 'EMAILS_SYNCED',
           success: true,
-          categorizedEmails: {
-            applied: cached.appliedEmails || [],
-            interviewed: cached.interviewedEmails || [],
-            offers: cached.offersEmails || [],
-            rejected: cached.rejectedEmails || [],
-            irrelevant: cached.irrelevantEmails || []
-          },
+          categorizedEmails: emailsForUi,
           categoryTotals: response.categoryTotals, // NEW: Pass category totals to popup
           applicationStats: applicationStats, // NEW: Pass application stats to popup
           quota: response.quota,
           userEmail: userEmail,
           syncInProgress: true
         });
+
+        // If the cache is empty (common right after a fresh login) but the backend is already
+        // counting quota/totals, fetch stored emails immediately so the user sees results fast.
+        // This is best-effort and should never block the sync response.
+        const shouldKickStoredRefresh =
+          cachedCount === 0 &&
+          (Number(response?.quota?.usage || response?.quota?.totalProcessed || 0) > 0 ||
+            (response?.categoryTotals &&
+              Object.values(response.categoryTotals).some((v) => Number(v || 0) > 0)));
+        if (shouldKickStoredRefresh) {
+          refreshStoredEmailsCache(true, { skipNotify: true, skipBackfill: true }).catch(() => {});
+        }
       }
 
       // If backend indicates a background sync is in progress, start polling without blocking
       if (response.sync?.inProgress) {
         pollSyncStatusAndRefresh().catch(e => console.warn('ThreadHQ Background: polling failed:', e?.message));
       }
+
+      // Publish application stats once available (do not block the main sync response).
+      applicationStatsPromise
+        .then(async (stats) => {
+          if (!stats) return;
+          applicationStats = stats;
+          try {
+            await chrome.storage.local.set({ applicationStats });
+            const cached = await chrome.storage.local.get([
+              'appliedEmails',
+              'interviewedEmails',
+              'offersEmails',
+              'rejectedEmails',
+              'irrelevantEmails',
+              'quotaData',
+              'categoryTotals',
+            ]);
+            safeRuntimeSendMessage({
+              type: 'EMAILS_SYNCED',
+              success: true,
+              categorizedEmails: {
+                applied: cached.appliedEmails || [],
+                interviewed: cached.interviewedEmails || [],
+                offers: cached.offersEmails || [],
+                rejected: cached.rejectedEmails || [],
+                irrelevant: cached.irrelevantEmails || [],
+              },
+              ...(cached.categoryTotals ? { categoryTotals: cached.categoryTotals } : {}),
+              applicationStats,
+              quota: cached.quotaData || null,
+              userEmail,
+              syncInProgress: Boolean(response.sync?.inProgress),
+            });
+          } catch (e) {
+            bgLogger.warn?.('Failed to persist/publish application stats:', e?.message || e);
+          }
+        })
+        .catch(() => {});
       return { success: true, categorizedEmails: response.categorizedEmails, quota: response.quota };
     } else {
       // Check if this is a scope or auth error requiring re-authentication
@@ -669,7 +955,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
           : 'Your Gmail permissions are incomplete. Please sign out and sign in again.';
         
         // Notify popup about auth error
-        chrome.runtime.sendMessage({
+        safeRuntimeSendMessage({
           type: messageType,
           errorCode: response.errorCode,
           error: response.error || errorMessage,
@@ -693,7 +979,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         ? 'Your Google session has expired. Please sign out and sign back in.'
         : 'Your Gmail permissions are incomplete. Please sign out and sign in again.';
       
-      chrome.runtime.sendMessage({
+      safeRuntimeSendMessage({
         type: messageType,
         errorCode: error.errorCode,
         error: error.message || errorMessage,
@@ -810,7 +1096,7 @@ async function refreshSubscriptionStatus(userEmail, userId) {
       });
       
       // Notify popup of subscription changes
-      chrome.runtime.sendMessage({
+      safeRuntimeSendMessage({
         type: 'SUBSCRIPTION_UPDATED',
         subscription: subscription
       });
@@ -834,21 +1120,124 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const currentUserId = currentUserInfo.userId;
     const currentUserEmail = currentUserInfo.userEmail;
 
-    // Check if user info is available for operations requiring it
-    // [Inference] This check is to prevent API calls when user is not authenticated or info is not cached.
-    // [Unverified] This might need refinement based on exact backend requirements for each endpoint.
-    const isUserAuthenticated = !!auth.currentUser && !auth.currentUser.isAnonymous;
-    const hasCachedUserInfo = !!currentUserEmail && !!currentUserId;
+	    // Check if user info is available for operations requiring it
+	    const isUserAuthenticated = !!auth.currentUser && !auth.currentUser.isAnonymous;
+	    const hasCachedUserInfo = !!currentUserEmail && !!currentUserId;
 
-    // For any message type *other than* LOGIN_GOOGLE_OAUTH, we expect user info to be present.
+    // For any message type *other than* the allowlisted unauthenticated calls, we expect user info to be present.
     // If not, we respond with an error.
-    if (!isUserAuthenticated && !hasCachedUserInfo && msg.type !== 'LOGIN_GOOGLE_OAUTH') {
+    const unauthAllowed = new Set([
+      'LOGIN_GOOGLE_OAUTH',
+      'GET_BACKEND_BASE_URL',
+      'SET_BACKEND_BASE_URL',
+      'GET_PREMIUM_DASHBOARD_URL',
+      'SET_PREMIUM_DASHBOARD_URL',
+      'GET_BUILD_INFO',
+      'GET_ID_TOKEN',
+    ]);
+    if (!isUserAuthenticated && !hasCachedUserInfo && !unauthAllowed.has(msg.type)) {
       console.warn(`ThreadHQ Background: User not authenticated or user info not cached for message type: ${msg.type}.`);
       sendResponse({ success: false, error: "User not authenticated or user info not available." });
       return;
     }
 
     switch (msg.type) {
+      case 'GET_BUILD_INFO': {
+        const manifest = chrome.runtime.getManifest?.() || {};
+        sendResponse({
+          success: true,
+          build: {
+            id: chrome.runtime.id,
+            name: manifest.name,
+            version: manifest.version,
+            version_name: manifest.version_name,
+          },
+          runtime: {
+            backendBaseUrl,
+            backendBaseUrlDefault: DEFAULT_BACKEND_BASE_URL,
+            backendBaseUrlOverridden: backendBaseUrl !== DEFAULT_BACKEND_BASE_URL,
+            premiumDashboardUrl,
+            premiumDashboardUrlDefault: DEFAULT_PREMIUM_DASHBOARD_URL,
+            premiumDashboardUrlOverridden: premiumDashboardUrl !== DEFAULT_PREMIUM_DASHBOARD_URL,
+          },
+        });
+        break;
+      }
+      case 'GET_BACKEND_BASE_URL':
+        sendResponse({ success: true, backendBaseUrl });
+        break;
+
+      case 'GET_PREMIUM_DASHBOARD_URL':
+        await premiumDashboardUrlReadyPromise;
+        sendResponse({ success: true, premiumDashboardUrl });
+        break;
+
+      case 'SET_BACKEND_BASE_URL':
+        try {
+          // Only allow extension pages (popup/options) to set this.
+          // Content scripts run on web pages and should not be able to redirect the backend.
+          const senderUrl = sender?.url || '';
+          const isExtensionPage = typeof senderUrl === 'string' && senderUrl.startsWith(`chrome-extension://${chrome.runtime.id}/`);
+          const isServiceWorkerContext = !senderUrl; // some Chrome contexts omit sender.url
+          const allowedSender = isExtensionPage || isServiceWorkerContext;
+          if (!allowedSender) {
+            sendResponse({ success: false, error: 'Not allowed from this sender context.' });
+            break;
+          }
+
+          const requested = msg?.backendBaseUrl;
+          if (!requested) {
+            await chrome.storage.local.remove([BACKEND_BASE_URL_STORAGE_KEY]);
+            backendBaseUrl = DEFAULT_BACKEND_BASE_URL;
+            sendResponse({ success: true, backendBaseUrl, resetToDefault: true });
+            break;
+          }
+
+          if (!isAllowedBackendBaseUrlOverride(requested)) {
+            sendResponse({ success: false, error: 'Backend override must be localhost/127.0.0.1.' });
+            break;
+          }
+
+          backendBaseUrl = normalizeBaseUrl(requested);
+          await chrome.storage.local.set({ [BACKEND_BASE_URL_STORAGE_KEY]: backendBaseUrl });
+          sendResponse({ success: true, backendBaseUrl });
+        } catch (e) {
+          sendResponse({ success: false, error: e?.message || String(e) });
+        }
+        break;
+
+      case 'SET_PREMIUM_DASHBOARD_URL':
+        try {
+          const senderUrl = sender?.url || '';
+          const isExtensionPage = typeof senderUrl === 'string' && senderUrl.startsWith(`chrome-extension://${chrome.runtime.id}/`);
+          const isServiceWorkerContext = !senderUrl;
+          const allowedSender = isExtensionPage || isServiceWorkerContext;
+          if (!allowedSender) {
+            sendResponse({ success: false, error: 'Not allowed from this sender context.' });
+            break;
+          }
+
+          const requested = msg?.premiumDashboardUrl;
+          if (!requested) {
+            await chrome.storage.local.remove([PREMIUM_DASHBOARD_URL_STORAGE_KEY]);
+            premiumDashboardUrl = DEFAULT_PREMIUM_DASHBOARD_URL;
+            sendResponse({ success: true, premiumDashboardUrl, resetToDefault: true });
+            break;
+          }
+
+          if (!isAllowedPremiumDashboardUrlOverride(requested)) {
+            sendResponse({ success: false, error: 'Premium URL override must be https://... or localhost http://...' });
+            break;
+          }
+
+          premiumDashboardUrl = normalizeBaseUrl(requested);
+          await chrome.storage.local.set({ [PREMIUM_DASHBOARD_URL_STORAGE_KEY]: premiumDashboardUrl });
+          sendResponse({ success: true, premiumDashboardUrl });
+        } catch (e) {
+          sendResponse({ success: false, error: e?.message || String(e) });
+        }
+        break;
+
       case 'LOGIN_GOOGLE_OAUTH':
         try {
           const redirectUriForBackend = chrome.identity.getRedirectURL();
@@ -908,12 +1297,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             userPlan: tokenResponse.userPlan || 'free'
           });
 
-          // Force full refresh on login
-          await triggerEmailSync(user.email, user.uid, true);
+	          // Do not block LOGIN_GOOGLE_OAUTH on a full sync; auth state listener will start sync.
 
           sendResponse({ success: true, userEmail: user.email, userName: tokenResponse.userName, userPlan: tokenResponse.userPlan, userId: user.uid });
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error during Google OAuth login:', error);
+	          console.error('ThreadHQ Background: Error during Google OAuth login:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -994,15 +1382,44 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'FETCH_QUOTA_DATA':
         try {
-          const response = await apiFetch(CONFIG_ENDPOINTS.SYNC_EMAILS, {
-            method: 'POST',
-            body: { userEmail: currentUserEmail, email: currentUserEmail, userId: currentUserId, fetchOnlyQuota: true }
-          });
-          if (response.success && response.quota) {
-            await chrome.storage.local.set({ quotaData: response.quota });
-            sendResponse({ success: true, quota: response.quota });
+          // Quota polling must not trigger sync/classification work. Use /sync-status.
+          if (!currentUserId || !currentUserEmail) {
+            sendResponse({ success: false, error: 'Not authenticated' });
+            break;
+          }
+
+          const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
+          if (status?.success && status?.quota) {
+            await chrome.storage.local.set({ quotaData: status.quota });
+            // If quota indicates activity but the email cache is empty, try a lightweight
+            // stored-emails refresh so users don't see "quota used" with no emails.
+            try {
+              const cached = await chrome.storage.local.get([
+                'appliedEmails',
+                'interviewedEmails',
+                'offersEmails',
+                'rejectedEmails',
+              ]);
+              const cachedCount =
+                (cached.appliedEmails || []).length +
+                (cached.interviewedEmails || []).length +
+                (cached.offersEmails || []).length +
+                (cached.rejectedEmails || []).length;
+              const quotaUsage = Number(status?.quota?.usage || status?.quota?.totalProcessed || 0);
+              if (cachedCount === 0 && quotaUsage > 0) {
+                refreshStoredEmailsCache(Boolean(status?.sync?.inProgress), { skipNotify: true, skipBackfill: true }).catch(() => {});
+              }
+            } catch (_) {
+              // ignore
+            }
+            sendResponse({
+              success: true,
+              quota: status.quota,
+              sync: status.sync,
+              dataCompleteness: status.dataCompleteness,
+            });
           } else {
-            sendResponse({ success: false, error: response.error || 'Quota data not found in response.' });
+            sendResponse({ success: false, error: status?.error || 'Quota data not found in response.' });
           }
         } catch (error) {
           console.error('❌ ThreadHQ Background: Error fetching quota data:', error);
@@ -1136,16 +1553,78 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             body: reportData
           });
           if (response.success) {
-            await triggerEmailSync(currentUserEmail, currentUserId, false); // Trigger sync after misclassification
+            // Apply the user's correction locally immediately so the UI updates without waiting for a sync.
+            // - If corrected to Irrelevant (or backend deleted), remove from cache.
+            // - Otherwise, move the email into the corrected category.
+            const correctedKey = normalizeCategoryKey(reportData?.correctedCategory);
+            const shouldRemoveLocally = correctedKey === 'irrelevant' || response.removed === true;
+            const storageKeyByCategory = {
+              applied: 'appliedEmails',
+              interviewed: 'interviewedEmails',
+              offers: 'offersEmails',
+              rejected: 'rejectedEmails',
+              irrelevant: 'irrelevantEmails',
+            };
+
+            const targetStorageKey = storageKeyByCategory[correctedKey];
+
+            if ((shouldRemoveLocally || targetStorageKey) && reportData?.emailId) {
+              try {
+                const currentEmails = await chrome.storage.local.get([
+                  'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'
+                ]);
+	                const categories = ['appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'];
+	                const next = {};
+	                let movedEmail = null;
+	                const targetId = String(reportData.emailId);
+	                for (const key of categories) {
+	                  const list = currentEmails[key] || [];
+	                  const found = list.find((e) => String(e?.id) === targetId);
+	                  if (!movedEmail && found) movedEmail = found;
+	                  next[key] = list.filter((e) => String(e?.id) !== targetId);
+	                }
+
+                if (!shouldRemoveLocally && movedEmail && targetStorageKey) {
+                  const updatedEmail = {
+                    ...movedEmail,
+                    category: capitalizeFirst(correctedKey),
+                  };
+                  // Put it at the top of the destination category for visibility.
+                  next[targetStorageKey] = [updatedEmail, ...(next[targetStorageKey] || [])];
+                }
+
+                await chrome.storage.local.set(next);
+                safeRuntimeSendMessage({
+                  type: 'EMAILS_SYNCED',
+                  success: true,
+                  categorizedEmails: {
+                    applied: next.appliedEmails || [],
+                    interviewed: next.interviewedEmails || [],
+                    offers: next.offersEmails || [],
+                    rejected: next.rejectedEmails || [],
+                    irrelevant: next.irrelevantEmails || [],
+                  },
+                  syncInProgress: false,
+                });
+              } catch (e) {
+                console.warn('ThreadHQ Background: Failed to apply local cache update after misclassification:', e?.message || e);
+              }
+            }
+
+            // Trigger a sync after misclassification to refresh counts/quota and ensure consistency.
+            // Do not await here so the popup gets a fast response and the service worker isn't held open.
+            triggerEmailSync(currentUserEmail, currentUserId, false).catch((e) => {
+              console.error('ThreadHQ Background: triggerEmailSync failed after misclassification:', e);
+            });
             // Notify popup of success
-            chrome.runtime.sendMessage({
+            safeRuntimeSendMessage({
               type: 'SHOW_NOTIFICATION',
               msg: 'Email misclassification reported successfully!',
               msgType: 'success'
             });
           } else {
             // Notify popup of error
-            chrome.runtime.sendMessage({
+            safeRuntimeSendMessage({
               type: 'SHOW_NOTIFICATION',
               msg: `Failed to report misclassification: ${response.error}`,
               msgType: 'error'
@@ -1155,7 +1634,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch (error) {
           console.error("❌ ThreadHQ Background: Error reporting misclassification:", error);
           // Notify popup of network/communication error
-          chrome.runtime.sendMessage({
+          safeRuntimeSendMessage({
             type: 'SHOW_NOTIFICATION',
             msg: `Error reporting misclassification: ${error.message}`,
             msgType: 'error'
@@ -1179,14 +1658,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (response.success) {
             await triggerEmailSync(currentUserEmail, currentUserId, false); // Trigger sync after undo
             // Notify popup of success
-            chrome.runtime.sendMessage({
+            safeRuntimeSendMessage({
               type: 'SHOW_NOTIFICATION',
               msg: 'Misclassification undone successfully!',
               msgType: 'success'
             });
           } else {
             // Notify popup of error
-            chrome.runtime.sendMessage({
+            safeRuntimeSendMessage({
               type: 'SHOW_NOTIFICATION',
               msg: `Failed to undo misclassification: ${response.error}`,
               msgType: 'error'
@@ -1196,7 +1675,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch (error) {
           console.error("❌ ThreadHQ Background: Error undoing misclassification:", error);
           // Notify popup of network/communication error
-          chrome.runtime.sendMessage({
+          safeRuntimeSendMessage({
             type: 'SHOW_NOTIFICATION',
             msg: `Error undoing misclassification: ${error.message}`,
             msgType: 'error'
@@ -1553,6 +2032,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'GET_ID_TOKEN':
         try {
+          // Wait for Firebase Auth to finish loading from IndexedDB
+          // (critical on service-worker cold start)
+          await authReadyPromise;
           const user = auth.currentUser;
           if (user && !user.isAnonymous) {
             const token = await user.getIdToken();
@@ -1849,7 +2331,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
             
             // Broadcast update to popup
-            chrome.runtime.sendMessage({
+            safeRuntimeSendMessage({
               type: 'EMAIL_STARRED_UPDATED',
               emailId: emailId,
               isStarred: isStarred
@@ -1888,81 +2370,106 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 setPersistence(auth, indexedDBLocalPersistence)
   .then(() => {
     console.log("✅ ThreadHQ Background: Firebase Auth persistence set to IndexedDB.");
-    onAuthStateChanged(auth, async (user) => {
-      // Resolve the authReadyPromise once the initial auth state is determined
-      authReadyResolve();
+	    onAuthStateChanged(auth, async (user) => {
+	      // Resolve the authReadyPromise once the initial auth state is determined
+	      authReadyResolve();
 
-      if (user) {
-        console.log("✅ ThreadHQ Background: Auth State Changed - User logged in:", user.email, "UID:", user.uid);
-        // Ensure userEmail and userId are immediately available in local storage
-        await chrome.storage.local.set({
-          userEmail: user.email,
-          userName: user.displayName || user.email,
-          userId: user.uid,
-        });
+	      if (user) {
+	        console.log("✅ ThreadHQ Background: Auth State Changed - User logged in:", user.email, "UID:", user.uid);
+	        // Ensure userEmail and userId are immediately available in local storage
+	        await chrome.storage.local.set({
+	          userEmail: user.email,
+	          userName: user.displayName || user.email,
+	          userId: user.uid,
+	        });
 
-        if (!user.isAnonymous) {
-          try {
-            // Fetch user plan, ensuring email and userId are sent in the body
-            const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_USER_PLAN, {
-              method: 'POST',
-              body: { email: user.email, userId: user.uid } // Explicitly send email and userId
-            });
-            if (response.success) {
-              await chrome.storage.local.set({ userPlan: response.plan });
-              console.log("✅ ThreadHQ Background: User plan fetched and stored:", response.plan);
-            } else {
-              console.error("❌ ThreadHQ Background: Failed to fetch user plan during auth state change:", response.error);
-            }
-          } catch (error) {
-            console.error("❌ ThreadHQ Background: Network/communication error fetching user plan during auth state change:", error);
-          }
-          // After a user logs in (or re-authenticates), decide whether to do a full refresh
-          // If last sync is stale (> 24h) or unknown, force full refresh to catch up
-          let shouldFull = true;
-          try {
-            const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
-            const last = status?.sync?.lastSyncAt ? new Date(status.sync.lastSyncAt) : null;
-            if (last && (Date.now() - last.getTime()) < 24 * 60 * 60 * 1000) {
-              shouldFull = false;
-            }
-          } catch (e) {
-            // If status fetch fails, err on the side of full refresh
-            shouldFull = true;
-          }
-          await triggerEmailSync(user.email, user.uid, shouldFull);
-        } else {
-          console.log("ThreadHQ Background: Anonymous user detected. Not fetching plan or syncing emails.");
-        }
-      } else {
-        console.log("✅ ThreadHQ Background: Auth State Changed - User logged out.");
-        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']); // Clear all cached data on logout
-      }
-      // Notify the popup that auth state is ready (after all initial processing)
-      chrome.runtime.sendMessage({ type: 'AUTH_READY', success: true, loggedOut: !user });
-    });
+	        // Notify the popup immediately so it can render and load cached data.
+	        safeRuntimeSendMessage({ type: 'AUTH_READY', success: true, loggedOut: false });
+	        broadcastAuthStateToContentScripts(true, user.email);
+
+	        if (!user.isAnonymous) {
+	          // Best-effort: refresh stored emails immediately after login so the popup can show
+	          // existing DB data while a potentially long sync is running (Cloud Run / classifier cold starts).
+	          refreshStoredEmailsCache(true, { skipNotify: true, skipBackfill: true }).catch((e) => {
+	            bgLogger.warn?.('Failed to prefetch stored emails after auth:', e?.message);
+	          });
+
+	          // Fetch user plan in the background (do not block UI readiness).
+	          (async () => {
+	            try {
+	              const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_USER_PLAN, {
+	                method: 'POST',
+	                body: { email: user.email, userId: user.uid }
+	              });
+	              if (response.success) {
+	                await chrome.storage.local.set({ userPlan: response.plan });
+	                console.log("✅ ThreadHQ Background: User plan fetched and stored:", response.plan);
+	              } else {
+	                console.error("❌ ThreadHQ Background: Failed to fetch user plan during auth state change:", response.error);
+	              }
+	            } catch (error) {
+	              console.error("❌ ThreadHQ Background: Network/communication error fetching user plan during auth state change:", error);
+	            }
+	          })();
+
+	          // Start syncing in the background (do not await).
+	          (async () => {
+	            // After a user logs in (or re-authenticates), decide whether to do a full refresh.
+	            // If last sync is stale (> 24h) or unknown, force full refresh to catch up.
+	            let shouldFull = true;
+	            try {
+	              const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
+	              const last = status?.sync?.lastSyncAt ? new Date(status.sync.lastSyncAt) : null;
+	              if (last && (Date.now() - last.getTime()) < 24 * 60 * 60 * 1000) {
+	                shouldFull = false;
+	              }
+	            } catch (_) {
+	              shouldFull = true;
+	            }
+
+	            try {
+	              await triggerEmailSync(user.email, user.uid, shouldFull);
+	            } catch (e) {
+	              console.error('ThreadHQ Background: triggerEmailSync failed after auth state change:', e);
+	            }
+	          })();
+	        } else {
+	          console.log("ThreadHQ Background: Anonymous user detected. Not fetching plan or syncing emails.");
+	        }
+	      } else {
+	        console.log("✅ ThreadHQ Background: Auth State Changed - User logged out.");
+	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']); // Clear all cached data on logout
+	        safeRuntimeSendMessage({ type: 'AUTH_READY', success: true, loggedOut: true });
+	        broadcastAuthStateToContentScripts(false, null);
+	      }
+	    });
   })
   .catch((error) => {
     console.error("❌ ThreadHQ Background: Error setting Firebase Auth persistence:", error);
     // Even if persistence fails, still listen for auth state changes
-    onAuthStateChanged(auth, async (user) => {
+	    onAuthStateChanged(auth, async (user) => {
       // Resolve the authReadyPromise even if persistence setup failed
       authReadyResolve();
 
-      if (user) {
-        console.log("ThreadHQ Background: Auth State Changed (without persistence) - User logged in:", user.email);
-        await chrome.storage.local.set({ userEmail: user.email, userName: user.displayName || user.email, userId: user.uid });
-        // Still try to sync emails even if persistence failed
-        if (!user.isAnonymous) {
-          await triggerEmailSync(user.email, user.uid, false);
-        }
-      } else {
-        console.log("ThreadHQ Background: Auth State Changed (without persistence) - User logged out.");
-        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']);
-      }
-      chrome.runtime.sendMessage({ type: 'AUTH_READY', success: true, loggedOut: !user });
-    });
-  });
+	      if (user) {
+	        console.log("ThreadHQ Background: Auth State Changed (without persistence) - User logged in:", user.email);
+	        await chrome.storage.local.set({ userEmail: user.email, userName: user.displayName || user.email, userId: user.uid });
+	        safeRuntimeSendMessage({ type: 'AUTH_READY', success: true, loggedOut: false });
+	        broadcastAuthStateToContentScripts(true, user.email);
+	        // Still try to sync emails even if persistence failed
+	        if (!user.isAnonymous) {
+	          triggerEmailSync(user.email, user.uid, false).catch((e) => {
+	            console.error('ThreadHQ Background: triggerEmailSync failed after auth state change (no persistence):', e);
+	          });
+	        }
+	      } else {
+	        console.log("ThreadHQ Background: Auth State Changed (without persistence) - User logged out.");
+	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']);
+	        safeRuntimeSendMessage({ type: 'AUTH_READY', success: true, loggedOut: true });
+	        broadcastAuthStateToContentScripts(false, null);
+	      }
+	    });
+	  });
 
 
 // --- Chrome Alarms (for scheduled sync) ---
@@ -1983,7 +2490,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         }
       } catch (error) {
         console.error('❌ ThreadHQ: Error during alarm-triggered email sync:', error);
-        chrome.runtime.sendMessage({ type: 'EMAILS_SYNCED', success: false, error: error.message });
+        safeRuntimeSendMessage({ type: 'EMAILS_SYNCED', success: false, error: error.message });
       }
     } else {
       console.log('ThreadHQ: Skipping email sync for unauthenticated or anonymous user.');

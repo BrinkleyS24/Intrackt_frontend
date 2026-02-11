@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { showNotification } from './Notification'; // For global toasts
-import { CONFIG } from '../utils/constants';
+import { getPremiumDashboardUrl } from '../utils/runtimeConfig';
 
 function QuotaBanner({ quota, userPlan }) {
   const [dismissed, setDismissed] = useState(false);
@@ -60,8 +60,9 @@ function QuotaBanner({ quota, userPlan }) {
       <span className="flex-1 mr-4">{message}</span>
       <button
         className="mr-2 border border-yellow-300/60 dark:border-yellow-700 text-xs text-yellow-900 dark:text-yellow-200 px-3 py-1 rounded-lg hover:bg-yellow-200/60 dark:hover:bg-yellow-900/40 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-yellow-300 focus:ring-opacity-50"
-        onClick={() => {
-          const url = (CONFIG?.PREMIUM_DASHBOARD_URL || '').toString().trim();
+        onClick={async () => {
+          const url = await getPremiumDashboardUrl();
+
           if (!url) {
             showNotification('Premium dashboard URL is not configured yet.', 'info');
             return;
