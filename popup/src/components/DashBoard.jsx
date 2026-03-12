@@ -772,7 +772,7 @@ function Dashboard({
   openPremiumModal,
   quotaData
 }) {
-  const isPremium = false;
+  const isPremium = userPlan === 'premium';
   const [analyticsTab, setAnalyticsTab] = useState('overview');
   const [followUpSearch, setFollowUpSearch] = useState('');
   const [followUpUrgencyFilter, setFollowUpUrgencyFilter] = useState('all');
@@ -2792,12 +2792,15 @@ function Dashboard({
                   </ul>
                   <button
                     onClick={async () => {
-                      const url = await getPremiumDashboardUrl();
+                      const rawUrl = await getPremiumDashboardUrl();
 
-                      if (!url) {
+                      if (!rawUrl) {
                         showNotification('Premium dashboard URL is not configured yet.', 'info');
                         return;
                       }
+                      let baseUrl;
+                      try { baseUrl = new URL(rawUrl).origin; } catch { baseUrl = rawUrl.replace(/\/+$/, ''); }
+                      const url = baseUrl + '/dashboard';
                       try {
                         chrome.tabs.create({ url });
                       } catch (e) {

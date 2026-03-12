@@ -57,12 +57,20 @@ export default function QuickView({
         <div className="flex items-center gap-2">
           <button
             onClick={async () => {
-              const url = await getPremiumDashboardUrl();
+              const rawUrl = await getPremiumDashboardUrl();
 
-              if (!url) {
+              if (!rawUrl) {
                 showNotification('Premium dashboard URL is not configured yet.', 'info');
                 return;
               }
+
+              // Strip any stored path — use only the origin
+              let baseUrl;
+              try { baseUrl = new URL(rawUrl).origin; } catch { baseUrl = rawUrl.replace(/\/+$/, ''); }
+
+              // Navigate to /dashboard for premium users, /upgrade for free users
+              const path = userPlan === 'premium' ? '/dashboard' : '/upgrade';
+              const url = baseUrl + path;
 
               try {
                 chrome.tabs.create({ url });

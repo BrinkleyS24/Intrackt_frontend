@@ -61,12 +61,15 @@ function QuotaBanner({ quota, userPlan }) {
       <button
         className="mr-2 border border-yellow-300/60 dark:border-yellow-700 text-xs text-yellow-900 dark:text-yellow-200 px-3 py-1 rounded-lg hover:bg-yellow-200/60 dark:hover:bg-yellow-900/40 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-yellow-300 focus:ring-opacity-50"
         onClick={async () => {
-          const url = await getPremiumDashboardUrl();
+          const rawUrl = await getPremiumDashboardUrl();
 
-          if (!url) {
+          if (!rawUrl) {
             showNotification('Premium dashboard URL is not configured yet.', 'info');
             return;
           }
+          let baseUrl;
+          try { baseUrl = new URL(rawUrl).origin; } catch { baseUrl = rawUrl.replace(/\/+$/, ''); }
+          const url = baseUrl + '/upgrade';
           try {
             chrome.tabs.create({ url });
           } catch (e) {
