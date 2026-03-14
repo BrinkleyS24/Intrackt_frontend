@@ -222,6 +222,54 @@ const sanitizeUntrustedEmailHtml = (html) => {
   return template.innerHTML;
 };
 
+const getEmailThreadId = (emailLike) => {
+  const candidates = [
+    emailLike?.thread_id,
+    emailLike?.threadId,
+    emailLike?.thread,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined) continue;
+    const normalized = String(candidate).trim();
+    if (normalized) return normalized;
+  }
+
+  return null;
+};
+
+const buildGmailThreadUrl = (emailLike, userEmail) => {
+  const explicitLink = (emailLike?.gmail_link || '').toString().trim();
+  if (explicitLink) return explicitLink;
+
+  const threadId = getEmailThreadId(emailLike);
+  if (!threadId) return null;
+
+  const authUser = (userEmail || '').toString().trim();
+  const authQuery = authUser ? `?authuser=${encodeURIComponent(authUser)}` : '';
+  return `https://mail.google.com/mail/u/0/${authQuery}#all/${encodeURIComponent(threadId)}`;
+};
+
+const openExternalTab = async (url) => {
+  if (!url) return false;
+
+  try {
+    if (typeof chrome !== 'undefined' && chrome?.tabs?.create) {
+      await chrome.tabs.create({ url });
+      return true;
+    }
+  } catch (_) {
+    // Fall back to a regular window open below.
+  }
+
+  try {
+    const opened = window.open(url, '_blank', 'noopener,noreferrer');
+    return Boolean(opened);
+  } catch (_) {
+    return false;
+  }
+};
+
 // Enhanced HTML sanitization and styling for Gmail-like display
 const sanitizeAndStyleEmailHTML = (html) => {
   if (!html) return '';
@@ -968,11 +1016,16 @@ export default function EmailPreview({ email, onBack, onReply, onArchive, onOpen
 
   // NOTE: Archive/star UI actions are intentionally hidden for launch until fully wired.
 
-  const handleOpenGmail = () => {
-    if (email.gmail_link) {
-      window.open(email.gmail_link, '_blank');
-    } else {
+  const handleOpenGmail = async () => {
+    const gmailUrl = buildGmailThreadUrl(email, userEmail);
+    if (!gmailUrl) {
       showNotification("Gmail link not available for this email.", "warning");
+      return;
+    }
+
+    const opened = await openExternalTab(gmailUrl);
+    if (!opened) {
+      showNotification("Unable to open Gmail for this email.", "error");
     }
   };
 

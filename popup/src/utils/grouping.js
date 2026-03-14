@@ -237,16 +237,16 @@ export function groupEmailsByThread(emails) {
       const appId = email.application_id || email.applicationId;
       const groupKey = appId
         ? `interview_app_${appId}`
-        : positionKey
+        : (companyIdentifier && positionKey)
           ? `interview_${companyIdentifier}_${positionKey}`
-          : `interview_${companyIdentifier}`;
+          : null;
       
-      if (appId || companyIdentifier) {
+      if (groupKey) {
         return groupKey;
       }
 
       // If we couldn't confidently extract a company identifier, fall back to thread id
-      // (prevents grouping unrelated calendar invites that come from the user's own email).
+      // (prevents grouping unrelated calendar invites or separate loops at the same company).
       if (threadId && threadId !== email.id) {
         return `thread_${threadId}`;
       }

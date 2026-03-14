@@ -1,10 +1,10 @@
 /**
  * @file content.js
- * @description Bridge between the Intrackt web app and the extension.
+ * @description Bridge between the ThreadHQ web app and the extension.
  * Injected on localhost pages so the web app can authenticate via the extension.
  */
 
-console.log("Intrackt Content Script loaded.");
+console.log("ThreadHQ Content Script loaded.");
 
 try {
 	window.postMessage(

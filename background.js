@@ -22,6 +22,10 @@ const UNDO_TIMEOUT_MS = 10000; // 10 seconds for undo toast
 // Watchdog to detect unusually long-running sync locks
 const STUCK_LOCK_THRESHOLD_MIN = 15; // minutes a sync may run before considered stuck
 const WATCHDOG_INTERVAL_MIN = 5; // how often to check for stuck syncs
+const EMAILS_CACHE_META_KEY = 'emailsCacheMetaV1';
+const STORED_EMAILS_CACHE_MAX_AGE_MS = 15 * 1000;
+const APP_LINK_BACKFILL_STATE_KEY = 'appLinksBackfillStateV2';
+const APP_LINK_BACKFILL_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 // In MV3, `chrome.runtime.sendMessage()` returns a Promise if no callback is provided.
 // If the popup is closed there may be no listeners, which can otherwise cause
@@ -77,6 +81,60 @@ function flattenCategorizedEmails(categorizedEmails) {
   ];
 }
 
+function getStructuredField(value) {
+  const normalized = (value || '').toString().trim();
+  if (!normalized) return '';
+  const lower = normalized.toLowerCase();
+  if (lower === 'unknown company' || lower === 'unknown role') return '';
+  return normalized;
+}
+
+function formatNotificationTarget(email) {
+  const company = getStructuredField(email?.company_name || email?.company);
+  const position = getStructuredField(email?.position || email?.job_title);
+
+  if (company && position) return `${company} - ${position}`;
+  if (company) return company;
+  if (position) return position;
+  return '';
+}
+
+async function isStoredEmailsCacheStale(maxAgeMs = STORED_EMAILS_CACHE_MAX_AGE_MS) {
+  try {
+    const state = await chrome.storage.local.get([EMAILS_CACHE_META_KEY]);
+    const updatedAt = Number(state?.[EMAILS_CACHE_META_KEY]?.updatedAt || 0);
+    if (!updatedAt) return true;
+    return (Date.now() - updatedAt) > maxAgeMs;
+  } catch (_) {
+    return true;
+  }
+}
+
+function buildApplicationBackfillSignature(categorizedEmails) {
+  const relevant = [
+    ...(categorizedEmails?.applied || []),
+    ...(categorizedEmails?.interviewed || []),
+    ...(categorizedEmails?.offers || []),
+    ...(categorizedEmails?.rejected || []),
+  ];
+
+  const candidateIds = relevant
+    .filter((email) => {
+      if (email?.applicationId || email?.application_id) return false;
+      const company = getStructuredField(email?.company_name);
+      const position = getStructuredField(email?.position);
+      return Boolean(company && position);
+    })
+    .map((email) => String(email.id || email.email_id || email.thread_id || ''))
+    .filter(Boolean)
+    .sort();
+
+  return {
+    count: candidateIds.length,
+    signature: candidateIds.join('|'),
+  };
+}
+
 async function maybeNotifyNewEmails(prevCategorizedEmails, nextCategorizedEmails, syncInProgress) {
   // Avoid spamming while a long sync is still running; notify only on completion/manual refresh.
   if (syncInProgress === true) return;
@@ -126,14 +184,13 @@ async function maybeNotifyNewEmails(prevCategorizedEmails, nextCategorizedEmails
     const meta = CATEGORY_NOTIFICATION_META[cat] || { title: 'Update detected', plural: 'updates' };
     const sorted = [...list].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     const sample = sorted[0] || {};
-    const company = (sample.company_name || sample.company || 'Unknown company').toString();
-    const position = (sample.position || sample.job_title || 'Unknown role').toString();
+    const targetLabel = formatNotificationTarget(sample);
 
     const title = meta.title;
     const message =
       list.length === 1
-        ? `${company} — ${position}`
-        : `${list.length} new ${meta.plural}. Latest: ${company} — ${position}`;
+        ? (targetLabel || meta.title)
+        : (targetLabel ? `${list.length} new ${meta.plural}. Latest: ${targetLabel}` : `${list.length} new ${meta.plural}.`);
 
     try {
       chrome.notifications.create(`appmailia_${cat}_${sample.id || Date.now()}`, {
@@ -479,6 +536,15 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
         offersEmails: response.categorizedEmails.offers || [],
         rejectedEmails: response.categorizedEmails.rejected || [],
         irrelevantEmails: response.categorizedEmails.irrelevant || [],
+        [EMAILS_CACHE_META_KEY]: {
+          updatedAt: Date.now(),
+          syncInProgress: isSyncing,
+          totalRelevantCount:
+            (response.categorizedEmails.applied || []).length +
+            (response.categorizedEmails.interviewed || []).length +
+            (response.categorizedEmails.offers || []).length +
+            (response.categorizedEmails.rejected || []).length,
+        },
         // Keep totals in sync with DB so the dashboard doesn't depend on local array size.
         ...(response.categoryTotals ? { categoryTotals: response.categoryTotals } : {}),
       });
@@ -500,53 +566,48 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
         }
       }
 
-      // Optional one-time backfill: do not block initial render.
+      // Optional relink backfill: do not block initial render.
       if (!isSyncing && !skipBackfill) {
         (async () => {
-          const APP_LINK_BACKFILL_KEY = 'appLinksBackfilledV1';
-          try {
-            const state = await chrome.storage.local.get([APP_LINK_BACKFILL_KEY]);
-            if (state && state[APP_LINK_BACKFILL_KEY]) return;
-          } catch (_) {
-            // ignore
-          }
+          const backfillState = await chrome.storage.local.get([APP_LINK_BACKFILL_STATE_KEY]).catch(() => ({}));
+          const state = backfillState?.[APP_LINK_BACKFILL_STATE_KEY] || {};
+          const signatureState = buildApplicationBackfillSignature(response.categorizedEmails);
+          const shouldSkip =
+            signatureState.count === 0 ||
+            (
+              state.signature === signatureState.signature &&
+              state.lastRunAt &&
+              (Date.now() - Number(state.lastRunAt)) < APP_LINK_BACKFILL_MIN_INTERVAL_MS
+            );
 
-          const allRelevant = [
-            ...(response.categorizedEmails.applied || []),
-            ...(response.categorizedEmails.interviewed || []),
-            ...(response.categorizedEmails.offers || []),
-            ...(response.categorizedEmails.rejected || []),
-          ];
-
-          const needsLinking = allRelevant.some((e) => {
-            if (e?.applicationId) return false;
-            const company = e?.company_name;
-            const position = e?.position;
-            return !!(company && position);
-          });
-
-          if (!needsLinking) {
-            try {
-              await chrome.storage.local.set({ [APP_LINK_BACKFILL_KEY]: true });
-            } catch (_) {
-              // ignore
+          if (shouldSkip) {
+            if (signatureState.count === 0) {
+              await chrome.storage.local.set({
+                [APP_LINK_BACKFILL_STATE_KEY]: {
+                  signature: '',
+                  count: 0,
+                  lastRunAt: Date.now(),
+                }
+              }).catch(() => {});
             }
             return;
           }
 
           try {
-            bgLogger.info('[backfill] Running one-time application linking backfill...');
+            bgLogger.info('[backfill] Running application linking backfill...');
             const backfillRes = await apiFetch('/api/emails/applications/backfill', {
               method: 'POST',
               body: { limit: 5000 },
             });
             if (!backfillRes || !backfillRes.success) return;
 
-            try {
-              await chrome.storage.local.set({ [APP_LINK_BACKFILL_KEY]: true });
-            } catch (_) {
-              // ignore
-            }
+            await chrome.storage.local.set({
+              [APP_LINK_BACKFILL_STATE_KEY]: {
+                signature: signatureState.signature,
+                count: signatureState.count,
+                lastRunAt: Date.now(),
+              }
+            }).catch(() => {});
 
             // Refetch once so cached emails include `applicationId` and updated `isClosed`.
             const refreshed = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, {
@@ -560,6 +621,15 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
                 offersEmails: refreshed.categorizedEmails.offers || [],
                 rejectedEmails: refreshed.categorizedEmails.rejected || [],
                 irrelevantEmails: refreshed.categorizedEmails.irrelevant || [],
+                [EMAILS_CACHE_META_KEY]: {
+                  updatedAt: Date.now(),
+                  syncInProgress: false,
+                  totalRelevantCount:
+                    (refreshed.categorizedEmails.applied || []).length +
+                    (refreshed.categorizedEmails.interviewed || []).length +
+                    (refreshed.categorizedEmails.offers || []).length +
+                    (refreshed.categorizedEmails.rejected || []).length,
+                },
               });
               safeRuntimeSendMessage({
                 type: 'EMAILS_SYNCED',
@@ -1365,6 +1435,25 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // This message is now primarily handled by the popup reading directly from chrome.storage.local.
         console.warn("ThreadHQ Background: Received FETCH_STORED_EMAILS, but popup should read directly from local storage.");
         sendResponse({ success: true, message: "Handled by popup's direct storage access." });
+        break;
+
+      case 'REFRESH_STORED_EMAILS_CACHE':
+        try {
+          const staleOnly = msg?.staleOnly !== false;
+          if (staleOnly) {
+            const stale = await isStoredEmailsCacheStale();
+            if (!stale) {
+              sendResponse({ success: true, skipped: true, reason: 'cache_fresh' });
+              break;
+            }
+          }
+
+          const refreshed = await refreshStoredEmailsCache(undefined, { skipNotify: true });
+          sendResponse(refreshed);
+        } catch (error) {
+          console.error('❌ ThreadHQ Background: Error refreshing stored email cache:', error);
+          sendResponse({ success: false, error: error.message });
+        }
         break;
 
       case 'FETCH_NEW_EMAILS':

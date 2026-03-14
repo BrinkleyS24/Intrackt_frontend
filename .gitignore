@@ -1,5 +1,9 @@
 .env
+.env.*
+!.env.example
 node_modules
 .parcel-cache
 popup/dist
 popup/popup/dist
+popup/dist_dev
+popup/dist_smoke

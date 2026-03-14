@@ -1254,21 +1254,28 @@ function Dashboard({
     const getCompanyDisplay = (e) => {
       const candidates = [e?.company_name, e?.companyName, e?.company];
       const found = candidates.find((v) => typeof v === 'string' && v.trim());
-      return found || 'Unknown company';
+      return found || null;
     };
 
     const getPositionDisplay = (e) => {
       const candidates = [e?.position, e?.job_title];
       const found = candidates.find((v) => typeof v === 'string' && v.trim());
-      return found || 'Unknown role';
+      return found || null;
     };
 
-    const getKey = (e) =>
-      e.application_id ||
-      e.applicationId ||
-      e.thread_id ||
-      e.threadId ||
-      `fallback:${getCompanyDisplay(e)}::${getPositionDisplay(e)}`;
+    const getKey = (e) => {
+      const applicationId = e.application_id || e.applicationId;
+      if (applicationId) return applicationId;
+
+      const threadId = e.thread_id || e.threadId;
+      if (threadId) return threadId;
+
+      const company = getCompanyDisplay(e);
+      const position = getPositionDisplay(e);
+      if (company && position) return `fallback:${company}::${position}`;
+
+      return `fallback:${e?.id || e?.email_id || e?.thread_id || e?.threadId || e?.subject || e?.date || 'unknown'}`;
+    };
 
     const groups = new Map();
 
@@ -1302,8 +1309,8 @@ function Dashboard({
       // Keep the richest display values we see.
       const company = getCompanyDisplay(e);
       const position = getPositionDisplay(e);
-      if (rec.company === 'Unknown company' && company !== 'Unknown company') rec.company = company;
-      if (rec.position === 'Unknown role' && position !== 'Unknown role') rec.position = position;
+      if (!rec.company && company) rec.company = company;
+      if (!rec.position && position) rec.position = position;
 
       rec.lastActivityMs = Math.max(rec.lastActivityMs ?? t, t);
 

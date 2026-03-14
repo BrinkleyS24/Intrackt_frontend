@@ -17,6 +17,33 @@ import {
 } from '../services/emailService';
 import { showNotification } from '../components/Notification';
 import { getCategoryTitle } from '../utils/uiHelpers';
+import { sendMessageToBackground } from '../utils/chromeMessaging';
+
+const STORED_EMAILS_CACHE_META_KEY = 'emailsCacheMetaV1';
+const STORED_EMAILS_CACHE_MAX_AGE_MS = 15 * 1000;
+
+const countUnreadThreadsByCategory = (emails = {}) => {
+  const counts = {
+    applied: 0,
+    interviewed: 0,
+    offers: 0,
+    rejected: 0,
+    irrelevant: 0,
+  };
+
+  Object.keys(counts).forEach((category) => {
+    const threadsWithUnread = new Set();
+    (emails[category] || []).forEach((email) => {
+      if (!email?.is_read) {
+        const threadId = email.thread_id || email.threadId || email.thread || email.id;
+        if (threadId) threadsWithUnread.add(threadId);
+      }
+    });
+    counts[category] = threadsWithUnread.size;
+  });
+
+  return counts;
+};
 
 export function useEmails(userEmail, userId, CONFIG) {
   // State to hold emails categorized by their job application status
@@ -70,25 +97,7 @@ export function useEmails(userEmail, userId, CONFIG) {
    * Counts unread threads instead of individual unread emails for consistency.
    */
   const calculateUnreadCounts = useCallback((emails) => {
-    const counts = {
-      applied: 0,
-      interviewed: 0,
-      offers: 0,
-      rejected: 0,
-      irrelevant: 0,
-    };
-    Object.keys(emails).forEach(category => {
-      // Group emails by thread and count threads that have at least one unread email
-      const threadsWithUnread = new Set();
-      emails[category].forEach(email => {
-        if (!email.is_read) {
-          const threadId = email.thread_id || email.threadId || email.thread || email.id;
-          threadsWithUnread.add(threadId);
-        }
-      });
-      counts[category] = threadsWithUnread.size;
-    });
-    setUnreadCounts(counts);
+    setUnreadCounts(countUnreadThreadsByCategory(emails));
   }, []);
 
   // Use a ref to store the latest categorizedEmails for background sync
@@ -161,22 +170,8 @@ export function useEmails(userEmail, userId, CONFIG) {
   }, [isSyncing, syncHeartbeat]);
 
   useEffect(() => {
-    const counts = {
-      applied: 0,
-      interviewed: 0,
-      offers: 0,
-      rejected: 0,
-      irrelevant: 0,
-    };
-    if (categorizedEmails) {
-      for (const category in categorizedEmails) {
-        if (Array.isArray(categorizedEmails[category])) {
-          counts[category] = categorizedEmails[category].filter(email => !email.is_read).length;
-        }
-      }
-    }
-    setUnreadCounts(counts);
-  }, [categorizedEmails]); // This now correctly depends on the source state.
+    calculateUnreadCounts(categorizedEmails);
+  }, [categorizedEmails, calculateUnreadCounts]);
 
   const markEmailAsRead = useCallback(async (emailId) => {
     let originalCategory = null;
@@ -237,12 +232,23 @@ export function useEmails(userEmail, userId, CONFIG) {
       hasLoadedOnceRef.current = true;
       
       // NEW: Retrieve category totals from local storage
-      const result = await chrome.storage.local.get(['categoryTotals', 'applicationStats']);
+      const result = await chrome.storage.local.get(['categoryTotals', 'applicationStats', STORED_EMAILS_CACHE_META_KEY]);
       if (result.categoryTotals) {
         setCategoryTotals(result.categoryTotals);
       }
       if (result.applicationStats) {
         setApplicationStats(result.applicationStats);
+      }
+      if (userEmail && userId) {
+        const cacheMeta = result[STORED_EMAILS_CACHE_META_KEY] || null;
+        const updatedAt = Number(cacheMeta?.updatedAt || 0);
+        const isStale = !updatedAt || (Date.now() - updatedAt) > STORED_EMAILS_CACHE_MAX_AGE_MS;
+        if (isStale) {
+          sendMessageToBackground({
+            type: 'REFRESH_STORED_EMAILS_CACHE',
+            staleOnly: true,
+          }).catch(() => {});
+        }
       }
     } catch (error) {
       console.error("❌ ThreadHQ: Error fetching stored emails:", error);
@@ -251,7 +257,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       // This will remove the main loading overlay, revealing the stored emails.
       setInitialLoading(false);
     }
-  }, [calculateUnreadCounts]);
+  }, [calculateUnreadCounts, userEmail, userId]);
 
 
   /**
@@ -309,11 +315,21 @@ export function useEmails(userEmail, userId, CONFIG) {
     const allEmails = Object.values(categorizedEmails).flat();
 
     filtered = allEmails.filter(email => {
-      const matchesSearch = searchQuery
-        ? (email.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          email.body?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          email.from?.toLowerCase().includes(searchQuery.toLowerCase()))
-        : true;
+      const searchLower = searchQuery.toLowerCase();
+      const haystack = [
+        email.subject,
+        email.body,
+        email.html_body,
+        email.from,
+        email.company_name,
+        email.company_name_corrected,
+        email.position,
+        email.position_corrected,
+      ]
+        .filter(Boolean)
+        .map((value) => value.toString().toLowerCase())
+        .join(' ');
+      const matchesSearch = searchQuery ? haystack.includes(searchLower) : true;
 
       const emailDate = new Date(email.date);
       const now = new Date();
@@ -609,7 +625,7 @@ export function useEmails(userEmail, userId, CONFIG) {
     
     try {
       await markEmailsAsReadService(category, userId);
-      showNotification(`All emails in ${getCategoryTitle(category)} marked as ready!`, 'success');
+      showNotification(`All emails in ${getCategoryTitle(category)} marked as read!`, 'success');
     } catch (e) {
       setCategorizedEmails(prev);
       showNotification('Failed to mark all as read.', 'error');
