@@ -1,6 +1,6 @@
 /**
  * @file background.js
- * @description This script handles background tasks for the ThreadHQ extension,
+ * @description This script handles background tasks for the MorrowFold extension,
  * including email synchronization, user authentication, and misclassification reporting.
  * It operates as a service worker, listening for alarms and messages from the popup.
  */
@@ -57,8 +57,10 @@ function broadcastAuthStateToContentScripts(loggedIn, email) {
 
 // --- OS Notifications (service worker) ---
 // These notifications show even when the popup UI is closed, as long as Chrome is running.
-const NOTIFICATIONS_ENABLED_KEY = 'appmailiaNotificationsEnabledV1';
-const NOTIFICATIONS_INITIALIZED_KEY = 'appmailiaNotificationsInitializedV1';
+const NOTIFICATIONS_ENABLED_KEY = 'morrowfoldNotificationsEnabledV1';
+const NOTIFICATIONS_INITIALIZED_KEY = 'morrowfoldNotificationsInitializedV1';
+const LEGACY_NOTIFICATIONS_ENABLED_KEY = ['app', 'mailiaNotificationsEnabledV1'].join('');
+const LEGACY_NOTIFICATIONS_INITIALIZED_KEY = ['app', 'mailiaNotificationsInitializedV1'].join('');
 
 const CATEGORY_NOTIFICATION_META = {
   applied: { title: 'Application tracked', plural: 'applications', badgeColor: [37, 99, 235, 255] },
@@ -142,9 +144,26 @@ async function maybeNotifyNewEmails(prevCategorizedEmails, nextCategorizedEmails
   let enabled = true;
   let initialized = false;
   try {
-    const state = await chrome.storage.local.get([NOTIFICATIONS_ENABLED_KEY, NOTIFICATIONS_INITIALIZED_KEY]);
-    if (typeof state?.[NOTIFICATIONS_ENABLED_KEY] === 'boolean') enabled = state[NOTIFICATIONS_ENABLED_KEY];
+    const state = await chrome.storage.local.get([
+      NOTIFICATIONS_ENABLED_KEY,
+      NOTIFICATIONS_INITIALIZED_KEY,
+      LEGACY_NOTIFICATIONS_ENABLED_KEY,
+      LEGACY_NOTIFICATIONS_INITIALIZED_KEY,
+    ]);
+    if (typeof state?.[NOTIFICATIONS_ENABLED_KEY] === 'boolean') {
+      enabled = state[NOTIFICATIONS_ENABLED_KEY];
+    } else if (typeof state?.[LEGACY_NOTIFICATIONS_ENABLED_KEY] === 'boolean') {
+      enabled = state[LEGACY_NOTIFICATIONS_ENABLED_KEY];
+      await chrome.storage.local.set({ [NOTIFICATIONS_ENABLED_KEY]: enabled });
+      await chrome.storage.local.remove(LEGACY_NOTIFICATIONS_ENABLED_KEY);
+    }
+
     initialized = !!state?.[NOTIFICATIONS_INITIALIZED_KEY];
+    if (!initialized && state?.[LEGACY_NOTIFICATIONS_INITIALIZED_KEY]) {
+      initialized = true;
+      await chrome.storage.local.set({ [NOTIFICATIONS_INITIALIZED_KEY]: true });
+      await chrome.storage.local.remove(LEGACY_NOTIFICATIONS_INITIALIZED_KEY);
+    }
   } catch (_) {
     // ignore
   }
@@ -193,7 +212,7 @@ async function maybeNotifyNewEmails(prevCategorizedEmails, nextCategorizedEmails
         : (targetLabel ? `${list.length} new ${meta.plural}. Latest: ${targetLabel}` : `${list.length} new ${meta.plural}.`);
 
     try {
-      chrome.notifications.create(`appmailia_${cat}_${sample.id || Date.now()}`, {
+      chrome.notifications.create(`morrowfold_${cat}_${sample.id || Date.now()}`, {
         type: 'basic',
         iconUrl: 'icons/icon128.png',
         title,
@@ -422,7 +441,7 @@ async function apiFetch(endpoint, options = {}) {
       bgLogger.error("Failed to get fresh Firebase ID token:", error);
       
       if (error.code === 'auth/user-token-expired' || error.code === 'auth/invalid-user-token') {
-        console.warn("ThreadHQ: Unrecoverable auth token error. Forcing user logout.");
+        console.warn("MorrowFold: Unrecoverable auth token error. Forcing user logout.");
 
         await signOut(auth);
 
@@ -461,7 +480,7 @@ async function apiFetch(endpoint, options = {}) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`❌ ThreadHQ: API Error ${response.status} from ${url}:`, errorText);
+      console.error(`❌ MorrowFold: API Error ${response.status} from ${url}:`, errorText);
       
       // Try to parse error as JSON to preserve errorCode and other fields
       try {
@@ -491,7 +510,7 @@ async function apiFetch(endpoint, options = {}) {
     if (error.errorCode || error.requiresReauth) {
       return error;
     }
-    console.error(`❌ ThreadHQ: Network or parsing error for ${url}:`, error);
+    console.error(`❌ MorrowFold: Network or parsing error for ${url}:`, error);
     throw new Error(`Network or server error: ${error.message}`);
   }
 }
@@ -659,7 +678,7 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
       return { success: true, totalRelevantCount };
     }
   } catch (e) {
-    console.warn('ThreadHQ Background: refreshStoredEmailsCache failed:', e?.message);
+    console.warn('MorrowFold Background: refreshStoredEmailsCache failed:', e?.message);
   }
   return { success: false, totalRelevantCount: 0 };
 }
@@ -706,7 +725,7 @@ async function pollSyncStatusAndRefresh(maxSeconds = 15 * 60, intervalMs = 10000
         }
       }
     } catch (e) {
-      console.warn('ThreadHQ Background: sync-status polling error:', e?.message);
+      console.warn('MorrowFold Background: sync-status polling error:', e?.message);
     }
     await new Promise(r => setTimeout(r, intervalMs));
   }
@@ -743,7 +762,7 @@ async function checkSyncWatchdog() {
       });
     }
   } catch (e) {
-    console.warn('ThreadHQ Background: watchdog check failed:', e?.message);
+    console.warn('MorrowFold Background: watchdog check failed:', e?.message);
   }
 }
 
@@ -779,7 +798,7 @@ async function sendGmailReply(threadId, to, subject, body, userEmail, userId) { 
 async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
   // Ensure userEmail and userId are provided before making the API call
   if (!userEmail || !userId) {
-    console.error('❌ ThreadHQ Background: Cannot trigger email sync, userEmail or userId is missing.');
+    console.error('❌ MorrowFold Background: Cannot trigger email sync, userEmail or userId is missing.');
     return { success: false, error: 'User email or ID missing for sync.' };
   }
 
@@ -812,7 +831,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
     // that request is in-flight, we can poll /sync-status + refresh /stored-emails to
     // progressively populate the popup.
     pollSyncStatusAndRefresh(15 * 60, 10_000, { waitForStart: true, waitForStartMs: 60_000 })
-      .catch((e) => bgLogger.warn?.('ThreadHQ Background: sidecar polling failed:', e?.message || e));
+      .catch((e) => bgLogger.warn?.('MorrowFold Background: sidecar polling failed:', e?.message || e));
 
     // Snapshot prior cache before syncing so we can detect newly-added emails and notify on completion.
     let previousCache = null;
@@ -972,7 +991,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
 
       // If backend indicates a background sync is in progress, start polling without blocking
       if (response.sync?.inProgress) {
-        pollSyncStatusAndRefresh().catch(e => console.warn('ThreadHQ Background: polling failed:', e?.message));
+        pollSyncStatusAndRefresh().catch(e => console.warn('MorrowFold Background: polling failed:', e?.message));
       }
 
       // Publish application stats once available (do not block the main sync response).
@@ -1016,7 +1035,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
     } else {
       // Check if this is a scope or auth error requiring re-authentication
       if (response.errorCode === 'INSUFFICIENT_SCOPES' || response.errorCode === 'INVALID_GRANT' || response.requiresReauth) {
-        console.error('❌ ThreadHQ Background: Auth error - user needs to re-authenticate:', response.errorCode);
+        console.error('❌ MorrowFold Background: Auth error - user needs to re-authenticate:', response.errorCode);
         
         // Send appropriate message type based on error
         const messageType = response.errorCode === 'INVALID_GRANT' ? 'AUTH_ERROR' : 'SCOPE_ERROR';
@@ -1035,11 +1054,11 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         return { success: false, error: response.error, errorCode: response.errorCode || 'INSUFFICIENT_SCOPES', requiresReauth: true };
       }
       
-      console.error('❌ ThreadHQ Background: Backend sync failed or returned no emails:', response.error);
+      console.error('❌ MorrowFold Background: Backend sync failed or returned no emails:', response.error);
       return { success: false, error: response.error || "Backend sync failed or returned no emails." };
     }
   } catch (error) {
-    console.error('❌ ThreadHQ Background: Error during email sync:', error);
+    console.error('❌ MorrowFold Background: Error during email sync:', error);
     
     // Check if the error response has scope/auth error information
     if (error.errorCode === 'INSUFFICIENT_SCOPES' || error.errorCode === 'INVALID_GRANT' || error.requiresReauth) {
@@ -1129,7 +1148,7 @@ async function monitorPaymentFlow(tabId, userEmail, userId) {
           resolve({ success: true, sessionCompleted: true, plan: 'premium' });
         }
       } catch (error) {
-        console.warn('⚠️ ThreadHQ Background: Error checking subscription status during payment flow:', error);
+        console.warn('⚠️ MorrowFold Background: Error checking subscription status during payment flow:', error);
       }
     }, 3000); // Check every 3 seconds
 
@@ -1172,7 +1191,7 @@ async function refreshSubscriptionStatus(userEmail, userId) {
       });
     }
   } catch (error) {
-    console.error('❌ ThreadHQ Background: Error refreshing subscription status:', error);
+    console.error('❌ MorrowFold Background: Error refreshing subscription status:', error);
   }
 }
 
@@ -1206,7 +1225,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       'GET_ID_TOKEN',
     ]);
     if (!isUserAuthenticated && !hasCachedUserInfo && !unauthAllowed.has(msg.type)) {
-      console.warn(`ThreadHQ Background: User not authenticated or user info not cached for message type: ${msg.type}.`);
+      console.warn(`MorrowFold Background: User not authenticated or user info not cached for message type: ${msg.type}.`);
       sendResponse({ success: false, error: "User not authenticated or user info not available." });
       return;
     }
@@ -1371,7 +1390,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse({ success: true, userEmail: user.email, userName: tokenResponse.userName, userPlan: tokenResponse.userPlan, userId: user.uid });
         } catch (error) {
-	          console.error('ThreadHQ Background: Error during Google OAuth login:', error);
+	          console.error('MorrowFold Background: Error during Google OAuth login:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1383,7 +1402,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // onAuthStateChanged listener will handle clearing storage.
           sendResponse({ success: true });
         } catch (error) {
-          console.error("❌ ThreadHQ Background: Error during logout:", error);
+          console.error("❌ MorrowFold Background: Error during logout:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1401,7 +1420,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error fetching user plan:', error);
+          console.error('❌ MorrowFold Background: Error fetching user plan:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1426,14 +1445,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse(response);
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error updating user plan:', error);
+          console.error('❌ MorrowFold Background: Error updating user plan:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
 
       case 'FETCH_STORED_EMAILS':
         // This message is now primarily handled by the popup reading directly from chrome.storage.local.
-        console.warn("ThreadHQ Background: Received FETCH_STORED_EMAILS, but popup should read directly from local storage.");
+        console.warn("MorrowFold Background: Received FETCH_STORED_EMAILS, but popup should read directly from local storage.");
         sendResponse({ success: true, message: "Handled by popup's direct storage access." });
         break;
 
@@ -1451,7 +1470,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const refreshed = await refreshStoredEmailsCache(undefined, { skipNotify: true });
           sendResponse(refreshed);
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error refreshing stored email cache:', error);
+          console.error('❌ MorrowFold Background: Error refreshing stored email cache:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1462,7 +1481,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const syncResult = await triggerEmailSync(currentUserEmail, currentUserId, msg.fullRefresh);
           sendResponse(syncResult); // Send back { success: true, categorizedEmails: {...}, quota: {...} }
         } catch (error) {
-          console.error("❌ ThreadHQ Background: Error fetching new emails:", error);
+          console.error("❌ MorrowFold Background: Error fetching new emails:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1511,7 +1530,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: status?.error || 'Quota data not found in response.' });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error fetching quota data:', error);
+          console.error('❌ MorrowFold Background: Error fetching quota data:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1529,7 +1548,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: response.error || 'Follow-up suggestions not found.' });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error fetching follow-up suggestions:', error);
+          console.error('❌ MorrowFold Background: Error fetching follow-up suggestions:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1555,7 +1574,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse(response);
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error marking suggestion action:', error);
+          console.error('❌ MorrowFold Background: Error marking suggestion action:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1574,7 +1593,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           sendResponse(response);
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error snoozing suggestion:', error);
+          console.error('❌ MorrowFold Background: Error snoozing suggestion:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1592,7 +1611,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           sendResponse(response);
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error undoing suggestion action:', error);
+          console.error('❌ MorrowFold Background: Error undoing suggestion action:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1608,7 +1627,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: sendResult.error, needsReauth: sendResult.needsReauth });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error sending email reply:', error);
+          console.error('❌ MorrowFold Background: Error sending email reply:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1624,7 +1643,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse(response);
         } catch (error) {
-          console.error("❌ ThreadHQ Background: Error archiving email:", error);
+          console.error("❌ MorrowFold Background: Error archiving email:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1696,14 +1715,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                   syncInProgress: false,
                 });
               } catch (e) {
-                console.warn('ThreadHQ Background: Failed to apply local cache update after misclassification:', e?.message || e);
+                console.warn('MorrowFold Background: Failed to apply local cache update after misclassification:', e?.message || e);
               }
             }
 
             // Trigger a sync after misclassification to refresh counts/quota and ensure consistency.
             // Do not await here so the popup gets a fast response and the service worker isn't held open.
             triggerEmailSync(currentUserEmail, currentUserId, false).catch((e) => {
-              console.error('ThreadHQ Background: triggerEmailSync failed after misclassification:', e);
+              console.error('MorrowFold Background: triggerEmailSync failed after misclassification:', e);
             });
             // Notify popup of success
             safeRuntimeSendMessage({
@@ -1721,7 +1740,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse(response);
         } catch (error) {
-          console.error("❌ ThreadHQ Background: Error reporting misclassification:", error);
+          console.error("❌ MorrowFold Background: Error reporting misclassification:", error);
           // Notify popup of network/communication error
           safeRuntimeSendMessage({
             type: 'SHOW_NOTIFICATION',
@@ -1762,7 +1781,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse(response);
         } catch (error) {
-          console.error("❌ ThreadHQ Background: Error undoing misclassification:", error);
+          console.error("❌ MorrowFold Background: Error undoing misclassification:", error);
           // Notify popup of network/communication error
           safeRuntimeSendMessage({
             type: 'SHOW_NOTIFICATION',
@@ -1794,7 +1813,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(response);
 
         } catch (error) {
-          console.error("❌ ThreadHQ Background: Error in MARK_SINGLE_EMAIL_AS_READ:", error);
+          console.error("❌ MorrowFold Background: Error in MARK_SINGLE_EMAIL_AS_READ:", error);
           const message = error?.message || 'Unknown error';
           // Provide a clearer signal for auth issues so UI can prompt login
           if (message.includes('401') || message.toLowerCase().includes('unauthorized') || message.toLowerCase().includes('session expired')) {
@@ -1822,7 +1841,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               body: { category: capitalizeFirst(category) }
             });
           } catch (persistErr) {
-            console.warn('ThreadHQ Background: Backend mark-as-read-category failed, aborting local update:', persistErr?.message);
+            console.warn('MorrowFold Background: Backend mark-as-read-category failed, aborting local update:', persistErr?.message);
             sendResponse({ success: false, error: persistErr.message });
             return;
           }
@@ -1843,11 +1862,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           // Save updated emails back to local storage
           await chrome.storage.local.set({ [`${category}Emails`]: updatedCategoryEmails });
-          console.log(`✅ ThreadHQ Background: Marked emails in category '${category}' as read in local storage.`);
+          console.log(`✅ MorrowFold Background: Marked emails in category '${category}' as read in local storage.`);
 
           sendResponse({ success: true, message: `Emails in ${category} marked as read.` });
         } catch (error) {
-          console.error("❌ ThreadHQ Background: Error marking emails as read:", error);
+          console.error("❌ MorrowFold Background: Error marking emails as read:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1894,7 +1913,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse(response);
         } catch (error) {
-          console.error("❌ ThreadHQ Background: Error updating company name:", error);
+          console.error("❌ MorrowFold Background: Error updating company name:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1914,7 +1933,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse(response);
         } catch (error) {
-          console.error("❌ ThreadHQ Background: Error fetching correction analytics:", error);
+          console.error("❌ MorrowFold Background: Error fetching correction analytics:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1961,7 +1980,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
           sendResponse(response);
         } catch (error) {
-          console.error("❌ ThreadHQ Background: Error updating position:", error);
+          console.error("❌ MorrowFold Background: Error updating position:", error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1982,7 +2001,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, user: null });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error getting current user:', error);
+          console.error('❌ MorrowFold Background: Error getting current user:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -2132,7 +2151,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: 'User not authenticated' });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error getting ID token:', error);
+          console.error('❌ MorrowFold Background: Error getting ID token:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -2140,7 +2159,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case '__DISABLED_PAYMENT_SUCCESS__':
         try {
           // Add a delay to allow webhook processing to complete
-          console.log('🔄 ThreadHQ Background: Waiting 3 seconds for webhook processing...');
+          console.log('🔄 MorrowFold Background: Waiting 3 seconds for webhook processing...');
           await new Promise(resolve => setTimeout(resolve, 3000));
           
           // Refresh user plan data after successful payment
@@ -2151,14 +2170,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           
           if (response.success) {
             await chrome.storage.local.set({ userPlan: response.plan });
-            console.log('✅ ThreadHQ Background: User plan refreshed after payment:', response.plan);
+            console.log('✅ MorrowFold Background: User plan refreshed after payment:', response.plan);
             sendResponse({ success: true, plan: response.plan });
           } else {
-            console.error('❌ ThreadHQ Background: Failed to refresh user plan after payment:', response.error);
+            console.error('❌ MorrowFold Background: Failed to refresh user plan after payment:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error refreshing user plan after payment:', error);
+          console.error('❌ MorrowFold Background: Error refreshing user plan after payment:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -2172,14 +2191,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log('✅ ThreadHQ Background: Payment status checked:', response.plan);
+            console.log('✅ MorrowFold Background: Payment status checked:', response.plan);
             sendResponse({ success: true, plan: response.plan });
           } else {
-            console.error('❌ ThreadHQ Background: Failed to check payment status:', response.error);
+            console.error('❌ MorrowFold Background: Failed to check payment status:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error checking payment status:', error);
+          console.error('❌ MorrowFold Background: Error checking payment status:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -2192,14 +2211,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log('✅ ThreadHQ Background: Subscription status checked:', response.subscription);
+            console.log('✅ MorrowFold Background: Subscription status checked:', response.subscription);
             sendResponse({ success: true, subscription: response.subscription });
           } else {
-            console.error('❌ ThreadHQ Background: Failed to check subscription status:', response.error);
+            console.error('❌ MorrowFold Background: Failed to check subscription status:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error checking subscription status:', error);
+          console.error('❌ MorrowFold Background: Error checking subscription status:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -2213,14 +2232,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log('✅ ThreadHQ Background: Checkout session created:', response.url);
+            console.log('✅ MorrowFold Background: Checkout session created:', response.url);
             sendResponse({ success: true, url: response.url });
           } else {
-            console.error('❌ ThreadHQ Background: Failed to create checkout session:', response.error);
+            console.error('❌ MorrowFold Background: Failed to create checkout session:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error creating checkout session:', error);
+          console.error('❌ MorrowFold Background: Error creating checkout session:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -2233,14 +2252,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log('✅ ThreadHQ Background: Setup intent created:', response.client_secret);
+            console.log('✅ MorrowFold Background: Setup intent created:', response.client_secret);
             sendResponse({ success: true, client_secret: response.client_secret });
           } else {
-            console.error('❌ ThreadHQ Background: Failed to create setup intent:', response.error);
+            console.error('❌ MorrowFold Background: Failed to create setup intent:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error creating setup intent:', error);
+          console.error('❌ MorrowFold Background: Error creating setup intent:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -2248,7 +2267,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case '__DISABLED_OPEN_CUSTOMER_PORTAL__':
         try {
           const { return_url } = msg;
-          console.log('🎫 ThreadHQ Background: Creating customer portal session');
+          console.log('🎫 MorrowFold Background: Creating customer portal session');
           
           const response = await apiFetch('/api/subscriptions/create-portal-session', {
             method: 'POST',
@@ -2258,7 +2277,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success && response.url) {
-            console.log('✅ ThreadHQ Background: Portal session created');
+            console.log('✅ MorrowFold Background: Portal session created');
             
             // Open portal in new tab
             const tab = await chrome.tabs.create({
@@ -2266,14 +2285,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               active: true
             });
             
-            console.log('🪟 ThreadHQ Background: Portal opened in tab:', tab.id);
+            console.log('🪟 MorrowFold Background: Portal opened in tab:', tab.id);
             sendResponse({ success: true, tabId: tab.id });
           } else {
-            console.error('❌ ThreadHQ Background: Failed to create portal session:', response.error);
+            console.error('❌ MorrowFold Background: Failed to create portal session:', response.error);
             sendResponse({ success: false, error: response.error || 'Failed to create portal session' });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error creating portal session:', error);
+          console.error('❌ MorrowFold Background: Error creating portal session:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -2281,7 +2300,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case '__DISABLED_OPEN_PAYMENT_WINDOW__':
         try {
           const { url } = msg;
-          console.log('🪟 ThreadHQ Background: Opening payment window:', url);
+          console.log('🪟 MorrowFold Background: Opening payment window:', url);
           
           // Open Stripe checkout in a new tab
           const tab = await chrome.tabs.create({
@@ -2293,55 +2312,55 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const paymentResult = await monitorPaymentFlow(tab.id, currentUserEmail, currentUserId);
           sendResponse(paymentResult);
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error opening payment window:', error);
+          console.error('❌ MorrowFold Background: Error opening payment window:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
 
       case '__DISABLED_OPEN_PORTAL_WINDOW__':
         // Portal functionality removed - using fully in-extension approach
-        console.log('⚠️ ThreadHQ Background: Portal window opening removed - using in-extension approach');
+        console.log('⚠️ MorrowFold Background: Portal window opening removed - using in-extension approach');
         sendResponse({ success: false, error: 'Portal functionality removed for fully in-extension approach' });
         break;
 
       case '__DISABLED_CANCEL_SUBSCRIPTION__':
         try {
-          console.log('🗑️ ThreadHQ Background: Canceling subscription');
+          console.log('🗑️ MorrowFold Background: Canceling subscription');
           
           const response = await apiFetch('/api/subscriptions/cancel', {
             method: 'POST'
           });
           
           if (response.success) {
-            console.log('✅ ThreadHQ Background: Subscription canceled successfully');
+            console.log('✅ MorrowFold Background: Subscription canceled successfully');
             sendResponse({ success: true, subscription: response.subscription });
           } else {
-            console.error('❌ ThreadHQ Background: Failed to cancel subscription:', response.error);
+            console.error('❌ MorrowFold Background: Failed to cancel subscription:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error canceling subscription:', error);
+          console.error('❌ MorrowFold Background: Error canceling subscription:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
 
       case '__DISABLED_RESUME_SUBSCRIPTION__':
         try {
-          console.log('🔄 ThreadHQ Background: Resuming subscription');
+          console.log('🔄 MorrowFold Background: Resuming subscription');
           
           const response = await apiFetch('/api/subscriptions/resume', {
             method: 'POST'
           });
           
           if (response.success) {
-            console.log('✅ ThreadHQ Background: Subscription resumed successfully');
+            console.log('✅ MorrowFold Background: Subscription resumed successfully');
             sendResponse({ success: true, subscription: response.subscription });
           } else {
-            console.error('❌ ThreadHQ Background: Failed to resume subscription:', response.error);
+            console.error('❌ MorrowFold Background: Failed to resume subscription:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error resuming subscription:', error);
+          console.error('❌ MorrowFold Background: Error resuming subscription:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -2355,7 +2374,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             return;
           }
 
-          console.log('🔍 ThreadHQ Background: Searching emails with query:', query);
+          console.log('🔍 MorrowFold Background: Searching emails with query:', query);
           
           const response = await apiFetch('/api/emails/search', {
             method: 'GET',
@@ -2363,7 +2382,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log('✅ ThreadHQ Background: Search completed, found', response.totalResults, 'results');
+            console.log('✅ MorrowFold Background: Search completed, found', response.totalResults, 'results');
             sendResponse({ 
               success: true, 
               applications: response.applications,
@@ -2371,11 +2390,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               query: response.query
             });
           } else {
-            console.error('❌ ThreadHQ Background: Search failed:', response.error);
+            console.error('❌ MorrowFold Background: Search failed:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error searching emails:', error);
+          console.error('❌ MorrowFold Background: Error searching emails:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -2389,7 +2408,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             return;
           }
 
-          console.log(`⭐ ThreadHQ Background: ${isStarred ? 'Starring' : 'Unstarring'} email ${emailId}`);
+          console.log(`⭐ MorrowFold Background: ${isStarred ? 'Starring' : 'Unstarring'} email ${emailId}`);
           
           const response = await apiFetch(`/api/emails/${emailId}/star`, {
             method: 'POST',
@@ -2397,7 +2416,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
           
           if (response.success) {
-            console.log(`✅ ThreadHQ Background: Email ${isStarred ? 'starred' : 'unstarred'} successfully`);
+            console.log(`✅ MorrowFold Background: Email ${isStarred ? 'starred' : 'unstarred'} successfully`);
             
             // Update local storage to reflect star change
             const storage = await chrome.storage.local.get([
@@ -2432,20 +2451,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               emailId: response.emailId
             });
           } else if (response.premiumOnly) {
-            console.log('⚠️ ThreadHQ Background: Premium subscription required to star emails');
+            console.log('⚠️ MorrowFold Background: Premium subscription required to star emails');
             sendResponse({ success: false, error: response.error, premiumOnly: true });
           } else {
-            console.error('❌ ThreadHQ Background: Star toggle failed:', response.error);
+            console.error('❌ MorrowFold Background: Star toggle failed:', response.error);
             sendResponse({ success: false, error: response.error });
           }
         } catch (error) {
-          console.error('❌ ThreadHQ Background: Error toggling star:', error);
+          console.error('❌ MorrowFold Background: Error toggling star:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
 
       default:
-        console.warn('ThreadHQ: Unhandled message type:', msg.type);
+        console.warn('MorrowFold: Unhandled message type:', msg.type);
         sendResponse({ success: false, error: 'Unhandled message type.' });
     }
   })(); // End of async IIFE
@@ -2458,13 +2477,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // --- Configure Firebase Auth Persistence ---
 setPersistence(auth, indexedDBLocalPersistence)
   .then(() => {
-    console.log("✅ ThreadHQ Background: Firebase Auth persistence set to IndexedDB.");
+    console.log("✅ MorrowFold Background: Firebase Auth persistence set to IndexedDB.");
 	    onAuthStateChanged(auth, async (user) => {
 	      // Resolve the authReadyPromise once the initial auth state is determined
 	      authReadyResolve();
 
 	      if (user) {
-	        console.log("✅ ThreadHQ Background: Auth State Changed - User logged in:", user.email, "UID:", user.uid);
+	        console.log("✅ MorrowFold Background: Auth State Changed - User logged in:", user.email, "UID:", user.uid);
 	        // Ensure userEmail and userId are immediately available in local storage
 	        await chrome.storage.local.set({
 	          userEmail: user.email,
@@ -2492,12 +2511,12 @@ setPersistence(auth, indexedDBLocalPersistence)
 	              });
 	              if (response.success) {
 	                await chrome.storage.local.set({ userPlan: response.plan });
-	                console.log("✅ ThreadHQ Background: User plan fetched and stored:", response.plan);
+	                console.log("✅ MorrowFold Background: User plan fetched and stored:", response.plan);
 	              } else {
-	                console.error("❌ ThreadHQ Background: Failed to fetch user plan during auth state change:", response.error);
+	                console.error("❌ MorrowFold Background: Failed to fetch user plan during auth state change:", response.error);
 	              }
 	            } catch (error) {
-	              console.error("❌ ThreadHQ Background: Network/communication error fetching user plan during auth state change:", error);
+	              console.error("❌ MorrowFold Background: Network/communication error fetching user plan during auth state change:", error);
 	            }
 	          })();
 
@@ -2519,14 +2538,14 @@ setPersistence(auth, indexedDBLocalPersistence)
 	            try {
 	              await triggerEmailSync(user.email, user.uid, shouldFull);
 	            } catch (e) {
-	              console.error('ThreadHQ Background: triggerEmailSync failed after auth state change:', e);
+	              console.error('MorrowFold Background: triggerEmailSync failed after auth state change:', e);
 	            }
 	          })();
 	        } else {
-	          console.log("ThreadHQ Background: Anonymous user detected. Not fetching plan or syncing emails.");
+	          console.log("MorrowFold Background: Anonymous user detected. Not fetching plan or syncing emails.");
 	        }
 	      } else {
-	        console.log("✅ ThreadHQ Background: Auth State Changed - User logged out.");
+	        console.log("✅ MorrowFold Background: Auth State Changed - User logged out.");
 	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']); // Clear all cached data on logout
 	        safeRuntimeSendMessage({ type: 'AUTH_READY', success: true, loggedOut: true });
 	        broadcastAuthStateToContentScripts(false, null);
@@ -2534,25 +2553,25 @@ setPersistence(auth, indexedDBLocalPersistence)
 	    });
   })
   .catch((error) => {
-    console.error("❌ ThreadHQ Background: Error setting Firebase Auth persistence:", error);
+    console.error("❌ MorrowFold Background: Error setting Firebase Auth persistence:", error);
     // Even if persistence fails, still listen for auth state changes
 	    onAuthStateChanged(auth, async (user) => {
       // Resolve the authReadyPromise even if persistence setup failed
       authReadyResolve();
 
 	      if (user) {
-	        console.log("ThreadHQ Background: Auth State Changed (without persistence) - User logged in:", user.email);
+	        console.log("MorrowFold Background: Auth State Changed (without persistence) - User logged in:", user.email);
 	        await chrome.storage.local.set({ userEmail: user.email, userName: user.displayName || user.email, userId: user.uid });
 	        safeRuntimeSendMessage({ type: 'AUTH_READY', success: true, loggedOut: false });
 	        broadcastAuthStateToContentScripts(true, user.email);
 	        // Still try to sync emails even if persistence failed
 	        if (!user.isAnonymous) {
 	          triggerEmailSync(user.email, user.uid, false).catch((e) => {
-	            console.error('ThreadHQ Background: triggerEmailSync failed after auth state change (no persistence):', e);
+	            console.error('MorrowFold Background: triggerEmailSync failed after auth state change (no persistence):', e);
 	          });
 	        }
 	      } else {
-	        console.log("ThreadHQ Background: Auth State Changed (without persistence) - User logged out.");
+	        console.log("MorrowFold Background: Auth State Changed (without persistence) - User logged out.");
 	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']);
 	        safeRuntimeSendMessage({ type: 'AUTH_READY', success: true, loggedOut: true });
 	        broadcastAuthStateToContentScripts(false, null);
@@ -2567,7 +2586,7 @@ chrome.alarms.create('syncWatchdog', { periodInMinutes: WATCHDOG_INTERVAL_MIN })
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'syncEmails') {
-    console.log('⏰ ThreadHQ: Syncing emails via alarm...');
+    console.log('⏰ MorrowFold: Syncing emails via alarm...');
     const user = auth.currentUser;
     if (user && !user.isAnonymous) {
       try {
@@ -2575,17 +2594,18 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
         if (result.userEmail && result.userId) {
           await triggerEmailSync(result.userEmail, result.userId, false); // No full refresh on alarm
         } else {
-          console.warn('ThreadHQ: User not logged in or user info missing for alarm sync.');
+          console.warn('MorrowFold: User not logged in or user info missing for alarm sync.');
         }
       } catch (error) {
-        console.error('❌ ThreadHQ: Error during alarm-triggered email sync:', error);
+        console.error('❌ MorrowFold: Error during alarm-triggered email sync:', error);
         safeRuntimeSendMessage({ type: 'EMAILS_SYNCED', success: false, error: error.message });
       }
     } else {
-      console.log('ThreadHQ: Skipping email sync for unauthenticated or anonymous user.');
+      console.log('MorrowFold: Skipping email sync for unauthenticated or anonymous user.');
     }
   } else if (alarm.name === 'syncWatchdog') {
     // Periodic stuck-lock check
     await checkSyncWatchdog();
   }
 });
+

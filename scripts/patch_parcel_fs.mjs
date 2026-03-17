@@ -26,7 +26,7 @@ if (!fs.existsSync(target)) {
 
 const src = fs.readFileSync(target, "utf8");
 
-const marker = "/* threadhq-patch: ignore unlink errors */";
+const marker = "/* morrowfold-patch: ignore unlink errors */";
 const originalCall =
   "(0, (/*@__PURE__*/$parcel$interopDefault($07c33d31980d7367$exports))).unlinkSync(tmpFilePath);";
 
@@ -36,7 +36,7 @@ let out = src;
 
 // Fix previously broken patch state (older versions of this script).
 out = out.replace(
-  /\(0, \(\/\*@__PURE__\*\/\$parcel\$interopDefault\(\$07c33d31980d7367\$exports\)\)\)\)\.\/* threadhq-patch: ignore unlink errors \*\/\s*\r?\n\s*try \{ \(0, \(\/\*@__PURE__\*\/\$parcel\$interopDefault\(\$07c33d31980d7367\$exports\)\)\)\)\.unlinkSync\(tmpFilePath\); \} catch \(_\) \{\}/g,
+  /\(0, \(\/\*@__PURE__\*\/\$parcel\$interopDefault\(\$07c33d31980d7367\$exports\)\)\)\)\.\/* morrowfold-patch: ignore unlink errors \*\/\s*\r?\n\s*try \{ \(0, \(\/\*@__PURE__\*\/\$parcel\$interopDefault\(\$07c33d31980d7367\$exports\)\)\)\)\.unlinkSync\(tmpFilePath\); \} catch \(_\) \{\}/g,
   patchedBlock
 );
 
@@ -56,3 +56,4 @@ out = out.replace(originalCall, patchedBlock);
 
 fs.writeFileSync(target, out, "utf8");
 console.log("[patch_parcel_fs] Patched @parcel/fs unlinkSync to be best-effort.");
+

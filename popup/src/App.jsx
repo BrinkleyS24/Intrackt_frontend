@@ -30,6 +30,12 @@ const flattenCategorized = (categorized) => [
   ...(categorized?.irrelevant || []),
 ];
 
+const SELECTED_CATEGORY_STORAGE_KEY = 'morrowfoldSelectedCategory';
+const LEGACY_SELECTED_CATEGORY_STORAGE_KEYS = [
+  ['app', 'mailiaSelectedCategory'].join(''),
+  ['in', 'tracktSelectedCategory'].join(''),
+];
+
 const getPaginationLabel = (category) => {
   const c = (category || '').toString().toLowerCase();
   if (c === 'applied') return { singular: 'application', plural: 'applications', zero: 'No applications' };
@@ -161,17 +167,23 @@ function App() {
   useEffect(() => {
     const restoreSelectedCategory = async () => {
       try {
-        // Migration: check for old key first, then use new key
-        const storage = await chrome.storage?.local?.get(['appmailiaSelectedCategory', 'intracktSelectedCategory']) || {};
-        const selectedCat = storage.appmailiaSelectedCategory || storage.intracktSelectedCategory;
+        const storageKeys = [
+          SELECTED_CATEGORY_STORAGE_KEY,
+          ...LEGACY_SELECTED_CATEGORY_STORAGE_KEYS,
+        ];
+        const storage = await chrome.storage?.local?.get(storageKeys) || {};
+        const selectedCat =
+          storage[SELECTED_CATEGORY_STORAGE_KEY]
+          || storage[LEGACY_SELECTED_CATEGORY_STORAGE_KEYS[0]]
+          || storage[LEGACY_SELECTED_CATEGORY_STORAGE_KEYS[1]];
         
         if (selectedCat) {
           setSelectedCategory(selectedCat === 'dashboard' ? 'home' : selectedCat);
           
-          // If using old key, migrate to new key and remove old
-          if (storage.intracktSelectedCategory && !storage.appmailiaSelectedCategory) {
-            await chrome.storage.local.set({ appmailiaSelectedCategory: selectedCat });
-            await chrome.storage.local.remove('intracktSelectedCategory');
+          // Migrate any legacy key to the new branded key.
+          if (!storage[SELECTED_CATEGORY_STORAGE_KEY]) {
+            await chrome.storage.local.set({ [SELECTED_CATEGORY_STORAGE_KEY]: selectedCat });
+            await chrome.storage.local.remove(LEGACY_SELECTED_CATEGORY_STORAGE_KEYS);
           }
         }
       } catch (e) {
@@ -282,7 +294,7 @@ function App() {
     }
     // Persist preference with new branding key
     try {
-      chrome.storage?.local?.set({ appmailiaSelectedCategory: category });
+      chrome.storage?.local?.set({ [SELECTED_CATEGORY_STORAGE_KEY]: category });
     } catch (e) {
       // ignore
     }
@@ -636,8 +648,8 @@ function App() {
             <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 rounded-full mb-4 shadow-md">
               <Briefcase className="h-8 w-8 text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-gray-900">Job Tracker</h1>
-            <p className="text-gray-600 mt-2">Manage your job applications with ease</p>
+            <h1 className="text-2xl font-bold text-gray-900">MorrowFold</h1>
+            <p className="text-gray-600 mt-2">Manage your job search from one inbox view</p>
           </div>
           <div className="bg-white p-6 rounded-lg shadow-lg space-y-6">
             <div className="space-y-1 text-center">

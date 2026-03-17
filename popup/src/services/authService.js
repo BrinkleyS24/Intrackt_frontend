@@ -18,11 +18,12 @@ export async function fetchUserPlanFromService(userEmail) {
     if (response.success) {
       return response.plan;
     } else {
-      console.error("❌ ThreadHQ: Failed to fetch user plan from background:", response.error);
+      console.error("❌ MorrowFold: Failed to fetch user plan from background:", response.error);
       return 'free'; // Default to free on error
     }
   } catch (error) {
-    console.error("❌ ThreadHQ: Error communicating with background for user plan:", error);
+    console.error("❌ MorrowFold: Error communicating with background for user plan:", error);
     return 'free'; // Default to free on communication error
   }
 }
+

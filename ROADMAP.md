@@ -1,4 +1,4 @@
-# Intrackt Extension Roadmap
+# MorrowFold Extension Roadmap
 
 ## Reply Feature Enhancements (Planned)
 These items are deferred for a future update:
@@ -23,4 +23,5 @@ Currently `/api/emails/send-reply` is a stub returning success. Real sending wil
 
 ## Tracking
 Move completed items into CHANGELOG and update this file incrementally.
+
 

@@ -1,4 +1,4 @@
-# ThreadHQ local dev (no constant URL switching)
+# MorrowFold local dev (no constant URL switching)
 
 ## What this solves
 The popup UI reads email lists from `chrome.storage.local` (not directly from the backend). The background service worker populates that cache by calling the backend. If you want to test against your local backend without editing files each time, use the built-in backend URL override.
@@ -18,14 +18,14 @@ cd frontend\job_sort
 Then in `chrome://extensions` click **Load unpacked** and select:
 
 ```text
-%LOCALAPPDATA%\ThreadHQ\extension-dev\current
+%LOCALAPPDATA%\MorrowFold\extension-dev\current
 ```
 
 After you make code changes, rerun the script and click the extension **Reload** icon.
 
 ## Set backend to localhost (one-time)
 1. Open `chrome://extensions`
-2. Find **ThreadHQ** → click **Inspect views** → **popup** (or right-click the extension icon → **Inspect popup**)
+2. Find **MorrowFold** → click **Inspect views** → **popup** (or right-click the extension icon → **Inspect popup**)
 3. In the popup DevTools console, run:
 
 ```js
@@ -119,3 +119,4 @@ chrome.runtime.sendMessage({
 ## Safety notes
 - The override only accepts `http://localhost:*` or `http://127.0.0.1:*` by design.
 - Do **not** ship `frontend/job_sort/manifest.json` to the Chrome Web Store as-is if you want to avoid localhost permissions in production. Use your production manifest/build.
+

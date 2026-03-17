@@ -206,7 +206,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       // Call the actual backend service to persist the change.
       await markEmailAsReadService(emailId);
     } catch (error) {
-      console.error("❌ ThreadHQ: Failed to mark email as read on the server:", error);
+      console.error("❌ MorrowFold: Failed to mark email as read on the server:", error);
       showNotification("Failed to update email read status.", "error");
       // Revert using structural sharing - only restore affected category
       setCategorizedEmails(prev => ({
@@ -251,7 +251,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         }
       }
     } catch (error) {
-      console.error("❌ ThreadHQ: Error fetching stored emails:", error);
+      console.error("❌ MorrowFold: Error fetching stored emails:", error);
       showNotification("Failed to load stored emails.", "error");
     } finally {
       // This will remove the main loading overlay, revealing the stored emails.
@@ -289,7 +289,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         setIsSyncing(false);
       }
     } catch (error) {
-      console.error("❌ ThreadHQ: Error requesting new email sync:", error);
+      console.error("❌ MorrowFold: Error requesting new email sync:", error);
       showNotification(`Failed to request email sync: ${error.message}`, "error");
       setIsSyncing(false);
     }
@@ -395,7 +395,7 @@ export function useEmails(userEmail, userId, CONFIG) {
 
     if (!reportPayload.emailId || !reportPayload.threadId || !reportPayload.originalCategory || !reportPayload.correctedCategory) {
       showNotification("Missing critical email data for misclassification report.", "error");
-      console.error("❌ ThreadHQ: Missing critical email data for misclassification report:", reportPayload);
+      console.error("❌ MorrowFold: Missing critical email data for misclassification report:", reportPayload);
       return;
     }
 
@@ -424,7 +424,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to report misclassification: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ ThreadHQ: Error reporting misclassification:", error);
+      console.error("❌ MorrowFold: Error reporting misclassification:", error);
       showNotification("Error reporting misclassification.", "error");
     } finally {
   setLoadingEmails(false);
@@ -459,7 +459,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to undo misclassification: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ ThreadHQ: Error undoing misclassification:", error);
+      console.error("❌ MorrowFold: Error undoing misclassification:", error);
       showNotification("Error undoing misclassification.", "error");
     } finally {
   setLoadingEmails(false);
@@ -493,7 +493,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to send email reply: ${result.error || 'Unknown error'}`, "error");
       }
     } catch (error) {
-      console.error("❌ ThreadHQ: Error sending email reply:", error);
+      console.error("❌ MorrowFold: Error sending email reply:", error);
       showNotification("Error sending email reply.", "error");
     } finally {
   setLoadingEmails(false);
@@ -514,7 +514,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to archive email: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ ThreadHQ: Error archiving email:", error);
+      console.error("❌ MorrowFold: Error archiving email:", error);
       showNotification("Error archiving email.", "error");
     } finally {
   setLoadingEmails(false);
@@ -561,7 +561,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         return { success: false, error: result.error };
       }
     } catch (error) {
-      console.error("❌ ThreadHQ: Error updating company name:", error);
+      console.error("❌ MorrowFold: Error updating company name:", error);
       showNotification("Error updating company name.", "error");
       return { success: false, error: error.message };
     }
@@ -607,7 +607,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         return { success: false, error: result.error };
       }
     } catch (error) {
-      console.error("❌ ThreadHQ: Error updating position:", error);
+      console.error("❌ MorrowFold: Error updating position:", error);
       showNotification("Error updating position.", "error");
       return { success: false, error: error.message };
     }
@@ -664,3 +664,4 @@ export function useEmails(userEmail, userId, CONFIG) {
     markingAllAsRead
   };
 }
+
