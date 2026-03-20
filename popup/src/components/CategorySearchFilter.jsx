@@ -46,8 +46,6 @@ export default function CategorySearchFilter({
       filtered = filtered.filter(email => !email.is_read);
     } else if (filters.status === 'read') {
       filtered = filtered.filter(email => email.is_read);
-    } else if (filters.status === 'starred') {
-      filtered = filtered.filter(email => email.is_starred);
     }
 
     if (filters.dateFrom) {
@@ -155,7 +153,6 @@ export default function CategorySearchFilter({
                 <option value="all">All emails</option>
                 <option value="unread">Unread only</option>
                 <option value="read">Read only</option>
-                <option value="starred">Starred only</option>
               </select>
             </div>
           </div>

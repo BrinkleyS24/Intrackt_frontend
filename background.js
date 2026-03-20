@@ -40,6 +40,33 @@ function safeRuntimeSendMessage(message) {
   }
 }
 
+function notifyAuthFlowStage(stage, details = {}) {
+  safeRuntimeSendMessage({
+    type: 'AUTH_FLOW_STAGE',
+    stage,
+    ...details,
+  });
+}
+
+function buildGoogleOAuthUrl(redirectUri) {
+  const manifest = chrome.runtime.getManifest?.() || {};
+  const clientId = manifest?.oauth2?.client_id;
+  const scopes = Array.isArray(manifest?.oauth2?.scopes) ? manifest.oauth2.scopes : [];
+
+  if (!clientId || scopes.length === 0) {
+    throw new Error('Missing oauth2 client configuration in extension manifest.');
+  }
+
+  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  url.searchParams.set('client_id', clientId);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('redirect_uri', redirectUri);
+  url.searchParams.set('access_type', 'offline');
+  url.searchParams.set('prompt', 'consent');
+  url.searchParams.set('scope', scopes.join(' '));
+  return url.toString();
+}
+
 // Broadcast auth state to all content scripts so the web app stays in sync.
 function broadcastAuthStateToContentScripts(loggedIn, email) {
   chrome.tabs.query({}, (tabs) => {
@@ -81,6 +108,15 @@ function flattenCategorizedEmails(categorizedEmails) {
     ...(categorizedEmails.offers || []),
     ...(categorizedEmails.rejected || []),
   ];
+}
+
+function countRelevantCategorizedEmails(categorizedEmails) {
+  return (
+    (categorizedEmails?.applied || []).length +
+    (categorizedEmails?.interviewed || []).length +
+    (categorizedEmails?.offers || []).length +
+    (categorizedEmails?.rejected || []).length
+  );
 }
 
 function getStructuredField(value) {
@@ -240,7 +276,7 @@ async function maybeNotifyNewEmails(prevCategorizedEmails, nextCategorizedEmails
 
 // Define your backend endpoints.
 const CONFIG_ENDPOINTS = {
-  BACKEND_BASE_URL: 'https://gmail-tracker-backend-215378038667.us-central1.run.app',
+  BACKEND_BASE_URL: (process.env.BACKEND_BASE_URL || 'https://gmail-tracker-backend-215378038667.us-central1.run.app').replace(/\/$/, ''),
   AUTH_URL: '/api/auth/auth-url',
   AUTH_TOKEN: '/api/auth/token',
   SYNC_EMAILS: '/api/emails',
@@ -267,10 +303,46 @@ const CONFIG_ENDPOINTS = {
 // --- Authentication Readiness Promise ---
 // This promise will resolve once Firebase Auth has initialized and determined
 // the user's state (logged in or logged out).
+const AUTH_READY_TIMEOUT_MS = 5000;
 let authReadyResolve;
+let authReadyResolved = false;
 const authReadyPromise = new Promise(resolve => {
   authReadyResolve = resolve;
 });
+
+function resolveAuthReady(reason = 'unspecified') {
+  if (authReadyResolved) return;
+  authReadyResolved = true;
+  try {
+    console.log(`[bg] Auth ready resolved via ${reason}.`);
+  } catch (_) {
+    // ignore
+  }
+  authReadyResolve();
+}
+
+async function waitForAuthReady(timeoutMs = AUTH_READY_TIMEOUT_MS) {
+  if (authReadyResolved) return;
+
+  let timeoutId;
+  try {
+    await Promise.race([
+      authReadyPromise,
+      new Promise((resolve) => {
+        timeoutId = setTimeout(() => {
+          try {
+            console.warn(`[bg] Auth readiness timed out after ${timeoutMs}ms; continuing with current auth state.`);
+          } catch (_) {
+            // ignore
+          }
+          resolve();
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
 
 // --- Backend base URL override (dev-only) ---
 // We intentionally restrict overrides to localhost to avoid malicious redirects.
@@ -422,14 +494,18 @@ const bgLogger = {
  * @returns {Promise<object>} The JSON response from the backend.
  */
 async function apiFetch(endpoint, options = {}) {
-  // Wait for authentication to be ready before proceeding
-  await authReadyPromise;
+  const { skipAuthReady = false, ...fetchOptions } = options;
+
+  // Do not block pre-login OAuth bootstrap/exchange calls on Firebase auth initialization.
+  if (!skipAuthReady) {
+    await waitForAuthReady();
+  }
   await backendBaseUrlReadyPromise;
 
   const user = auth.currentUser;
   const headers = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...fetchOptions.headers,
   };
 
     if (user && !user.isAnonymous) { // Only attempt to get ID token for non-anonymous users
@@ -462,20 +538,20 @@ async function apiFetch(endpoint, options = {}) {
 
   // Build URL with optional query params support
   let url = `${backendBaseUrl}${endpoint}`;
-  if (options.query && typeof options.query === 'object') {
-    const qs = new URLSearchParams(options.query).toString();
+  if (fetchOptions.query && typeof fetchOptions.query === 'object') {
+    const qs = new URLSearchParams(fetchOptions.query).toString();
     if (qs) {
       url += (url.includes('?') ? '&' : '?') + qs;
     }
   }
-  bgLogger.info(`API call: ${url} method=${options.method || 'GET'}`);
+  bgLogger.info(`API call: ${url} method=${fetchOptions.method || 'GET'}`);
 
   try {
     const response = await fetch(url, {
-      ...options,
+      ...fetchOptions,
       headers: headers,
       // Ensure body is stringified only if it's an object and not already a string
-      body: options.body && typeof options.body === 'object' ? JSON.stringify(options.body) : options.body,
+      body: fetchOptions.body && typeof fetchOptions.body === 'object' ? JSON.stringify(fetchOptions.body) : fetchOptions.body,
     });
 
     if (!response.ok) {
@@ -515,6 +591,50 @@ async function apiFetch(endpoint, options = {}) {
   }
 }
 
+function startPostLoginBackgroundWork(user) {
+  if (!user || user.isAnonymous) return;
+
+  refreshStoredEmailsCache(true, { skipNotify: true, skipBackfill: true }).catch((e) => {
+    bgLogger.warn?.('Failed to prefetch stored emails after auth:', e?.message);
+  });
+
+  (async () => {
+    try {
+      const response = await apiFetch(CONFIG_ENDPOINTS.FETCH_USER_PLAN, {
+        method: 'POST',
+        body: { email: user.email, userId: user.uid }
+      });
+      if (response.success) {
+        await chrome.storage.local.set({ userPlan: response.plan });
+        console.log('✅ MorrowFold Background: User plan fetched and stored:', response.plan);
+      } else {
+        console.error('❌ MorrowFold Background: Failed to fetch user plan during auth state change:', response.error);
+      }
+    } catch (error) {
+      console.error('❌ MorrowFold Background: Network/communication error fetching user plan during auth state change:', error);
+    }
+  })();
+
+  (async () => {
+    let shouldFull = true;
+    try {
+      const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
+      const last = status?.sync?.lastSyncAt ? new Date(status.sync.lastSyncAt) : null;
+      if (last && (Date.now() - last.getTime()) < 24 * 60 * 60 * 1000) {
+        shouldFull = false;
+      }
+    } catch (_) {
+      shouldFull = true;
+    }
+
+    try {
+      await triggerEmailSync(user.email, user.uid, shouldFull);
+    } catch (e) {
+      console.error('MorrowFold Background: triggerEmailSync failed after auth state change:', e);
+    }
+  })();
+}
+
 /**
  * Fetch stored emails from backend and update local cache, then notify popup.
  */
@@ -529,12 +649,14 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
         'interviewedEmails',
         'offersEmails',
         'rejectedEmails',
+        'irrelevantEmails',
       ]);
       previousCache = {
         applied: prev.appliedEmails || [],
         interviewed: prev.interviewedEmails || [],
         offers: prev.offersEmails || [],
         rejected: prev.rejectedEmails || [],
+        irrelevant: prev.irrelevantEmails || [],
       };
     } catch (_) {
       previousCache = null;
@@ -548,21 +670,39 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
       body: { limit: isSyncing ? 200 : 5000 }, // backend clamps per-plan
     });
     if (response.success && response.categorizedEmails) {
+      const responseCategorizedEmails = response.categorizedEmails;
+      const previousRelevantCount = countRelevantCategorizedEmails(previousCache);
+      const responseRelevantCount = countRelevantCategorizedEmails(responseCategorizedEmails);
+      const shouldPreservePreviousCache =
+        isSyncing &&
+        previousRelevantCount > 0 &&
+        responseRelevantCount > 0 &&
+        responseRelevantCount < previousRelevantCount;
+
+      // During sync we intentionally fetch a smaller slice to reduce backend load.
+      // Do not let that partial slice replace a fuller cache already shown in the popup.
+      const nextCategorizedEmails = shouldPreservePreviousCache
+        ? {
+            applied: previousCache.applied || [],
+            interviewed: previousCache.interviewed || [],
+            offers: previousCache.offers || [],
+            rejected: previousCache.rejected || [],
+            irrelevant: previousCache.irrelevant || [],
+          }
+        : responseCategorizedEmails;
+      const nextRelevantCount = countRelevantCategorizedEmails(nextCategorizedEmails);
+
       // Update cache + UI immediately. Any optional backfill happens asynchronously after users see emails.
       await chrome.storage.local.set({
-        appliedEmails: response.categorizedEmails.applied || [],
-        interviewedEmails: response.categorizedEmails.interviewed || [],
-        offersEmails: response.categorizedEmails.offers || [],
-        rejectedEmails: response.categorizedEmails.rejected || [],
-        irrelevantEmails: response.categorizedEmails.irrelevant || [],
+        appliedEmails: nextCategorizedEmails.applied || [],
+        interviewedEmails: nextCategorizedEmails.interviewed || [],
+        offersEmails: nextCategorizedEmails.offers || [],
+        rejectedEmails: nextCategorizedEmails.rejected || [],
+        irrelevantEmails: nextCategorizedEmails.irrelevant || [],
         [EMAILS_CACHE_META_KEY]: {
           updatedAt: Date.now(),
           syncInProgress: isSyncing,
-          totalRelevantCount:
-            (response.categorizedEmails.applied || []).length +
-            (response.categorizedEmails.interviewed || []).length +
-            (response.categorizedEmails.offers || []).length +
-            (response.categorizedEmails.rejected || []).length,
+          totalRelevantCount: nextRelevantCount,
         },
         // Keep totals in sync with DB so the dashboard doesn't depend on local array size.
         ...(response.categoryTotals ? { categoryTotals: response.categoryTotals } : {}),
@@ -571,7 +711,7 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
       safeRuntimeSendMessage({
         type: 'EMAILS_SYNCED',
         success: true,
-        categorizedEmails: response.categorizedEmails,
+        categorizedEmails: nextCategorizedEmails,
         ...(response.categoryTotals ? { categoryTotals: response.categoryTotals } : {}),
         syncInProgress,
       });
@@ -579,7 +719,7 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
       // Best-effort notifications (never block the UI update).
       if (!isSyncing && !skipNotify) {
         try {
-          await maybeNotifyNewEmails(previousCache, response.categorizedEmails, syncInProgress);
+          await maybeNotifyNewEmails(previousCache, nextCategorizedEmails, syncInProgress);
         } catch (e) {
           bgLogger.warn('Notification check failed:', e?.message);
         }
@@ -665,15 +805,10 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
 
       const totalRelevantCount =
         typeof response.totalRelevantCount === 'number'
-          ? response.totalRelevantCount
+          ? Math.max(response.totalRelevantCount, nextRelevantCount)
           : typeof response.totalCount === 'number'
-            ? response.totalCount
-            : [
-                ...(response.categorizedEmails.applied || []),
-                ...(response.categorizedEmails.interviewed || []),
-                ...(response.categorizedEmails.offers || []),
-                ...(response.categorizedEmails.rejected || []),
-              ].length;
+            ? Math.max(response.totalCount, nextRelevantCount)
+            : nextRelevantCount;
 
       return { success: true, totalRelevantCount };
     }
@@ -1330,33 +1465,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'LOGIN_GOOGLE_OAUTH':
         try {
           const redirectUriForBackend = chrome.identity.getRedirectURL();
+          let finalAuthUrl = null;
 
-          // Step 1: Get auth URL from backend
-          const authUrlResponse = await apiFetch(CONFIG_ENDPOINTS.AUTH_URL, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            query: { redirect_uri: redirectUriForBackend }
-          });
-          if (!authUrlResponse.success || !authUrlResponse.url) {
-            throw new Error(authUrlResponse.error || 'Failed to get auth URL from backend.');
+          notifyAuthFlowStage('building_auth_url', { redirectUri: redirectUriForBackend });
+          try {
+            finalAuthUrl = buildGoogleOAuthUrl(redirectUriForBackend);
+          } catch (buildError) {
+            notifyAuthFlowStage('building_auth_url_failed', { error: buildError.message });
+            const authUrlResponse = await apiFetch(CONFIG_ENDPOINTS.AUTH_URL, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+              query: { redirect_uri: redirectUriForBackend },
+              skipAuthReady: true
+            });
+            if (!authUrlResponse.success || !authUrlResponse.url) {
+              throw new Error(authUrlResponse.error || 'Failed to get auth URL from backend.');
+            }
+            finalAuthUrl = authUrlResponse.url;
           }
 
-            const finalAuthUrl = authUrlResponse.url;
+          notifyAuthFlowStage('launching_web_auth_flow');
           bgLogger.info(`Attempting to launch Web Auth Flow with URL: ${finalAuthUrl}`);
-          const authRedirectUrl = await new Promise((resolve, reject) => {
-            chrome.identity.launchWebAuthFlow({
-              url: finalAuthUrl,
-              interactive: true
-            }, (responseUrl) => {
-              if (chrome.runtime.lastError) {
-                return reject(new Error(chrome.runtime.lastError.message));
-              }
-              if (!responseUrl) {
-                return reject(new Error('OAuth flow cancelled or failed.'));
-              }
-              resolve(responseUrl);
-            });
+          const authRedirectUrl = await chrome.identity.launchWebAuthFlow({
+            url: finalAuthUrl,
+            interactive: true
           });
+          if (!authRedirectUrl) {
+            throw new Error('OAuth flow cancelled or failed.');
+          }
+          notifyAuthFlowStage('received_auth_redirect');
 
           // Step 2: Extract authorization code
           const urlParams = new URLSearchParams(new URL(authRedirectUrl).search);
@@ -1368,7 +1505,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // Step 3: Exchange code for tokens
           const tokenResponse = await apiFetch(CONFIG_ENDPOINTS.AUTH_TOKEN, {
             method: 'POST',
-            body: { code, redirect_uri: redirectUriForBackend }
+            body: { code, redirect_uri: redirectUriForBackend },
+            skipAuthReady: true
           });
           if (!tokenResponse.success || !tokenResponse.firebaseToken) {
             throw new Error(tokenResponse.error || 'Failed to exchange code for Firebase token.');
@@ -1377,6 +1515,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // Step 4: Sign in to Firebase with custom token
           const userCredential = await signInWithCustomToken(auth, tokenResponse.firebaseToken);
           const user = userCredential.user;
+          resolveAuthReady('custom-token-login');
           bgLogger.info('Successfully signed in to Firebase with custom token.');
 
           await chrome.storage.local.set({
@@ -1386,10 +1525,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             userPlan: tokenResponse.userPlan || 'free'
           });
 
-	          // Do not block LOGIN_GOOGLE_OAUTH on a full sync; auth state listener will start sync.
+          startPostLoginBackgroundWork(user);
 
           sendResponse({ success: true, userEmail: user.email, userName: tokenResponse.userName, userPlan: tokenResponse.userPlan, userId: user.uid });
         } catch (error) {
+          notifyAuthFlowStage('login_error', { error: error.message });
 	          console.error('MorrowFold Background: Error during Google OAuth login:', error);
           sendResponse({ success: false, error: error.message });
         }
@@ -1797,7 +1937,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const { emailId } = msg.payload;
 
           // Wait for auth to initialize before checking user/token state
-          await authReadyPromise;
+          await waitForAuthReady();
 
           if (!emailId) {
             throw new Error("Email ID was not provided.");
@@ -2142,7 +2282,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try {
           // Wait for Firebase Auth to finish loading from IndexedDB
           // (critical on service-worker cold start)
-          await authReadyPromise;
+          await waitForAuthReady();
           const user = auth.currentUser;
           if (user && !user.isAnonymous) {
             const token = await user.getIdToken();
@@ -2480,7 +2620,7 @@ setPersistence(auth, indexedDBLocalPersistence)
     console.log("✅ MorrowFold Background: Firebase Auth persistence set to IndexedDB.");
 	    onAuthStateChanged(auth, async (user) => {
 	      // Resolve the authReadyPromise once the initial auth state is determined
-	      authReadyResolve();
+	      resolveAuthReady('auth-state-change');
 
 	      if (user) {
 	        console.log("✅ MorrowFold Background: Auth State Changed - User logged in:", user.email, "UID:", user.uid);
@@ -2557,7 +2697,7 @@ setPersistence(auth, indexedDBLocalPersistence)
     // Even if persistence fails, still listen for auth state changes
 	    onAuthStateChanged(auth, async (user) => {
       // Resolve the authReadyPromise even if persistence setup failed
-      authReadyResolve();
+      resolveAuthReady('auth-state-change-without-persistence');
 
 	      if (user) {
 	        console.log("MorrowFold Background: Auth State Changed (without persistence) - User logged in:", user.email);

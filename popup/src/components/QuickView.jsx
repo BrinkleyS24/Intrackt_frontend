@@ -64,7 +64,7 @@ export default function QuickView({
                 return;
               }
 
-              // Strip any stored path — use only the origin
+              // Strip any stored path â€” use only the origin
               let baseUrl;
               try { baseUrl = new URL(rawUrl).origin; } catch { baseUrl = rawUrl.replace(/\/+$/, ''); }
 
@@ -203,4 +203,3 @@ export default function QuickView({
     </div>
   );
 }
-

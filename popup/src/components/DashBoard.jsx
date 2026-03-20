@@ -289,7 +289,7 @@ function CategoryDonutChart({ applied, interviewed, offers, rejected }) {
 /**
  * StatCarousel component for cycling through different statistics
  */
-function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDeltaPct, newApplicationsThisWeek, offersCount, emailsCur30, emailsPrev30, emailsCur7, emailsPrev7, applicationStats, Trend }) {
+function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDeltaPct, newApplicationsThisWeek, offersCount, emailsCur30, emailsPrev30, emailsCur7, emailsPrev7, Trend }) {
   const [currentSlide, setCurrentSlide] = useState(0);
   
   const appsCur = countUniqueApplications(emailsCur30.filter(e => e.category?.toLowerCase().includes('appl')));
@@ -304,7 +304,7 @@ function StatCarousel({ totalApplications, appsDeltaPct, responseRate, rateDelta
     {
       label: "Active Applications",
       value: totalApplications,
-      subtitle: applicationStats?.emails?.total ? `From ${applicationStats.emails.total} conversations` : null,
+      subtitle: null,
       delta: null,
       timeframe: null,
       bgColor: "bg-gradient-to-r from-cyan-600 to-blue-600",
@@ -760,7 +760,6 @@ function DashboardFollowUpCard({ suggestion, markFollowedUp, updateRespondedStat
 function Dashboard({
   categorizedEmails = { applied: [], interviewed: [], offers: [], rejected: [], irrelevant: [] },
   categoryTotals = null, // NEW: Accurate category counts from backend
-  applicationStats = null, // NEW: Application lifecycle statistics
   onCategorySelect,
   onEmailSelect,
   followUpSuggestions = [],
@@ -988,25 +987,13 @@ function Dashboard({
     return countUniqueThreads(list);
   }, [categorizedEmails]);
 
-  const appliedCount = useMemo(() => {
-    // Always use frontend categorization - applicationStats can be stale
-    return getCount('applied');
-  }, [getCount]);
+  const appliedCount = useMemo(() => getCount('applied'), [getCount]);
   
-  const interviewedCount = useMemo(() => {
-    // Always use frontend categorization - applicationStats can be stale
-    return getCount('interviewed');
-  }, [getCount]);
+  const interviewedCount = useMemo(() => getCount('interviewed'), [getCount]);
   
-  const offersCount = useMemo(() => {
-    // Always use frontend categorization - applicationStats can be stale
-    return getCount('offers');
-  }, [getCount]);
+  const offersCount = useMemo(() => getCount('offers'), [getCount]);
   
-  const rejectedCount = useMemo(() => {
-    // Always use frontend categorization - applicationStats can be stale
-    return getCount('rejected');
-  }, [getCount]);
+  const rejectedCount = useMemo(() => getCount('rejected'), [getCount]);
   
   const irrelevantCount = useMemo(() => getCount('irrelevant'), [getCount]);
 
@@ -1079,12 +1066,7 @@ function Dashboard({
     return journeys.sort((a, b) => b.date - a.date);
   }, [allRelevantEmails]);
 
-  const totalApplications = useMemo(() => {
-    // Always use frontend categorization - applicationStats can be stale (doesn't update in real-time)
-    // Frontend categorization reflects the actual emails the user has categorized
-    // Backend applicationStats requires recalculation triggers that may lag behind email sync
-    return countUniqueApplications(allRelevantEmails);
-  }, [allRelevantEmails]);
+  const totalApplications = useMemo(() => countUniqueApplications(allRelevantEmails), [allRelevantEmails]);
 
   const totalInterviewsAndOffers = useMemo(() => interviewedCount + offersCount, [interviewedCount, offersCount]);
 
@@ -2747,11 +2729,6 @@ function Dashboard({
                 <div className="text-3xl font-bold mb-2">
                   {totalApplications}
                 </div>
-                {applicationStats?.emails?.total > 0 && (
-                  <div className="text-xs opacity-75 mb-2">
-                    From {applicationStats.emails.total} conversations
-                  </div>
-                )}
               </div>
             </div>
 

@@ -106,15 +106,28 @@ export const useAuth = (onPaymentStatusChange) => {
     }
   }, [userEmail, userId, isAuthReady, fetchQuotaData]);
 
+  useEffect(() => {
+    const handleRuntimeMessage = (message) => {
+      if (message?.type !== 'AUTH_FLOW_STAGE') return;
+      const suffix = message?.error ? ` - ${message.error}` : '';
+      console.log(`[popup][auth-stage] ${message.stage}${suffix}`, message);
+    };
+
+    chrome.runtime.onMessage.addListener(handleRuntimeMessage);
+    return () => chrome.runtime.onMessage.removeListener(handleRuntimeMessage);
+  }, []);
+
 
   // Function to initiate Google OAuth login flow
   const loginGoogleOAuth = useCallback(async () => {
     setLoadingAuth(true); // Start loading when login initiated
     try {
+      console.log('[popup][auth] Starting Google OAuth login...');
       const response = await sendMessageToBackground({ type: 'LOGIN_GOOGLE_OAUTH' });
       if (response.success) {
         // Prefer immediate UI update instead of waiting for storage change events.
         await loadCurrentUserStateFromStorage();
+        console.log('[popup][auth] Google OAuth login completed successfully.');
         setLoadingAuth(false);
       } else {
         console.error("❌ MorrowFold: Error during Google OAuth login process:", response.error);

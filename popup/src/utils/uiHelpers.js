@@ -65,17 +65,17 @@ export function getCategoryBadgeColor(category) {
 
   switch (lowerCategory) {
     case 'applied':
-      return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+      return 'bg-success/10 text-success';
     case 'interviewed':
-      return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
+      return 'bg-warning/15 text-warning-foreground';
     case 'offers':
-      return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
+      return 'bg-primary/10 text-primary';
     case 'rejected':
-      return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200';
+      return 'bg-destructive/10 text-destructive';
     case 'irrelevant':
-      return 'bg-gray-100 text-gray-800 dark:bg-zinc-700 dark:text-zinc-300';
+      return 'bg-muted text-muted-foreground';
     default:
-      return 'bg-gray-100 text-gray-800 dark:bg-zinc-700 dark:text-zinc-300'; // Default for unknown/null
+      return 'bg-muted text-muted-foreground'; // Default for unknown/null
   }
 }
 
@@ -90,17 +90,17 @@ export function getCategoryColor(category) {
 
   switch (lowerCategory) {
     case 'applied':
-      return 'text-blue-600 dark:text-blue-400';
+      return 'text-success';
     case 'interviewed':
-      return 'text-yellow-600 dark:text-yellow-400';
+      return 'text-warning';
     case 'offers':
-      return 'text-green-600 dark:text-green-400';
+      return 'text-primary';
     case 'rejected':
-      return 'text-red-600 dark:text-red-400';
+      return 'text-destructive';
     case 'irrelevant':
-      return 'text-gray-500 dark:text-zinc-400';
+      return 'text-muted-foreground';
     default:
-      return 'text-gray-500 dark:text-zinc-400'; // Default for unknown/null
+      return 'text-muted-foreground'; // Default for unknown/null
   }
 }
 
@@ -152,12 +152,11 @@ export function getCategoryTitle(categoryKey) {
 
   const titles = {
     "applied": "Applied",
-    "interviewed": "Interviewed",
+    "interviewed": "Interviews",
     "offers": "Offers",
     "rejected": "Rejected",
     "irrelevant": "Irrelevant",
     "all": "All",
-    "starred": "Starred",
     "dashboard": "Dashboard", // For sidebar navigation
   };
   return titles[lowerCategoryKey] || (categoryKey || "Unknown Category"); // Fallback to original key or generic string

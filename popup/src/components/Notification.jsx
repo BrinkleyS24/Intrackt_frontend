@@ -1,138 +1,140 @@
 /**
  * @file popup/src/components/Notification.jsx
- * @description Global notification (toast) component for displaying messages.
- * Refactored to use a queue for robust global message handling.
+ * @description Global toast notification component for the popup.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { CheckCircle2, Info, TriangleAlert, X, XCircle } from 'lucide-react';
 
-// --- Global Notification System ---
-// A queue to hold notification messages.
 const notificationQueue = [];
-// A ref to store the internal function that processes the queue.
 const processQueueRef = { current: () => {} };
 
-/**
- * Global function to show a notification. This is the public API.
- * It enqueues the notification and triggers the processor.
- * @param {string} msg - The message to display.
- * @param {'info'|'success'|'warning'|'error'} [msgType='info'] - Type of notification.
- * @param {Function|null} [undoFunc=null] - Function to call if 'undo' is clicked.
- * @param {number} [timeout=5000] - Duration before notification dismisses.
- */
-export const showNotification = (msg, msgType = 'info', undoFunc = null, timeout = 5000) => {
+export const showNotification = (msg, msgType = 'info', undoFunc = null, timeout = 3200) => {
   notificationQueue.push({ msg, msgType, undoFunc, timeout });
-  // If the processor function has been set (i.e., Notification component has mounted), call it.
-  // Otherwise, messages will wait in the queue until it's ready.
   if (processQueueRef.current) {
     processQueueRef.current();
   }
 };
 
-// --- Notification React Component ---
-export const Notification = () => {
-  const [message, setMessage] = useState('');
-  const [type, setType] = useState('info');
-  const [isVisible, setIsVisible] = useState(false);
-  const [undoAction, setUndoAction] = useState(null);
-  const [undoTimeoutId, setUndoTimeoutId] = useState(null);
-  const hideTimeoutIdRef = useRef(null); // Ref to manage the hide timeout
+const ICONS = {
+  info: Info,
+  success: CheckCircle2,
+  warning: TriangleAlert,
+  error: XCircle,
+};
 
-  const handleDismiss = useCallback(() => {
+const COLOR_CLASSES = {
+  info: 'border-primary/20 bg-primary text-primary-foreground',
+  success: 'border-accent/20 bg-accent text-accent-foreground',
+  warning: 'border-warning/25 bg-warning text-warning-foreground',
+  error: 'border-destructive/25 bg-destructive text-destructive-foreground',
+};
+
+export const Notification = () => {
+  const [currentNotification, setCurrentNotification] = useState(null);
+  const [isVisible, setIsVisible] = useState(false);
+  const dismissTimerRef = useRef(null);
+  const cleanupTimerRef = useRef(null);
+
+  const clearTimers = useCallback(() => {
+    if (dismissTimerRef.current) {
+      clearTimeout(dismissTimerRef.current);
+      dismissTimerRef.current = null;
+    }
+    if (cleanupTimerRef.current) {
+      clearTimeout(cleanupTimerRef.current);
+      cleanupTimerRef.current = null;
+    }
+  }, []);
+
+  const processNext = useCallback(() => {
+    if (currentNotification || notificationQueue.length === 0) return;
+    const nextNotification = notificationQueue.shift();
+    if (nextNotification) {
+      setCurrentNotification(nextNotification);
+    }
+  }, [currentNotification]);
+
+  const dismissNotification = useCallback(() => {
+    clearTimers();
     setIsVisible(false);
-    setMessage('');
-    setType('info');
-    setUndoAction(null);
-    if (undoTimeoutId) {
-      clearTimeout(undoTimeoutId);
-      setUndoTimeoutId(null);
-    }
-    if (hideTimeoutIdRef.current) {
-      clearTimeout(hideTimeoutIdRef.current);
-      hideTimeoutIdRef.current = null;
-    }
-  }, [undoTimeoutId]);
+    cleanupTimerRef.current = setTimeout(() => {
+      setCurrentNotification(null);
+    }, 180);
+  }, [clearTimers]);
 
   const handleUndoClick = useCallback(() => {
-    if (undoAction) {
-      undoAction(); // Execute the undo function
-      handleDismiss(); // Dismiss the notification
+    if (typeof currentNotification?.undoFunc === 'function') {
+      currentNotification.undoFunc();
     }
-  }, [undoAction, handleDismiss]);
+    dismissNotification();
+  }, [currentNotification, dismissNotification]);
 
-  // Function to display a notification from the queue
-  const displayNotification = useCallback(({ msg, msgType, undoFunc, timeout }) => {
-    // Clear any existing timeouts before displaying a new notification
-    if (undoTimeoutId) clearTimeout(undoTimeoutId);
-    if (hideTimeoutIdRef.current) clearTimeout(hideTimeoutIdRef.current);
-
-    setMessage(msg);
-    setType(msgType);
-    setUndoAction(() => undoFunc); // Store the undo function
-    setIsVisible(true);
-
-    // Set a new timeout to hide the notification
-    const newTimeoutId = setTimeout(() => {
-      handleDismiss();
-    }, timeout);
-
-    if (undoFunc) {
-      setUndoTimeoutId(newTimeoutId); // Keep track if it's an undoable toast
-    } else {
-      hideTimeoutIdRef.current = newTimeoutId; // For non-undoable toasts
-    }
-  }, [handleDismiss, undoTimeoutId]);
-
-
-  // Effect to process the notification queue
   useEffect(() => {
-    // This function will be stored in the global ref
-    processQueueRef.current = () => {
-      if (notificationQueue.length > 0 && !isVisible) {
-        const nextNotification = notificationQueue.shift(); // Get the next notification
-        displayNotification(nextNotification);
-      }
-    };
+    processQueueRef.current = processNext;
+    if (!currentNotification) {
+      processNext();
+    }
 
-    // Initial check in case messages were enqueued before mount
-    processQueueRef.current();
-
-    // Cleanup: Clear the ref on unmount
     return () => {
       processQueueRef.current = null;
-      if (hideTimeoutIdRef.current) clearTimeout(hideTimeoutIdRef.current);
-      if (undoTimeoutId) clearTimeout(undoTimeoutId);
     };
-  }, [displayNotification, isVisible, undoTimeoutId]); // isVisible ensures it only tries to display when not currently showing one.
+  }, [currentNotification, processNext]);
 
-  const bgColor = {
-    info: 'bg-blue-500',
-    success: 'bg-green-500',
-    warning: 'bg-yellow-500',
-    error: 'bg-red-500',
-  }[type];
+  useEffect(() => {
+    if (!currentNotification) return undefined;
 
-  if (!isVisible) return null;
+    clearTimers();
+    setIsVisible(true);
+    dismissTimerRef.current = setTimeout(() => {
+      dismissNotification();
+    }, currentNotification.timeout ?? 3200);
+
+    return () => {
+      clearTimers();
+    };
+  }, [clearTimers, currentNotification, dismissNotification]);
+
+  if (!currentNotification) return null;
+
+  const Icon = ICONS[currentNotification.msgType] || ICONS.info;
+  const colorClassName = COLOR_CLASSES[currentNotification.msgType] || COLOR_CLASSES.info;
 
   return (
     <div
-      className={`fixed bottom-4 right-4 p-4 rounded-lg shadow-lg text-white z-50 transition-all duration-300 ${bgColor} flex items-center space-x-4`}
-      style={{ minWidth: '250px' }}
+      className={`pointer-events-none fixed bottom-3 right-3 z-50 transition-all duration-200 ${
+        isVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0'
+      }`}
     >
-      <span>{message}</span>
-      {undoAction && (
+      <div
+        className={`pointer-events-auto flex max-w-[280px] items-center gap-2 rounded-2xl border px-3 py-2.5 shadow-[0_14px_30px_rgba(17,24,39,0.18)] ${colorClassName}`}
+        role="status"
+        aria-live="polite"
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        <div className="min-w-0 flex-1 text-xs font-medium leading-5">
+          {currentNotification.msg}
+        </div>
+
+        {currentNotification.undoFunc && (
+          <button
+            onClick={handleUndoClick}
+            className="shrink-0 rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold transition hover:bg-white/25"
+            type="button"
+          >
+            Undo
+          </button>
+        )}
+
         <button
-          onClick={handleUndoClick}
-          className="ml-auto px-3 py-1 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-md text-sm font-semibold transition-colors duration-200"
+          onClick={dismissNotification}
+          className="shrink-0 rounded-full p-0.5 opacity-80 transition hover:bg-black/10 hover:opacity-100"
+          aria-label="Dismiss notification"
+          type="button"
         >
-          Undo
+          <X className="h-3.5 w-3.5" />
         </button>
-      )}
-      <button onClick={handleDismiss} className="ml-2 text-white opacity-70 hover:opacity-100 transition-opacity">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-x">
-          <path d="M18 6 6 18"/><path d="m6 6 12 12"/>
-        </svg>
-      </button>
+      </div>
     </div>
   );
 };

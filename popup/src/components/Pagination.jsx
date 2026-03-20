@@ -1,43 +1,74 @@
 /**
  * @file popup/src/components/Pagination.jsx
- * @description React component for pagination controls.
- * Implemented with Tailwind CSS for styling.
+ * @description Pagination controls for thread lists.
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-function Pagination({ currentPage, totalPages, onPageChange, totalEmails, pageSize, itemLabel }) {
+function Pagination({ currentPage, totalPages, onPageChange, totalEmails, pageSize, itemLabel, compact = false }) {
   const startRange = (currentPage - 1) * pageSize + 1;
   const endRange = Math.min(currentPage * pageSize, totalEmails);
-
   const singular = itemLabel?.singular || 'conversation';
   const plural = itemLabel?.plural || 'conversations';
   const zero = itemLabel?.zero || 'No conversations';
 
+  const visiblePages = useMemo(() => {
+    if (totalPages <= 5) {
+      return Array.from({ length: totalPages }, (_, index) => index + 1);
+    }
+
+    const start = Math.max(1, currentPage - 2);
+    const end = Math.min(totalPages, start + 4);
+    const adjustedStart = Math.max(1, end - 4);
+
+    return Array.from({ length: end - adjustedStart + 1 }, (_, index) => adjustedStart + index);
+  }, [currentPage, totalPages]);
+
   return (
-    <footer className="border-t border-gray-200 dark:border-zinc-700 px-6 py-4 bg-white dark:bg-zinc-800 flex items-center justify-between text-sm">
-      <button
-        id="prev-button"
-        className="px-4 py-2 rounded-md border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        onClick={() => onPageChange(currentPage - 1)}
-        disabled={currentPage === 1}
-      >
-        Previous
-      </button>
-      <span id="pagination-info" className="text-gray-600 dark:text-zinc-400">
-        {totalEmails === 0
-          ? zero
-          : `${startRange}-${endRange} of ${totalEmails} ${totalEmails === 1 ? singular : plural}`
-        }
-      </span>
-      <button
-        id="next-button"
-        className="px-4 py-2 rounded-md border border-gray-300 dark:border-zinc-600 text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        onClick={() => onPageChange(currentPage + 1)}
-        disabled={currentPage === totalPages}
-      >
-        Next
-      </button>
+    <footer className="border-t border-border bg-card px-3 py-3">
+      {!compact && (
+        <div className="mb-2 text-center text-xs text-muted-foreground">
+          {totalEmails === 0
+            ? zero
+            : `${startRange}-${endRange} of ${totalEmails} ${totalEmails === 1 ? singular : plural}`}
+        </div>
+      )}
+
+      <div className="flex items-center justify-center gap-1">
+        <button
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+          type="button"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" />
+        </button>
+
+        {visiblePages.map((page) => (
+          <button
+            key={page}
+            onClick={() => onPageChange(page)}
+            className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-2 text-[11px] font-medium transition-colors ${
+              currentPage === page
+                ? 'bg-accent text-accent-foreground'
+                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+            }`}
+            type="button"
+          >
+            {page}
+          </button>
+        ))}
+
+        <button
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+          type="button"
+        >
+          <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
     </footer>
   );
 }

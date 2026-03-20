@@ -178,6 +178,13 @@ export function groupEmailsByThread(emails) {
     return normalized;
   };
 
+  const stripDirectAddress = (value) => {
+    return (value || '')
+      .toString()
+      .replace(/^(?:hi|hello|hey|dear)\s+[A-Za-z][A-Za-z'.-]*(?:\s+[A-Za-z][A-Za-z'.-]*){0,2}[,:-]?\s*/i, '')
+      .trim();
+  };
+
   const extractRoleFromSubject = (email) => {
     const subject = (email?.subject || '').toString();
     if (!subject) return '';
@@ -204,10 +211,10 @@ export function groupEmailsByThread(emails) {
 
     // Basic keyword filters to avoid picking a person's name or generic fragments
     const roley = candidates
+      .map((c) => stripDirectAddress(c))
       .map((c) => c.replace(/\s+/g, ' ').trim())
       .filter((c) => c.length >= 6 && c.length <= 80)
       .filter((c) => !/@/.test(c))
-      .filter((c) => !/(?:stacey|nicole|raymond|jake)\b/i.test(c))
       .filter((c) => /(engineer|developer|manager|analyst|designer|product|test|qa|intern|associate|specialist|architect|director)\b/i.test(c))
       .map((c) => c.replace(/\binterview\b.*$/i, '').trim())
       .map((c) => c.replace(/\b(?:phone|video|zoom|teams|google meet)\b.*$/i, '').trim());

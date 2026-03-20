@@ -1,7 +1,20 @@
 # MorrowFold local dev (no constant URL switching)
 
 ## What this solves
-The popup UI reads email lists from `chrome.storage.local` (not directly from the backend). The background service worker populates that cache by calling the backend. If you want to test against your local backend without editing files each time, use the built-in backend URL override.
+The popup UI reads email lists from `chrome.storage.local` (not directly from the backend). The background service worker populates that cache by calling the backend. By default the extension points at the **production** Cloud Run backend. For local dev, configure it to use `localhost:3000` instead.
+
+## Preferred: set backend URL at build time (`.env` method)
+
+Set `BACKEND_BASE_URL` in `frontend/job_sort/.env` **before building**:
+
+```
+BACKEND_BASE_URL=http://localhost:3000
+```
+
+Then rebuild and reload the extension in Chrome. This bakes the URL directly into
+the bundled `background.js` — no DevTools commands needed.
+
+To go back to production: remove (or comment out) the line and rebuild.
 
 ## Prereqs
 - Run the backend locally (default port `3000`).
@@ -23,7 +36,7 @@ Then in `chrome://extensions` click **Load unpacked** and select:
 
 After you make code changes, rerun the script and click the extension **Reload** icon.
 
-## Set backend to localhost (one-time)
+## Alternative: set backend to localhost at runtime (one-time)
 1. Open `chrome://extensions`
 2. Find **MorrowFold** → click **Inspect views** → **popup** (or right-click the extension icon → **Inspect popup**)
 3. In the popup DevTools console, run:

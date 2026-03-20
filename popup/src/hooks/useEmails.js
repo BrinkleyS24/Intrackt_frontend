@@ -56,8 +56,6 @@ export function useEmails(userEmail, userId, CONFIG) {
   });
   // NEW: State to hold accurate category counts from backend
   const [categoryTotals, setCategoryTotals] = useState(null);
-  // NEW: State to hold application lifecycle statistics
-  const [applicationStats, setApplicationStats] = useState(null);
   // State to indicate if email operations are in progress (e.g., fetching, sending)
   const [initialLoading, setInitialLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -129,25 +127,10 @@ export function useEmails(userEmail, userId, CONFIG) {
           if (msg.categoryTotals) {
             setCategoryTotals(msg.categoryTotals);
           }
-          if (msg.applicationStats) {
-            setApplicationStats(msg.applicationStats);
-          }
         } else {
           console.error('[popup] Email sync failed:', msg.error);
           showNotification(`Email sync failed: ${msg.error}`, 'error');
         }
-      } else if (msg.type === 'EMAIL_STARRED_UPDATED') {
-        // Update starred status in local state
-        const { emailId, isStarred } = msg;
-        setCategorizedEmails(prev => {
-          const updated = { ...prev };
-          for (const category in updated) {
-            updated[category] = updated[category].map(email => 
-              email.id === emailId ? { ...email, is_starred: isStarred } : email
-            );
-          }
-          return updated;
-        });
       }
     };
     chrome.runtime.onMessage.addListener(handleEmailsSynced);
@@ -232,12 +215,9 @@ export function useEmails(userEmail, userId, CONFIG) {
       hasLoadedOnceRef.current = true;
       
       // NEW: Retrieve category totals from local storage
-      const result = await chrome.storage.local.get(['categoryTotals', 'applicationStats', STORED_EMAILS_CACHE_META_KEY]);
+      const result = await chrome.storage.local.get(['categoryTotals', STORED_EMAILS_CACHE_META_KEY]);
       if (result.categoryTotals) {
         setCategoryTotals(result.categoryTotals);
-      }
-      if (result.applicationStats) {
-        setApplicationStats(result.applicationStats);
       }
       if (userEmail && userId) {
         const cacheMeta = result[STORED_EMAILS_CACHE_META_KEY] || null;
@@ -614,18 +594,42 @@ export function useEmails(userEmail, userId, CONFIG) {
   }, [userEmail]);
 
   // Mark all emails in a category as read (UI-first, then persist via background)
-  const markEmailsAsReadForCategory = useCallback(async (category) => {
-    if (!category) return;
-    
+  const markEmailsAsReadForCategory = useCallback(async (category, emailIds = []) => {
+    if (!category || !Array.isArray(emailIds) || emailIds.length === 0) return;
+
     setMarkingAllAsRead(true);
-    const prev = JSON.parse(JSON.stringify(categorizedEmails));
-    const next = { ...categorizedEmails };
-    next[category] = (next[category] || []).map(e => ({ ...e, is_read: true }));
+    const prev = categorizedEmails;
+    const targetIds = new Set(emailIds.map((id) => String(id)));
+    const next = {
+      ...categorizedEmails,
+      [category]: (categorizedEmails[category] || []).map((email) => (
+        targetIds.has(String(email.id)) ? { ...email, is_read: true } : email
+      )),
+    };
     setCategorizedEmails(next);
-    
+
     try {
-      await markEmailsAsReadService(category, userId);
-      showNotification(`All emails in ${getCategoryTitle(category)} marked as read!`, 'success');
+      const categoryEmails = categorizedEmails[category] || [];
+      const unreadIdsInCategory = categoryEmails
+        .filter((email) => !email?.is_read && email?.id != null)
+        .map((email) => String(email.id));
+      const isWholeCategorySelection = unreadIdsInCategory.length > 0
+        && unreadIdsInCategory.every((id) => targetIds.has(id))
+        && unreadIdsInCategory.length === targetIds.size;
+
+      if (isWholeCategorySelection) {
+        await markEmailsAsReadService(category, userId);
+      } else {
+        const results = await Promise.allSettled(
+          emailIds.map((emailId) => markEmailAsReadService(emailId))
+        );
+        const failed = results.filter((result) => result.status === 'rejected');
+        if (failed.length > 0) {
+          throw failed[0].reason || new Error('Failed to mark one or more visible emails as read.');
+        }
+      }
+
+      showNotification(`Marked ${emailIds.length} visible email${emailIds.length === 1 ? '' : 's'} as read.`, 'success');
     } catch (e) {
       setCategorizedEmails(prev);
       showNotification('Failed to mark all as read.', 'error');
@@ -638,7 +642,6 @@ export function useEmails(userEmail, userId, CONFIG) {
   return {
     categorizedEmails,
     categoryTotals, // NEW: Export category totals to components
-    applicationStats, // NEW: Export application statistics to components
     fetchStoredEmails,
     fetchNewEmails,
     isFilteredView,
