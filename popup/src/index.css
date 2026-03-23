@@ -180,6 +180,11 @@ body {
   color: hsl(var(--destructive));
 }
 
+.status-closed {
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+}
+
 /* Toast notifications */
 .toast {
   position: fixed;

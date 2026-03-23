@@ -10,6 +10,7 @@ import { formatDate, getCategoryTitle } from '../utils/uiHelpers';
 import { countUniqueThreads, groupEmailsByThread } from '../utils/grouping';
 import Pagination from './Pagination';
 import { CONFIG } from '../utils/constants';
+import { deriveEmailPresentationState, normalizeApplicationStatusKey } from '../../../shared/applicationDisplayState.js';
 
 const stripHtml = (html) => {
   if (!html || typeof html !== 'string') return '';
@@ -37,6 +38,10 @@ const STATUS_STYLES = {
   rejected: {
     badgeClassName: 'status-badge status-rejected',
     pillClassName: 'bg-destructive/10 text-destructive border border-destructive/20',
+  },
+  closed: {
+    badgeClassName: 'status-badge status-closed',
+    pillClassName: 'bg-muted text-muted-foreground border border-border',
   },
   irrelevant: {
     badgeClassName: 'status-badge bg-muted text-muted-foreground',
@@ -81,7 +86,11 @@ function EmailList({
 
     return threadGroups.filter((group) => {
       const email = group.latestEmail || {};
-      const isActive = !email.isClosed && (category === 'applied' || category === 'interviewed');
+      const normalizedCategory = normalizeApplicationStatusKey(category);
+      const { isEffectivelyClosed } = deriveEmailPresentationState(email, {
+        fallbackCategory: normalizedCategory,
+      });
+      const isActive = !isEffectivelyClosed && (normalizedCategory === 'applied' || normalizedCategory === 'interviewed');
       if (activeFilter === 'active') return isActive;
       if (activeFilter === 'inactive') return !isActive;
       return true;
@@ -233,8 +242,12 @@ function EmailList({
           <div className={cn(compact ? 'divide-y divide-border' : 'space-y-2')}>
             {paginatedThreadGroups.map((group) => {
               const email = group.latestEmail || {};
-              const statusKey = ((category === 'all' ? email.category : category) || 'applied').toString().toLowerCase();
-              const statusStyle = STATUS_STYLES[statusKey] || STATUS_STYLES.applied;
+              const rawStatusKey = normalizeApplicationStatusKey(category === 'all' ? email.category : category) || 'applied';
+              const { displayStatusKey } = deriveEmailPresentationState(email, {
+                fallbackCategory: rawStatusKey,
+              });
+              const isManuallyClosed = displayStatusKey === 'closed';
+              const statusStyle = STATUS_STYLES[displayStatusKey] || STATUS_STYLES.applied;
               const rawPreview = group.preview || email.preview || email.body || '';
               const cleanPreview = stripHtml(rawPreview);
               const truncatedPreview = cleanPreview.length > 180 ? `${cleanPreview.slice(0, 180)}...` : cleanPreview;
@@ -255,16 +268,29 @@ function EmailList({
                   onClick={() => onEmailSelect(email, group)}
                   className={cn(
                     'w-full text-left transition-colors',
-                    compact
-                      ? 'px-3 py-3 hover:bg-muted/60'
-                      : 'rounded-2xl border border-border bg-card p-4 shadow-sm hover:bg-muted/40',
+                    isManuallyClosed
+                      ? compact
+                        ? 'rounded-xl border border-dashed border-muted-foreground/25 bg-muted/30 px-3 py-3 opacity-60'
+                        : 'rounded-2xl border border-dashed border-muted-foreground/25 bg-muted/30 p-4 shadow-sm opacity-60'
+                      : compact
+                        ? 'px-3 py-3 hover:bg-muted/60'
+                        : 'rounded-2xl border border-border bg-card p-4 shadow-sm hover:bg-muted/40',
                     isSelected && (compact ? 'bg-muted/70' : 'ring-2 ring-accent/25')
                   )}
                   type="button"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
-                      <div className={cn('popup-line-clamp-1 text-sm', isUnread ? 'font-semibold text-foreground' : 'font-medium text-foreground/90')}>
+                      <div
+                        className={cn(
+                          'popup-line-clamp-1 text-sm',
+                          isManuallyClosed
+                            ? 'font-medium text-muted-foreground line-through'
+                            : isUnread
+                              ? 'font-semibold text-foreground'
+                              : 'font-medium text-foreground/90'
+                        )}
+                      >
                         {group.subject}
                       </div>
                       <div className="popup-line-clamp-1 mt-1 text-[11px] text-muted-foreground">
@@ -278,7 +304,7 @@ function EmailList({
                   </div>
 
                   <div className="mt-2 flex items-center gap-2 overflow-hidden">
-                    <span className={statusStyle.badgeClassName}>{getCategoryTitle(statusKey)}</span>
+                    <span className={statusStyle.badgeClassName}>{getCategoryTitle(displayStatusKey)}</span>
                     {email.company_name && (
                       <span className="max-w-[96px] truncate text-[10px] text-muted-foreground">{email.company_name}</span>
                     )}

@@ -11,6 +11,12 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, signOut, onAuthStateChanged, setPersistence, indexedDBLocalPersistence } from 'firebase/auth';
 
 import { firebaseConfig } from './firebaseConfig';
+import {
+  deriveApplicationStatusFromLifecycle,
+  deriveDisplayCategory,
+  isTerminalApplicationStatus,
+  normalizeApplicationStatusKey,
+} from './shared/applicationDisplayState.js';
 
 // Initialize Firebase App in the background script.
 const app = initializeApp(firebaseConfig);
@@ -108,6 +114,178 @@ function flattenCategorizedEmails(categorizedEmails) {
     ...(categorizedEmails.offers || []),
     ...(categorizedEmails.rejected || []),
   ];
+}
+
+function mergeCategorizedEmails(existingCategorizedEmails, incomingCategorizedEmails) {
+  const categories = ['applied', 'interviewed', 'offers', 'rejected', 'irrelevant'];
+  const merged = {};
+
+  for (const category of categories) {
+    const existing = existingCategorizedEmails?.[category] || [];
+    const incoming = incomingCategorizedEmails?.[category] || [];
+    const byId = new Map();
+
+    for (const email of existing) {
+      if (!email?.id) continue;
+      byId.set(Number(email.id), email);
+    }
+
+    for (const email of incoming) {
+      if (!email?.id) continue;
+      const existingEmail = byId.get(Number(email.id));
+      byId.set(Number(email.id), existingEmail ? { ...existingEmail, ...email } : email);
+    }
+
+    merged[category] = Array.from(byId.values()).sort((a, b) => {
+      const aTime = new Date(a?.date || 0).getTime();
+      const bTime = new Date(b?.date || 0).getTime();
+      return (Number.isNaN(bTime) ? 0 : bTime) - (Number.isNaN(aTime) ? 0 : aTime);
+    });
+  }
+
+  return merged;
+}
+
+async function updateCachedEmails(mutator) {
+  const stored = await chrome.storage.local.get([
+    'appliedEmails',
+    'interviewedEmails',
+    'offersEmails',
+    'rejectedEmails',
+    'irrelevantEmails',
+    'categoryTotals',
+  ]);
+
+  const categorizedEmails = {
+    applied: stored.appliedEmails || [],
+    interviewed: stored.interviewedEmails || [],
+    offers: stored.offersEmails || [],
+    rejected: stored.rejectedEmails || [],
+    irrelevant: stored.irrelevantEmails || [],
+  };
+
+  const nextCategorizedEmails = mutator(categorizedEmails);
+  if (!nextCategorizedEmails) return categorizedEmails;
+
+  await chrome.storage.local.set({
+    appliedEmails: nextCategorizedEmails.applied || [],
+    interviewedEmails: nextCategorizedEmails.interviewed || [],
+    offersEmails: nextCategorizedEmails.offers || [],
+    rejectedEmails: nextCategorizedEmails.rejected || [],
+    irrelevantEmails: nextCategorizedEmails.irrelevant || [],
+    [EMAILS_CACHE_META_KEY]: {
+      updatedAt: Date.now(),
+      syncInProgress: false,
+      totalRelevantCount: countRelevantCategorizedEmails(nextCategorizedEmails),
+    },
+  });
+
+  safeRuntimeSendMessage({
+    type: 'EMAILS_SYNCED',
+    success: true,
+    categorizedEmails: nextCategorizedEmails,
+    categoryTotals: stored.categoryTotals || null,
+    syncInProgress: false,
+  });
+
+  return nextCategorizedEmails;
+}
+
+function applyResolvedStateToEmail(email, state) {
+  if (!email || !state) return email;
+  const isClosed = Boolean(state.isClosed);
+  const isUserClosed = Boolean(state.isUserClosed);
+  const applicationStatus = normalizeApplicationStatusKey(state.applicationStatus);
+  return {
+    ...email,
+    applicationId: state.applicationId ?? email.applicationId ?? null,
+    isClosed,
+    isUserClosed,
+    isOutcomeClosed: Boolean(state.isOutcomeClosed),
+    applicationStatus: applicationStatus || email.applicationStatus || null,
+    displayCategory: state.displayCategory || deriveDisplayCategory(email.category, applicationStatus, isClosed),
+  };
+}
+
+async function patchCachedEmailsFromResolvedUpdates(emailUpdates = []) {
+  const updatesByEmailId = new Map(
+    (emailUpdates || [])
+      .filter((item) => item && item.emailId != null)
+      .map((item) => [Number(item.emailId), item])
+  );
+  if (updatesByEmailId.size === 0) return null;
+
+  return updateCachedEmails((categorizedEmails) => {
+    const next = {};
+    for (const [key, emails] of Object.entries(categorizedEmails)) {
+      next[key] = (emails || []).map((email) => {
+        const update = updatesByEmailId.get(Number(email?.id));
+        return update ? applyResolvedStateToEmail(email, update) : email;
+      });
+    }
+    return next;
+  });
+}
+
+async function patchCachedEmailsForApplication(applicationId, application) {
+  if (!applicationId || !application) return null;
+
+  const applicationStatus = normalizeApplicationStatusKey(application.current_status);
+  const isOutcomeClosed = isTerminalApplicationStatus(applicationStatus);
+  const isClosed = Boolean(application.is_closed || application.user_closed_at || isOutcomeClosed);
+  const isUserClosed = Boolean(application.user_closed_at);
+
+  return updateCachedEmails((categorizedEmails) => {
+    const next = {};
+    for (const [key, emails] of Object.entries(categorizedEmails)) {
+      next[key] = (emails || []).map((email) => {
+        if (String(email?.applicationId || '') !== String(applicationId)) return email;
+        return applyResolvedStateToEmail(email, {
+          applicationId,
+          applicationStatus,
+          isClosed,
+          isUserClosed,
+          isOutcomeClosed,
+          displayCategory: deriveDisplayCategory(email.category, applicationStatus, isClosed),
+        });
+      });
+    }
+    return next;
+  });
+}
+
+async function patchCachedEmailsFromLifecycle(applicationId, application, lifecycle = []) {
+  if (!applicationId || !application || !Array.isArray(lifecycle) || lifecycle.length === 0) return null;
+
+  const applicationStatus = deriveApplicationStatusFromLifecycle(application.current_status, lifecycle);
+  const isOutcomeClosed = isTerminalApplicationStatus(applicationStatus);
+  const isClosed = Boolean(application.is_closed || application.user_closed_at || isOutcomeClosed);
+  const isUserClosed = Boolean(application.user_closed_at);
+  const lifecycleIds = new Set(
+    lifecycle
+      .map((item) => Number(item?.emailId))
+      .filter(Number.isFinite)
+  );
+
+  if (lifecycleIds.size === 0) return null;
+
+  return updateCachedEmails((categorizedEmails) => {
+    const next = {};
+    for (const [key, emails] of Object.entries(categorizedEmails)) {
+      next[key] = (emails || []).map((email) => {
+        if (!lifecycleIds.has(Number(email?.id))) return email;
+        return applyResolvedStateToEmail(email, {
+          applicationId,
+          applicationStatus,
+          isClosed,
+          isUserClosed,
+          isOutcomeClosed,
+          displayCategory: deriveDisplayCategory(email.category, applicationStatus, isClosed),
+        });
+      });
+    }
+    return next;
+  });
 }
 
 function countRelevantCategorizedEmails(categorizedEmails) {
@@ -1042,62 +1220,37 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         });
       } else {
         // Sync in progress - don't overwrite storage, just update quota and category totals
+        const currentCache = await chrome.storage.local.get([
+          'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'
+        ]);
+        const cachedEmails = {
+          applied: currentCache.appliedEmails || [],
+          interviewed: currentCache.interviewedEmails || [],
+          offers: currentCache.offersEmails || [],
+          rejected: currentCache.rejectedEmails || [],
+          irrelevant: currentCache.irrelevantEmails || [],
+        };
+        const mergedEmails = mergeCategorizedEmails(cachedEmails, response.categorizedEmails || {});
+
         await chrome.storage.local.set({
+          appliedEmails: mergedEmails.applied || [],
+          interviewedEmails: mergedEmails.interviewed || [],
+          offersEmails: mergedEmails.offers || [],
+          rejectedEmails: mergedEmails.rejected || [],
+          irrelevantEmails: mergedEmails.irrelevant || [],
           quotaData: response.quota || null,
           categoryTotals: response.categoryTotals || null, // NEW: Update category totals even during sync
           applicationStats: applicationStats || null // NEW: Update application stats even during sync
         });
-        bgLogger.info('Sync in progress - updated quota and category totals only, preserving existing emails in storage.');
-        
-        // Read current emails from chrome.storage to send to UI
-        const cached = await chrome.storage.local.get([
-          'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'
-        ]);
+        bgLogger.info('Sync in progress - merged backend emails into cache and updated quota/category totals.');
+
+        const emailsForUi = mergedEmails;
         const cachedCount =
-          (cached.appliedEmails || []).length +
-          (cached.interviewedEmails || []).length +
-          (cached.offersEmails || []).length +
-          (cached.rejectedEmails || []).length +
-          (cached.irrelevantEmails || []).length;
-
-        // If the cache is empty but the backend already returned categorizedEmails for this call,
-        // seed the cache with those emails so the user doesn't see "0 emails" with nonzero quota.
-        const responseCount =
-          (response.categorizedEmails?.applied || []).length +
-          (response.categorizedEmails?.interviewed || []).length +
-          (response.categorizedEmails?.offers || []).length +
-          (response.categorizedEmails?.rejected || []).length +
-          (response.categorizedEmails?.irrelevant || []).length;
-
-        const shouldPrimeCacheFromResponse = cachedCount === 0 && responseCount > 0;
-        if (shouldPrimeCacheFromResponse) {
-          await chrome.storage.local.set({
-            appliedEmails: response.categorizedEmails.applied || [],
-            interviewedEmails: response.categorizedEmails.interviewed || [],
-            offersEmails: response.categorizedEmails.offers || [],
-            rejectedEmails: response.categorizedEmails.rejected || [],
-            irrelevantEmails: response.categorizedEmails.irrelevant || [],
-            quotaData: response.quota || null,
-            categoryTotals: response.categoryTotals || null,
-            applicationStats: applicationStats || null,
-          });
-        }
-
-        const emailsForUi = shouldPrimeCacheFromResponse
-          ? {
-              applied: response.categorizedEmails.applied || [],
-              interviewed: response.categorizedEmails.interviewed || [],
-              offers: response.categorizedEmails.offers || [],
-              rejected: response.categorizedEmails.rejected || [],
-              irrelevant: response.categorizedEmails.irrelevant || [],
-            }
-          : {
-              applied: cached.appliedEmails || [],
-              interviewed: cached.interviewedEmails || [],
-              offers: cached.offersEmails || [],
-              rejected: cached.rejectedEmails || [],
-              irrelevant: cached.irrelevantEmails || [],
-            };
+          (mergedEmails.applied || []).length +
+          (mergedEmails.interviewed || []).length +
+          (mergedEmails.offers || []).length +
+          (mergedEmails.rejected || []).length +
+          (mergedEmails.irrelevant || []).length;
 
         // Notify UI with current cached data (or primed response data) without blocking sync.
         safeRuntimeSendMessage({
@@ -2159,6 +2312,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
 
           if (response.success) {
+            try {
+              await patchCachedEmailsFromLifecycle(applicationId, response.application, response.lifecycle);
+            } catch (e) {
+              bgLogger.warn?.('Failed to patch cached emails from lifecycle:', e?.message);
+            }
             sendResponse({ 
               success: true, 
               application: response.application,
@@ -2186,11 +2344,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             body: { emailId }
           });
 
-          // Always refresh the cache so UI picks up new applicationId/isClosed values.
-          try {
-            await refreshStoredEmailsCache();
-          } catch (e) {
-            bgLogger.warn?.('Failed to refresh stored emails after role-link:', e?.message);
+          if (response?.success) {
+            if (Array.isArray(response.emailUpdates) && response.emailUpdates.length > 0) {
+              await patchCachedEmailsFromResolvedUpdates(response.emailUpdates);
+            }
+            try {
+              await refreshStoredEmailsCache();
+            } catch (e) {
+              bgLogger.warn?.('Failed to refresh stored emails after role-link:', e?.message);
+            }
           }
 
           sendResponse(response);
@@ -2214,10 +2376,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             body: { reason, emailId }
           });
 
-          try {
-            await refreshStoredEmailsCache();
-          } catch (e) {
-            bgLogger.warn?.('Failed to refresh stored emails after close-application:', e?.message);
+          if (response?.success && response?.application) {
+            await patchCachedEmailsForApplication(response.application.id || applicationId, response.application);
+            try {
+              await refreshStoredEmailsCache();
+            } catch (e) {
+              bgLogger.warn?.('Failed to refresh stored emails after close-application:', e?.message);
+            }
           }
 
           sendResponse(response);
@@ -2241,10 +2406,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             body: { emailId }
           });
 
-          try {
-            await refreshStoredEmailsCache();
-          } catch (e) {
-            bgLogger.warn?.('Failed to refresh stored emails after reopen-application:', e?.message);
+          if (response?.success && response?.application) {
+            await patchCachedEmailsForApplication(response.application.id || applicationId, response.application);
+            try {
+              await refreshStoredEmailsCache();
+            } catch (e) {
+              bgLogger.warn?.('Failed to refresh stored emails after reopen-application:', e?.message);
+            }
           }
 
           sendResponse(response);
@@ -2265,10 +2433,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const endpoint = CONFIG_ENDPOINTS.REPAIR_APPLICATION_LINKS.replace(':applicationId', encodeURIComponent(applicationId));
           const response = await apiFetch(endpoint, { method: 'POST' });
 
-          try {
-            await refreshStoredEmailsCache();
-          } catch (e) {
-            bgLogger.warn?.('Failed to refresh stored emails after repair-links:', e?.message);
+          if (response?.success) {
+            if (Array.isArray(response.emailUpdates) && response.emailUpdates.length > 0) {
+              await patchCachedEmailsFromResolvedUpdates(response.emailUpdates);
+            }
+            try {
+              await refreshStoredEmailsCache();
+            } catch (e) {
+              bgLogger.warn?.('Failed to refresh stored emails after repair-links:', e?.message);
+            }
           }
 
           sendResponse(response);

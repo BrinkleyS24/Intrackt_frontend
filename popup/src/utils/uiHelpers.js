@@ -155,6 +155,7 @@ export function getCategoryTitle(categoryKey) {
     "interviewed": "Interviews",
     "offers": "Offers",
     "rejected": "Rejected",
+    "closed": "Closed",
     "irrelevant": "Irrelevant",
     "all": "All",
     "dashboard": "Dashboard", // For sidebar navigation

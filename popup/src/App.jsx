@@ -519,9 +519,9 @@ function App() {
           <div className="space-y-3 px-3 py-3">
             <div className="grid grid-cols-4 gap-2">
               {[
-                { key: 'applied', label: 'Applied', value: stats.applied, cardClass: 'bg-success/10', textClass: 'text-success' },
+                { key: 'applied', label: 'Applied', value: stats.applied, cardClass: 'bg-primary/10', textClass: 'text-primary' },
                 { key: 'interviewed', label: 'Interviews', value: stats.interviewed, cardClass: 'bg-warning/15', textClass: 'text-warning' },
-                { key: 'offers', label: 'Offers', value: stats.offers, cardClass: 'bg-primary/10', textClass: 'text-primary' },
+                { key: 'offers', label: 'Offers', value: stats.offers, cardClass: 'bg-success/10', textClass: 'text-success' },
                 { key: 'rejected', label: 'Rejected', value: stats.rejected, cardClass: 'bg-destructive/10', textClass: 'text-destructive' },
               ].map((stat) => (
                 <div key={stat.key} className={`${stat.cardClass} rounded-xl px-2 py-2 text-center`}>

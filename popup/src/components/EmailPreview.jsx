@@ -5,12 +5,14 @@ import { parseEmailDate, getCategoryTitle } from '../utils/uiHelpers';
 import { showNotification } from './Notification';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
 import CompanyField from './CompanyField';
+import { deriveEmailPresentationState, normalizeApplicationStatusKey } from '../../../shared/applicationDisplayState.js';
 
 const STATUS_CLASSES = {
   applied: 'status-badge status-applied',
   interviewed: 'status-badge status-interviewed',
   offers: 'status-badge status-offers',
   rejected: 'status-badge status-rejected',
+  closed: 'status-badge status-closed',
   irrelevant: 'status-badge bg-muted text-muted-foreground',
 };
 
@@ -281,15 +283,6 @@ const getJourneyDescription = (category) => {
   return 'Status update email received';
 };
 
-const normalizeLifecycleCategory = (value) => {
-  const normalized = (value || '').toString().trim().toLowerCase();
-  if (['offer', 'offered', 'offers'].includes(normalized)) return 'offers';
-  if (['interview', 'interviewed', 'interviews'].includes(normalized)) return 'interviewed';
-  if (['reject', 'rejected', 'rejection'].includes(normalized)) return 'rejected';
-  if (['apply', 'applied', 'application'].includes(normalized)) return 'applied';
-  return normalized;
-};
-
 export default function EmailPreview({
   email,
   onReply,
@@ -320,6 +313,34 @@ export default function EmailPreview({
   const [closePreset, setClosePreset] = useState('no_response');
   const [closeNote, setCloseNote] = useState('');
 
+  const loadLifecycle = React.useCallback(async (applicationId) => {
+    if (!applicationId) {
+      setLifecycle(null);
+      setApplicationSummary(null);
+      return { success: false, skipped: true };
+    }
+
+    setLoadingLifecycle(true);
+    try {
+      const response = await sendMessageToBackground({
+        type: 'FETCH_APPLICATION_LIFECYCLE',
+        applicationId,
+      });
+
+      if (response?.success && response?.lifecycle) {
+        setLifecycle(response.lifecycle);
+        setApplicationSummary(response.application || null);
+      } else {
+        setLifecycle(null);
+        setApplicationSummary(null);
+      }
+
+      return response;
+    } finally {
+      setLoadingLifecycle(false);
+    }
+  }, []);
+
   useEffect(() => {
     setActiveIdx(0);
     const first = threadArr[0];
@@ -332,30 +353,11 @@ export default function EmailPreview({
   }, [email, threadArr]);
 
   useEffect(() => {
-    if (!email?.applicationId) {
-      setLifecycle(null);
-      setApplicationSummary(null);
-      return;
-    }
-
-    setLoadingLifecycle(true);
-    chrome.runtime.sendMessage(
-      { type: 'FETCH_APPLICATION_LIFECYCLE', applicationId: email.applicationId },
-      (response) => {
-        setLoadingLifecycle(false);
-        if (response?.success && response?.lifecycle) {
-          setLifecycle(response.lifecycle);
-          setApplicationSummary(response.application || null);
-        } else {
-          setLifecycle(null);
-          setApplicationSummary(null);
-        }
-      }
-    );
-  }, [email?.applicationId]);
+    loadLifecycle(email?.applicationId);
+  }, [email?.applicationId, loadLifecycle]);
 
   const journeyData = useMemo(() => {
-    const isRelevant = (value) => ['applied', 'interviewed', 'offers', 'rejected'].includes(normalizeLifecycleCategory(value));
+    const isRelevant = (value) => ['applied', 'interviewed', 'offers', 'rejected'].includes(normalizeApplicationStatusKey(value));
 
     const fromLifecycle = Array.isArray(lifecycle) ? lifecycle : [];
     if (fromLifecycle.length > 0) {
@@ -367,11 +369,11 @@ export default function EmailPreview({
       .map((item) => ({
         emailId: item.id || item.emailId || `${item.thread_id || item.threadId || 'msg'}-${item.date || ''}`,
         subject: item.subject || '',
-        category: normalizeLifecycleCategory(item.category),
+        category: normalizeApplicationStatusKey(item.category),
         date: item.date,
       }));
 
-    const emailCategory = normalizeLifecycleCategory(email?.category);
+    const emailCategory = normalizeApplicationStatusKey(email?.category);
     if (localStages.length === 0 && isRelevant(emailCategory)) {
       localStages.push({
         emailId: email.id || `${email.thread_id || email.threadId || 'email'}-${email.date || ''}`,
@@ -400,20 +402,20 @@ export default function EmailPreview({
     };
   }, [email, lifecycle, threadArr]);
 
-  const hasTerminalOutcome = useMemo(() => {
-    const applicationStatus = normalizeLifecycleCategory(applicationSummary?.current_status);
-    if (applicationStatus === 'offers' || applicationStatus === 'rejected') {
-      return true;
-    }
-
-    return (journeyData?.stages || []).some((stage) => {
-      const stageStatus = normalizeLifecycleCategory(stage?.category || stage?.current_status);
-      return stageStatus === 'offers' || stageStatus === 'rejected';
-    });
-  }, [applicationSummary?.current_status, journeyData?.stages]);
-
-  const isEffectivelyUserClosed = Boolean(email?.applicationId && email?.isUserClosed && !hasTerminalOutcome);
-  const isEffectivelyClosed = Boolean(email?.applicationId && (email?.isClosed || isEffectivelyUserClosed || hasTerminalOutcome));
+  const {
+    hasTerminalOutcome,
+    isEffectivelyUserClosed,
+    isEffectivelyClosed,
+    shouldDisplayClosed,
+    displayStatusKey,
+  } = useMemo(() => deriveEmailPresentationState(email, {
+    applicationStatus: applicationSummary?.current_status || email?.applicationStatus,
+    lifecycle: journeyData?.stages || [],
+  }), [
+    applicationSummary?.current_status,
+    email,
+    journeyData?.stages,
+  ]);
 
   const showRepairJourney = useMemo(() => {
     if (journeyData?.source !== 'application') return false;
@@ -536,6 +538,10 @@ export default function EmailPreview({
       setLoadingLifecycle(true);
       const resp = await sendMessageToBackground({ type: 'LINK_APPLICATION_ROLE', emailId: email.id });
       if (resp?.success) {
+        const linkedApplicationId = email?.applicationId || resp?.applicationId || resp?.linkedApplicationId;
+        if (linkedApplicationId) {
+          await loadLifecycle(linkedApplicationId);
+        }
         showNotification('Linking complete. Refreshing...', 'success');
       } else {
         showNotification(resp?.error || 'Failed to link across categories', 'error');
@@ -556,6 +562,7 @@ export default function EmailPreview({
       setLoadingLifecycle(true);
       const resp = await sendMessageToBackground({ type: 'REPAIR_APPLICATION_LINKS', applicationId: email.applicationId });
       if (resp?.success) {
+        await loadLifecycle(email.applicationId);
         showNotification('Repair complete. Refreshing...', 'success');
       } else {
         showNotification(resp?.error || 'Failed to repair application links', 'error');
@@ -644,8 +651,7 @@ export default function EmailPreview({
     }
   };
 
-  const statusKey = ((email.category || 'applied').toString().toLowerCase());
-  const statusClassName = STATUS_CLASSES[statusKey] || STATUS_CLASSES.applied;
+  const statusClassName = STATUS_CLASSES[displayStatusKey] || STATUS_CLASSES.applied;
 
   if (showReplyForm) {
     return (
@@ -730,10 +736,19 @@ export default function EmailPreview({
 
       <div className="space-y-4 px-4 py-4">
         <div>
-          <h2 className="text-[28px] font-semibold leading-tight text-foreground">{email.subject}</h2>
+          <h2
+            className={cn(
+              'text-[28px] font-semibold leading-tight',
+              shouldDisplayClosed ? 'text-muted-foreground line-through' : 'text-foreground'
+            )}
+          >
+            {email.subject}
+          </h2>
           <p className="mt-2 text-sm text-muted-foreground">{email.from}</p>
           <div className="mt-3 flex items-center gap-2">
-            <span className={statusClassName}>{statusKey === 'interviewed' ? 'Interview' : getCategoryTitle(statusKey)}</span>
+            <span className={statusClassName}>
+              {displayStatusKey === 'interviewed' ? 'Interview' : getCategoryTitle(displayStatusKey)}
+            </span>
             <span className="text-[11px] text-muted-foreground">
               {[email.company_name, email.position].filter(Boolean).join(' · ') || 'Application details pending'}
             </span>
