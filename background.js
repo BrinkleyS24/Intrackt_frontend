@@ -2424,14 +2424,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'REPAIR_APPLICATION_LINKS':
         try {
-          const { applicationId } = msg || {};
+          const { applicationId, emailId } = msg || {};
           if (!applicationId) {
             sendResponse({ success: false, error: 'Application ID is required' });
             break;
           }
 
           const endpoint = CONFIG_ENDPOINTS.REPAIR_APPLICATION_LINKS.replace(':applicationId', encodeURIComponent(applicationId));
-          const response = await apiFetch(endpoint, { method: 'POST' });
+          const response = await apiFetch(endpoint, {
+            method: 'POST',
+            body: emailId ? { emailId } : {},
+          });
 
           if (response?.success) {
             if (Array.isArray(response.emailUpdates) && response.emailUpdates.length > 0) {

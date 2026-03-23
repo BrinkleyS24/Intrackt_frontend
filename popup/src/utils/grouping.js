@@ -228,11 +228,19 @@ export function groupEmailsByThread(emails) {
     const sender = email.from?.toLowerCase() || '';
     const companyDomain = getCompanyDomain(sender, email);
     const category = (email.category || '').toLowerCase();
+    const appId = email.application_id || email.applicationId;
+    const isLinkedApplicationEmail = appId && ['applied', 'interviewed', 'offers', 'rejected'].includes(category);
+
+    // PRIORITY 1: If the backend has linked this email to an application, group by application.
+    // This is the safest way to collapse duplicate ATS/system emails like:
+    // "Application Received" + "Sign-in link for your application"
+    // without accidentally merging separate re-applications.
+    if (isLinkedApplicationEmail) {
+      return `app_${appId}`;
+    }
     
-    // PRIORITY 1.5: For ALL INTERVIEWED emails, use universal company + time grouping
-    // CRITICAL FIX: Use backend application_id if available (most reliable)
-    // Backend links emails to applications, so if two interview emails have the same
-    // application_id, they're definitely part of the same interview process
+    // PRIORITY 1.5: For ALL INTERVIEWED emails without a backend application link,
+    // use universal company + role grouping to reduce duplicate interview cards.
     if (category === 'interviewed') {
       // ALWAYS extract company identifier for consistent grouping
       const companyIdentifierRaw = extractCompanyFromInterview(email);
@@ -240,13 +248,9 @@ export function groupEmailsByThread(emails) {
       
       // Check for backend application linking
       const positionKey = normalizeRole(email.position || email.job_title || '') || extractRoleFromSubject(email);
-
-      const appId = email.application_id || email.applicationId;
-      const groupKey = appId
-        ? `interview_app_${appId}`
-        : (companyIdentifier && positionKey)
-          ? `interview_${companyIdentifier}_${positionKey}`
-          : null;
+      const groupKey = (companyIdentifier && positionKey)
+        ? `interview_${companyIdentifier}_${positionKey}`
+        : null;
       
       if (groupKey) {
         return groupKey;
@@ -259,21 +263,15 @@ export function groupEmailsByThread(emails) {
       }
     }
     
-    // PRIORITY 1: Use Gmail's native thread_id if available
+    // PRIORITY 2: Use Gmail's native thread_id if available
     // Gmail already groups emails into conversations using RFC 2822 standards
     // (References, In-Reply-To headers, and subject matching)
     // This handles direct recruiter email chains (like SECU)
     if (threadId && threadId !== email.id) {
       return `thread_${threadId}`;
     }
-
-    // PRIORITY 2: If we have a backend application link but no usable Gmail thread, group by application.
-    const appId = email.application_id || email.applicationId;
-    if (appId && ['applied', 'offers', 'rejected'].includes(category)) {
-      return `app_${appId}`;
-    }
     
-    // PRIORITY 2: When we have extracted company+position, group by that rather than subject.
+    // PRIORITY 3: When we have extracted company+position, group by that rather than subject.
     // This reduces false merges for generic subjects and improves the "All" view.
     const companyRaw = email.company_name || email.company || '';
     const positionRaw = email.position || email.job_title || '';
@@ -283,7 +281,7 @@ export function groupEmailsByThread(emails) {
       return `cp_${companyKey}_${positionKey}`;
     }
     
-    // PRIORITY 3: Standard subject-based grouping with normalization (for non-interviewed or non-notification emails)
+    // PRIORITY 4: Standard subject-based grouping with normalization (for non-interviewed or non-notification emails)
     let subject = (email.subject || '');
     
     // Step 1: Remove common email prefixes BEFORE lowercasing

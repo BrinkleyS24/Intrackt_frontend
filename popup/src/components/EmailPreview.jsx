@@ -560,9 +560,21 @@ export default function EmailPreview({
     }
     try {
       setLoadingLifecycle(true);
-      const resp = await sendMessageToBackground({ type: 'REPAIR_APPLICATION_LINKS', applicationId: email.applicationId });
+      const resp = await sendMessageToBackground({
+        type: 'REPAIR_APPLICATION_LINKS',
+        applicationId: email.applicationId,
+        emailId: email.id,
+      });
       if (resp?.success) {
-        await loadLifecycle(email.applicationId);
+        const updatedEmail = Array.isArray(resp?.emailUpdates)
+          ? resp.emailUpdates.find((item) => Number(item?.emailId) === Number(email?.id))
+          : null;
+        const nextApplicationId = updatedEmail?.applicationId || email.applicationId;
+        if (nextApplicationId) {
+          await loadLifecycle(nextApplicationId);
+        } else {
+          await loadLifecycle(null);
+        }
         showNotification('Repair complete. Refreshing...', 'success');
       } else {
         showNotification(resp?.error || 'Failed to repair application links', 'error');
