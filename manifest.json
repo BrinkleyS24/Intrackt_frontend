@@ -31,7 +31,9 @@
     "http://127.0.0.1:3000/*",
     "http://127.0.0.1:5173/*",
     "https://www.googleapis.com/*",
-    "https://accounts.google.com/*"
+    "https://accounts.google.com/*",
+    "https://securetoken.googleapis.com/*",
+    "https://identitytoolkit.googleapis.com/*"
   ],
   "oauth2": {
     "client_id": "807157076800-qcgsknjcd45sigpufervigockvgnm06d.apps.googleusercontent.com",
