@@ -74,6 +74,9 @@ export function useEmails(userEmail, userId, CONFIG) {
   // Ref to store the timeout ID for the misclassification undo toast
   const misclassificationTimerRef = useRef(null);
   const hasLoadedOnceRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const storedRequestIdRef = useRef(0);
+  const syncRequestIdRef = useRef(0);
 
   // Generic loading flag replacing prior undefined setLoadingEmails usage
   const [loadingEmails, setLoadingEmails] = useState(false);
@@ -105,12 +108,22 @@ export function useEmails(userEmail, userId, CONFIG) {
     categorizedEmailsRef.current = categorizedEmails;
   }, [categorizedEmails]);
 
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      storedRequestIdRef.current += 1;
+      syncRequestIdRef.current += 1;
+    };
+  }, []);
+
   /**
    * Effect hook to listen for 'EMAILS_SYNCED' messages from the background script.
    * Updates the categorized emails and unread counts in the UI.
    */
   useEffect(() => {
     const handleEmailsSynced = (msg) => {
+      if (!isMountedRef.current) return;
       if (msg.type === 'EMAILS_SYNCED') { 
         const stillSyncing = typeof msg.syncInProgress === 'boolean' ? msg.syncInProgress : false;
         setIsSyncing(stillSyncing);
@@ -189,7 +202,8 @@ export function useEmails(userEmail, userId, CONFIG) {
       // Call the actual backend service to persist the change.
       await markEmailAsReadService(emailId);
     } catch (error) {
-      console.error("❌ MorrowFold: Failed to mark email as read on the server:", error);
+      if (!isMountedRef.current) return;
+      console.error("❌ Applendium: Failed to mark email as read on the server:", error);
       showNotification("Failed to update email read status.", "error");
       // Revert using structural sharing - only restore affected category
       setCategorizedEmails(prev => ({
@@ -205,17 +219,21 @@ export function useEmails(userEmail, userId, CONFIG) {
    */
   // 2. Update `fetchStoredEmails` to control the 'initialLoading' state
   const fetchStoredEmails = useCallback(async () => {
+    const requestId = storedRequestIdRef.current + 1;
+    storedRequestIdRef.current = requestId;
     // Only show the full-page loader on the first load; later refreshes should not
     // interrupt typing/focus (e.g., search bar) or cause a "blank" screen flash.
-    if (!hasLoadedOnceRef.current) setInitialLoading(true);
+    if (!hasLoadedOnceRef.current && isMountedRef.current) setInitialLoading(true);
     try {
       const stored = await fetchStoredEmailsService();
+      if (!isMountedRef.current || requestId !== storedRequestIdRef.current) return;
       setCategorizedEmails(stored);
       calculateUnreadCounts(stored);
       hasLoadedOnceRef.current = true;
       
       // NEW: Retrieve category totals from local storage
       const result = await chrome.storage.local.get(['categoryTotals', STORED_EMAILS_CACHE_META_KEY]);
+      if (!isMountedRef.current || requestId !== storedRequestIdRef.current) return;
       if (result.categoryTotals) {
         setCategoryTotals(result.categoryTotals);
       }
@@ -231,11 +249,14 @@ export function useEmails(userEmail, userId, CONFIG) {
         }
       }
     } catch (error) {
-      console.error("❌ MorrowFold: Error fetching stored emails:", error);
+      if (!isMountedRef.current || requestId !== storedRequestIdRef.current) return;
+      console.error("❌ Applendium: Error fetching stored emails:", error);
       showNotification("Failed to load stored emails.", "error");
     } finally {
       // This will remove the main loading overlay, revealing the stored emails.
-      setInitialLoading(false);
+      if (isMountedRef.current && requestId === storedRequestIdRef.current) {
+        setInitialLoading(false);
+      }
     }
   }, [calculateUnreadCounts, userEmail, userId]);
 
@@ -244,9 +265,14 @@ export function useEmails(userEmail, userId, CONFIG) {
    * Requests the background script to initiate a new email synchronization with the backend.
    */
   const fetchNewEmails = useCallback(async (fullRefresh = false) => {
-    setIsSyncing(true);
+    const requestId = syncRequestIdRef.current + 1;
+    syncRequestIdRef.current = requestId;
+    if (isMountedRef.current) {
+      setIsSyncing(true);
+    }
     try {
       const response = await fetchNewEmailsService(userEmail, userId, fullRefresh);
+      if (!isMountedRef.current || requestId !== syncRequestIdRef.current) return;
       if (!response.success) {
         // Check for auth errors that require re-authentication
         if (response.errorCode === 'INVALID_GRANT' || response.requiresReauth) {
@@ -269,7 +295,8 @@ export function useEmails(userEmail, userId, CONFIG) {
         setIsSyncing(false);
       }
     } catch (error) {
-      console.error("❌ MorrowFold: Error requesting new email sync:", error);
+      if (!isMountedRef.current || requestId !== syncRequestIdRef.current) return;
+      console.error("❌ Applendium: Error requesting new email sync:", error);
       showNotification(`Failed to request email sync: ${error.message}`, "error");
       setIsSyncing(false);
     }
@@ -375,7 +402,7 @@ export function useEmails(userEmail, userId, CONFIG) {
 
     if (!reportPayload.emailId || !reportPayload.threadId || !reportPayload.originalCategory || !reportPayload.correctedCategory) {
       showNotification("Missing critical email data for misclassification report.", "error");
-      console.error("❌ MorrowFold: Missing critical email data for misclassification report:", reportPayload);
+      console.error("❌ Applendium: Missing critical email data for misclassification report:", reportPayload);
       return;
     }
 
@@ -404,7 +431,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to report misclassification: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ MorrowFold: Error reporting misclassification:", error);
+      console.error("❌ Applendium: Error reporting misclassification:", error);
       showNotification("Error reporting misclassification.", "error");
     } finally {
   setLoadingEmails(false);
@@ -439,7 +466,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to undo misclassification: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ MorrowFold: Error undoing misclassification:", error);
+      console.error("❌ Applendium: Error undoing misclassification:", error);
       showNotification("Error undoing misclassification.", "error");
     } finally {
   setLoadingEmails(false);
@@ -473,7 +500,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to send email reply: ${result.error || 'Unknown error'}`, "error");
       }
     } catch (error) {
-      console.error("❌ MorrowFold: Error sending email reply:", error);
+      console.error("❌ Applendium: Error sending email reply:", error);
       showNotification("Error sending email reply.", "error");
     } finally {
   setLoadingEmails(false);
@@ -494,7 +521,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to archive email: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ MorrowFold: Error archiving email:", error);
+      console.error("❌ Applendium: Error archiving email:", error);
       showNotification("Error archiving email.", "error");
     } finally {
   setLoadingEmails(false);
@@ -541,7 +568,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         return { success: false, error: result.error };
       }
     } catch (error) {
-      console.error("❌ MorrowFold: Error updating company name:", error);
+      console.error("❌ Applendium: Error updating company name:", error);
       showNotification("Error updating company name.", "error");
       return { success: false, error: error.message };
     }
@@ -587,7 +614,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         return { success: false, error: result.error };
       }
     } catch (error) {
-      console.error("❌ MorrowFold: Error updating position:", error);
+      console.error("❌ Applendium: Error updating position:", error);
       showNotification("Error updating position.", "error");
       return { success: false, error: error.message };
     }

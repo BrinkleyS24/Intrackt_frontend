@@ -59,7 +59,7 @@ export const useAuth = (onPaymentStatusChange) => {
       setQuotaData(stored.quotaData || null);
       return { success: true, quota: stored.quotaData || null };
     } catch (error) {
-      console.error("❌ MorrowFold: Error fetching quota data:", error);
+      console.error("❌ Applendium: Error fetching quota data:", error);
       setQuotaData(null); // Clear quota on error
     }
   }, [userEmail, userId]); // Depend on userEmail and userId
@@ -130,12 +130,12 @@ export const useAuth = (onPaymentStatusChange) => {
         console.log('[popup][auth] Google OAuth login completed successfully.');
         setLoadingAuth(false);
       } else {
-        console.error("❌ MorrowFold: Error during Google OAuth login process:", response.error);
+        console.error("❌ Applendium: Error during Google OAuth login process:", response.error);
         showNotification(`Login failed: ${response.error}`, "error");
         setLoadingAuth(false); // Stop loading on error
       }
     } catch (error) {
-      console.error("❌ MorrowFold: Error during Google OAuth login process:", error);
+      console.error("❌ Applendium: Error during Google OAuth login process:", error);
       showNotification(`Login failed: ${error.message || "Network error during login."}`, "error");
       setLoadingAuth(false); // Stop loading on error
     }
@@ -160,7 +160,7 @@ export const useAuth = (onPaymentStatusChange) => {
         showNotification("Logged out successfully!", "info");
         // State will be cleared by chrome.storage.onChanged listener
       } catch (error) {
-        console.error("❌ MorrowFold: Error during logout:", error);
+        console.error("❌ Applendium: Error during logout:", error);
         showNotification(`Logout failed: ${error.message}`, "error");
       }
     }, []),

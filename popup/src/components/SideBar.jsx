@@ -68,7 +68,7 @@ export function Sidebar({
             <Mail className="h-7 w-7 text-blue-600 dark:text-blue-400" />
           </div>
           <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-bold text-gray-900 dark:text-white truncate">MorrowFold</h1>
+            <h1 className="text-lg font-bold text-gray-900 dark:text-white truncate">Applendium</h1>
             <p className="text-xs text-gray-500 dark:text-zinc-400 truncate">Job Application Assistant</p>
             {isLoadingEmails && (
               <div className="flex items-center text-xs text-blue-600 dark:text-blue-400 mt-1">

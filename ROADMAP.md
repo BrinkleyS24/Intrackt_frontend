@@ -1,4 +1,4 @@
-# MorrowFold Extension Roadmap
+# Applendium Extension Roadmap
 
 ## Reply Feature Enhancements (Planned)
 These items are deferred for a future update:

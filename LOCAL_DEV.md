@@ -1,4 +1,4 @@
-# MorrowFold local dev (no constant URL switching)
+# Applendium local dev (no constant URL switching)
 
 ## What this solves
 The popup UI reads email lists from `chrome.storage.local` (not directly from the backend). The background service worker populates that cache by calling the backend. By default the extension points at the **production** Cloud Run backend. For local dev, configure it to use `localhost:3000` instead.
@@ -31,14 +31,14 @@ cd frontend\job_sort
 Then in `chrome://extensions` click **Load unpacked** and select:
 
 ```text
-%LOCALAPPDATA%\MorrowFold\extension-dev\current
+%LOCALAPPDATA%\Applendium\extension-dev\current
 ```
 
 After you make code changes, rerun the script and click the extension **Reload** icon.
 
 ## Alternative: set backend to localhost at runtime (one-time)
 1. Open `chrome://extensions`
-2. Find **MorrowFold** → click **Inspect views** → **popup** (or right-click the extension icon → **Inspect popup**)
+2. Find **Applendium** → click **Inspect views** → **popup** (or right-click the extension icon → **Inspect popup**)
 3. In the popup DevTools console, run:
 
 ```js

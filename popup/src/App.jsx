@@ -28,8 +28,9 @@ const flattenCategorized = (categorized) => [
   ...(categorized?.irrelevant || []),
 ];
 
-const SELECTED_CATEGORY_STORAGE_KEY = 'morrowfoldSelectedCategory';
+const SELECTED_CATEGORY_STORAGE_KEY = 'applendiumSelectedCategory';
 const LEGACY_SELECTED_CATEGORY_STORAGE_KEYS = [
+  ['morrow', 'foldSelectedCategory'].join(''),
   ['app', 'mailiaSelectedCategory'].join(''),
   ['in', 'tracktSelectedCategory'].join(''),
 ];
@@ -126,6 +127,7 @@ function App() {
     setUndoToastVisible,
     markEmailsAsReadForCategory,
     markEmailAsRead,
+    initialLoading,
     isSyncing,
     loadingEmails,
     markingAllAsRead,
@@ -133,6 +135,8 @@ function App() {
 
   const isLoadingApp = loadingAuth && !isLoggedIn;
   const isLoginPending = loadingAuth && isAuthReady && !isLoggedIn;
+  const hasCachedEmails = useMemo(() => flattenCategorized(categorizedEmails).length > 0, [categorizedEmails]);
+  const showInitialEmailLoading = isLoggedIn && initialLoading && !hasCachedEmails;
   const { quota, getWarningMessage, percentage } = useEmailQuota(quotaData, userPlan);
 
   useEffect(() => {
@@ -161,10 +165,10 @@ function App() {
           ...LEGACY_SELECTED_CATEGORY_STORAGE_KEYS,
         ];
         const storage = await chrome.storage?.local?.get(storageKeys) || {};
-        const selectedCat =
-          storage[SELECTED_CATEGORY_STORAGE_KEY]
-          || storage[LEGACY_SELECTED_CATEGORY_STORAGE_KEYS[0]]
-          || storage[LEGACY_SELECTED_CATEGORY_STORAGE_KEYS[1]];
+        const selectedCat = [
+          storage[SELECTED_CATEGORY_STORAGE_KEY],
+          ...LEGACY_SELECTED_CATEGORY_STORAGE_KEYS.map((key) => storage[key]),
+        ].find(Boolean);
 
         if (selectedCat) {
           const normalizedSelectedCategory = normalizeStoredCategory(selectedCat);
@@ -692,7 +696,7 @@ function App() {
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/15">
               <Briefcase className="h-7 w-7 text-primary-foreground" />
             </div>
-            <h1 className="text-2xl font-bold text-foreground">MorrowFold</h1>
+            <h1 className="text-2xl font-bold text-foreground">Applendium</h1>
             <p className="mt-2 text-sm text-muted-foreground">Track your job search from your inbox.</p>
           </div>
 
@@ -736,6 +740,7 @@ function App() {
   return (
     <div className="flex h-[600px] max-h-[600px] w-[400px] flex-col overflow-hidden rounded-[18px] border border-border bg-background text-foreground shadow-[0_18px_40px_rgba(17,24,39,0.14)]">
       {isLoadingApp && <LoadingOverlay message="Signing in..." />}
+      {showInitialEmailLoading && <LoadingOverlay message="Loading emails..." />}
       <Notification />
 
       <div className="flex items-center justify-between bg-primary px-4 py-3">
@@ -750,7 +755,7 @@ function App() {
             </button>
           )}
           <Mail className="h-4 w-4 shrink-0 text-accent" />
-          <span className="truncate text-sm font-semibold text-primary-foreground">MorrowFold</span>
+          <span className="truncate text-sm font-semibold text-primary-foreground">Applendium</span>
           <span className="rounded bg-primary-foreground/10 px-1.5 py-0.5 text-[10px] text-primary-foreground/75">
             {userPlan === 'premium' ? 'Premium' : 'Free'}
           </span>

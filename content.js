@@ -1,15 +1,15 @@
 /**
  * @file content.js
- * @description Bridge between the MorrowFold web app and the extension.
+ * @description Bridge between the Applendium web app and the extension.
  * Injected on localhost pages so the web app can authenticate via the extension.
  */
 
-console.log("MorrowFold Content Script loaded.");
+console.log("Applendium Content Script loaded.");
 
 try {
 	window.postMessage(
 		{
-			type: "MORROWFOLD_EXTENSION_READY",
+			type: "APPLENDIUM_EXTENSION_READY",
 			extensionId: chrome?.runtime?.id || null,
 		},
 		window.location.origin
@@ -18,9 +18,9 @@ try {
 	// Ignore errors from early page lifecycle or invalid origin.
 }
 
-const BRIDGE_REQUEST = "MORROWFOLD_EXTENSION_TOKEN_REQUEST";
-const BRIDGE_RESPONSE = "MORROWFOLD_EXTENSION_TOKEN_RESPONSE";
-const AUTH_STATE_PUSH = "MORROWFOLD_AUTH_STATE_PUSH";
+const BRIDGE_REQUEST = "APPLENDIUM_EXTENSION_TOKEN_REQUEST";
+const BRIDGE_RESPONSE = "APPLENDIUM_EXTENSION_TOKEN_RESPONSE";
+const AUTH_STATE_PUSH = "APPLENDIUM_AUTH_STATE_PUSH";
 
 // --- Respond to token requests from the web page ---
 window.addEventListener("message", (event) => {
@@ -30,10 +30,10 @@ window.addEventListener("message", (event) => {
 	const data = event.data || {};
 	if (data.type !== BRIDGE_REQUEST || !data.nonce) return;
 
-	console.log("[MorrowFold Content] Received bridge token request, forwarding to background...");
+	console.log("[Applendium Content] Received bridge token request, forwarding to background...");
 
 	if (!chrome?.runtime?.sendMessage) {
-		console.warn("[MorrowFold Content] chrome.runtime.sendMessage unavailable (extension context invalidated?)");
+		console.warn("[Applendium Content] chrome.runtime.sendMessage unavailable (extension context invalidated?)");
 		window.postMessage(
 			{ type: BRIDGE_RESPONSE, nonce: data.nonce, success: false, error: "Extension bridge unavailable." },
 			window.location.origin
@@ -43,14 +43,14 @@ window.addEventListener("message", (event) => {
 
 	chrome.runtime.sendMessage({ type: "GET_ID_TOKEN" }, (response) => {
 		if (chrome.runtime.lastError) {
-			console.warn("[MorrowFold Content] Runtime error:", chrome.runtime.lastError.message);
+			console.warn("[Applendium Content] Runtime error:", chrome.runtime.lastError.message);
 			window.postMessage(
 				{ type: BRIDGE_RESPONSE, nonce: data.nonce, success: false, error: chrome.runtime.lastError.message },
 				window.location.origin
 			);
 			return;
 		}
-		console.log("[MorrowFold Content] Background responded:", response?.success ? "success" : response?.error);
+		console.log("[Applendium Content] Background responded:", response?.success ? "success" : response?.error);
 		const payload = {
 			type: BRIDGE_RESPONSE,
 			nonce: data.nonce,

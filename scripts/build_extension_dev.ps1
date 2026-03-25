@@ -1,6 +1,6 @@
 param(
   # Where to put built extension outputs (outside OneDrive avoids EPERM rename issues).
-  [string]$BaseDir = (Join-Path $env:LOCALAPPDATA 'MorrowFold\\extension-dev'),
+  [string]$BaseDir = (Join-Path $env:LOCALAPPDATA 'Applendium\\extension-dev'),
   # Which manifest to copy into the built folder (defaults to dev manifest).
   [ValidateSet('manifest.json', 'manifest.prod.json')]
   [string]$ManifestFile = 'manifest.json',
@@ -26,7 +26,7 @@ $currentLink = Join-Path $BaseDir 'current'
 New-Item -ItemType Directory -Force -Path $buildsDir | Out-Null
 New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
 
-Write-Info "Building MorrowFold extension..."
+Write-Info "Building Applendium extension..."
 Write-Info "  Project:  $projectRoot"
 Write-Info "  Output:   $outDir"
 Write-Info "  Cache:    $cacheDir"

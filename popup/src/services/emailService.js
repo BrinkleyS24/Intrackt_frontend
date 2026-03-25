@@ -34,9 +34,8 @@ export async function fetchStoredEmailsService() {
 
     return categorizedEmails;
   } catch (error) {
-    console.error("❌ MorrowFold: Error fetching stored emails from local storage:", error);
-    // Return empty categories on error to prevent UI breakage
-    return { applied: [], interviewed: [], offers: [], rejected: [], irrelevant: [] };
+    console.error("❌ Applendium: Error fetching stored emails from local storage:", error);
+    throw error;
   }
 }
 
@@ -51,7 +50,7 @@ export async function fetchStoredEmailsService() {
 export async function fetchNewEmailsService(userEmail, userId, fullRefresh = false) {
   try {
     if (!userEmail || !userId) {
-      console.error('❌ MorrowFold: User email or ID not provided for fetchNewEmailsService.');
+      console.error('❌ Applendium: User email or ID not provided for fetchNewEmailsService.');
       return { success: false, error: 'User email or ID missing.' };
     }
 
@@ -71,7 +70,7 @@ export async function fetchNewEmailsService(userEmail, userId, fullRefresh = fal
         quota: response.quota // Quota data from backend
       };
     } else {
-      console.error("❌ MorrowFold: Failed to retrieve new emails from background:", response.error);
+      console.error("❌ Applendium: Failed to retrieve new emails from background:", response.error);
       // Pass through errorCode and requiresReauth for proper handling in the hook
       return { 
         success: false, 
@@ -81,7 +80,7 @@ export async function fetchNewEmailsService(userEmail, userId, fullRefresh = fal
       };
     }
   } catch (error) {
-    console.error("❌ MorrowFold: Error sending FETCH_NEW_EMAILS message to background:", error);
+    console.error("❌ Applendium: Error sending FETCH_NEW_EMAILS message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -114,7 +113,7 @@ export async function sendEmailReplyService(threadId, recipient, subject, body, 
     }
     return response; // may contain fallback flag or error
   } catch (error) {
-    console.error("❌ MorrowFold: Error sending SEND_EMAIL_REPLY message to background:", error);
+    console.error("❌ Applendium: Error sending SEND_EMAIL_REPLY message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -135,7 +134,7 @@ export async function reportMisclassificationService(reportPayload) {
     });
     return response;
   } catch (error) {
-    console.error("❌ MorrowFold: Error sending REPORT_MISCLASSIFICATION message to background:", error);
+    console.error("❌ Applendium: Error sending REPORT_MISCLASSIFICATION message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -155,7 +154,7 @@ export async function undoMisclassificationService(undoData) {
     });
     return response;
   } catch (error) {
-    console.error("❌ MorrowFold: Error sending UNDO_MISCLASSIFICATION message to background:", error);
+    console.error("❌ Applendium: Error sending UNDO_MISCLASSIFICATION message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -177,7 +176,7 @@ export async function archiveEmailService(threadId, userEmail) {
     });
     return response;
   } catch (error) {
-    console.error("❌ MorrowFold: Error sending ARCHIVE_EMAIL message to background:", error);
+    console.error("❌ Applendium: Error sending ARCHIVE_EMAIL message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -199,7 +198,7 @@ export async function markEmailsAsReadService(category, userId) {
     });
     return response;
   } catch (error) {
-    console.error("❌ MorrowFold: Error sending MARK_AS_READ message to background:", error);
+    console.error("❌ Applendium: Error sending MARK_AS_READ message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -222,7 +221,7 @@ export async function markEmailAsReadService(emailId) {
     return response;
   } catch (error) {
     // Log the error and re-throw it so the UI layer can handle it (e.g., show a notification).
-    console.error("❌ MorrowFold: Error in markEmailAsReadService:", error);
+    console.error("❌ Applendium: Error in markEmailAsReadService:", error);
     throw error;
   }
 }
@@ -247,7 +246,7 @@ export async function updateCompanyNameService(emailId, companyName, userEmail) 
     });
     return response;
   } catch (error) {
-    console.error("❌ MorrowFold: Error sending UPDATE_COMPANY_NAME message to background:", error);
+    console.error("❌ Applendium: Error sending UPDATE_COMPANY_NAME message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -270,7 +269,7 @@ export async function getCorrectionAnalyticsService(userEmail, since = null) {
     });
     return response;
   } catch (error) {
-    console.error("❌ MorrowFold: Error sending GET_CORRECTION_ANALYTICS message to background:", error);
+    console.error("❌ Applendium: Error sending GET_CORRECTION_ANALYTICS message to background:", error);
     return { success: false, error: error.message };
   }
 }
@@ -295,7 +294,7 @@ export async function updatePositionService(emailId, position, userEmail) {
     });
     return response;
   } catch (error) {
-    console.error("❌ MorrowFold: Error sending UPDATE_POSITION message to background:", error);
+    console.error("❌ Applendium: Error sending UPDATE_POSITION message to background:", error);
     return { success: false, error: error.message };
   }
 }
