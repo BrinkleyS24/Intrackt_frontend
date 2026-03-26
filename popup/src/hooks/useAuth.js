@@ -21,6 +21,7 @@ export const useAuth = (onPaymentStatusChange) => {
   const [userId, setUserId] = useState(null);
   const [isAuthReady, setIsAuthReady] = useState(false); // Indicates initial auth state check is done
   const [quotaData, setQuotaData] = useState(null); // New state for quota data
+  const [syncStatus, setSyncStatus] = useState(null);
   const [loadingAuth, setLoadingAuth] = useState(true); // Indicate if auth state is still loading (INITIALIZED TO TRUE)
   const isLoggedIn = !!userEmail; // Derived state
 
@@ -50,17 +51,28 @@ export const useAuth = (onPaymentStatusChange) => {
   const fetchQuotaData = useCallback(async () => {
     if (!userEmail || !userId) {
       setQuotaData(null);
+      setSyncStatus(null);
       return;
     }
     try {
-      // Source of truth: background sync writes `quotaData` to chrome.storage.local.
-      // Reading from storage avoids showing quota usage that doesn't match the UI email lists.
+      const response = await sendMessageToBackground({ type: 'FETCH_QUOTA_DATA' });
+      if (response?.success) {
+        setQuotaData(response.quota || null);
+        setSyncStatus(response.sync || null);
+        return { success: true, quota: response.quota || null, sync: response.sync || null };
+      }
+
+      // Fallback: if sync status fetch fails, at least keep quota populated from storage.
       const stored = await chrome.storage.local.get(['quotaData']);
       setQuotaData(stored.quotaData || null);
-      return { success: true, quota: stored.quotaData || null };
+      setSyncStatus(null);
+      return { success: false, quota: stored.quotaData || null, sync: null, error: response?.error || null };
     } catch (error) {
       console.error("❌ Applendium: Error fetching quota data:", error);
-      setQuotaData(null); // Clear quota on error
+      const stored = await chrome.storage.local.get(['quotaData']).catch(() => ({}));
+      setQuotaData(stored.quotaData || null);
+      setSyncStatus(null);
+      return { success: false, quota: stored.quotaData || null, sync: null, error: error.message };
     }
   }, [userEmail, userId]); // Depend on userEmail and userId
 
@@ -150,6 +162,7 @@ export const useAuth = (onPaymentStatusChange) => {
     isAuthReady,
     loadingAuth,
     quotaData,
+    syncStatus,
     fetchUserPlan: fetchUserPlanFromService, // Expose service function directly
     fetchQuotaData, // Expose the memoized fetchQuotaData
     reloadUserState: loadCurrentUserStateFromStorage, // Expose reload function for immediate refresh

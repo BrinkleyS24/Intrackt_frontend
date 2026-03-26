@@ -59,6 +59,7 @@ export function useEmails(userEmail, userId, CONFIG) {
   // State to indicate if email operations are in progress (e.g., fetching, sending)
   const [initialLoading, setInitialLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStuck, setSyncStuck] = useState(false);
   // Heartbeat used to detect whether background sync is still alive (polling updates).
   const [syncHeartbeat, setSyncHeartbeat] = useState(0);
   // State to determine if the current view is a filtered view of emails
@@ -124,13 +125,28 @@ export function useEmails(userEmail, userId, CONFIG) {
   useEffect(() => {
     const handleEmailsSynced = (msg) => {
       if (!isMountedRef.current) return;
+      if (msg.type === 'SYNC_STUCK') {
+        setSyncStuck(true);
+        setIsSyncing(false);
+        showNotification(
+          `Sync appears stuck after ${msg.minutesInProgress || 15} minutes. Wait a moment, then try Refresh again.`,
+          'warning',
+          null,
+          12000
+        );
+        return;
+      }
       if (msg.type === 'EMAILS_SYNCED') { 
         const stillSyncing = typeof msg.syncInProgress === 'boolean' ? msg.syncInProgress : false;
         setIsSyncing(stillSyncing);
+        if (!stillSyncing) {
+          setSyncStuck(false);
+        }
         if (stillSyncing) {
           setSyncHeartbeat((h) => h + 1);
         }
         if (msg.success) {
+          setSyncStuck(false);
           // If we get a successful sync message, the UI can render immediately.
           hasLoadedOnceRef.current = true;
           setInitialLoading(false);
@@ -148,6 +164,39 @@ export function useEmails(userEmail, userId, CONFIG) {
     };
     chrome.runtime.onMessage.addListener(handleEmailsSynced);
     return () => chrome.runtime.onMessage.removeListener(handleEmailsSynced);
+  }, [calculateUnreadCounts]);
+
+  useEffect(() => {
+    const handleStorageChange = (changes, namespace) => {
+      if (namespace !== 'local' || !isMountedRef.current) return;
+
+      const emailKeys = ['appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'];
+      const hasEmailChange = emailKeys.some((key) => key in changes);
+      const hasCategoryTotalsChange = 'categoryTotals' in changes;
+
+      if (!hasEmailChange && !hasCategoryTotalsChange) return;
+
+      if (hasCategoryTotalsChange) {
+        setCategoryTotals(changes.categoryTotals?.newValue || null);
+      }
+
+      if (!hasEmailChange) return;
+
+      setCategorizedEmails((prev) => {
+        const next = {
+          applied: ('appliedEmails' in changes) ? (changes.appliedEmails?.newValue || []) : prev.applied,
+          interviewed: ('interviewedEmails' in changes) ? (changes.interviewedEmails?.newValue || []) : prev.interviewed,
+          offers: ('offersEmails' in changes) ? (changes.offersEmails?.newValue || []) : prev.offers,
+          rejected: ('rejectedEmails' in changes) ? (changes.rejectedEmails?.newValue || []) : prev.rejected,
+          irrelevant: ('irrelevantEmails' in changes) ? (changes.irrelevantEmails?.newValue || []) : prev.irrelevant,
+        };
+        calculateUnreadCounts(next);
+        return next;
+      });
+    };
+
+    chrome.storage.onChanged.addListener(handleStorageChange);
+    return () => chrome.storage.onChanged.removeListener(handleStorageChange);
   }, [calculateUnreadCounts]);
 
   // WATCHDOG: Reset sync state if it gets stuck (e.g., service worker restart)
@@ -269,6 +318,7 @@ export function useEmails(userEmail, userId, CONFIG) {
     syncRequestIdRef.current = requestId;
     if (isMountedRef.current) {
       setIsSyncing(true);
+      setSyncStuck(false);
     }
     try {
       const response = await fetchNewEmailsService(userEmail, userId, fullRefresh);
@@ -690,6 +740,7 @@ export function useEmails(userEmail, userId, CONFIG) {
     markEmailAsRead,
     initialLoading,
     isSyncing,
+    syncStuck,
     loadingEmails,
     markingAllAsRead
   };

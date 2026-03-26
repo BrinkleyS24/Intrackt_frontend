@@ -58,6 +58,14 @@ function safeRuntimeSendMessage(message) {
   }
 }
 
+function buildEmailsCacheMeta(currentMeta = null, overrides = {}) {
+  return {
+    ...(currentMeta || {}),
+    updatedAt: Date.now(),
+    ...overrides,
+  };
+}
+
 function notifyAuthFlowStage(stage, details = {}) {
   safeRuntimeSendMessage({
     type: 'AUTH_FLOW_STAGE',
@@ -172,6 +180,7 @@ async function updateCachedEmails(mutator) {
     'rejectedEmails',
     'irrelevantEmails',
     'categoryTotals',
+    EMAILS_CACHE_META_KEY,
   ]);
 
   const categorizedEmails = {
@@ -191,11 +200,10 @@ async function updateCachedEmails(mutator) {
     offersEmails: nextCategorizedEmails.offers || [],
     rejectedEmails: nextCategorizedEmails.rejected || [],
     irrelevantEmails: nextCategorizedEmails.irrelevant || [],
-    [EMAILS_CACHE_META_KEY]: {
-      updatedAt: Date.now(),
+    [EMAILS_CACHE_META_KEY]: buildEmailsCacheMeta(stored[EMAILS_CACHE_META_KEY], {
       syncInProgress: false,
       totalRelevantCount: countRelevantCategorizedEmails(nextCategorizedEmails),
-    },
+    }),
   });
 
   safeRuntimeSendMessage({
@@ -844,7 +852,9 @@ function startPostLoginBackgroundWork(user) {
     let shouldFull = true;
     try {
       const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
-      const last = status?.sync?.lastSyncAt ? new Date(status.sync.lastSyncAt) : null;
+      const meta = await chrome.storage.local.get([EMAILS_CACHE_META_KEY]).catch(() => ({}));
+      const lastRaw = meta?.[EMAILS_CACHE_META_KEY]?.lastCompletedAt || status?.sync?.lastSyncAt;
+      const last = lastRaw ? new Date(lastRaw) : null;
       if (last && (Date.now() - last.getTime()) < 24 * 60 * 60 * 1000) {
         shouldFull = false;
       }
@@ -864,10 +874,11 @@ function startPostLoginBackgroundWork(user) {
  * Fetch stored emails from backend and update local cache, then notify popup.
  */
 async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}) {
-  const { skipBackfill = false, skipNotify = false } = options || {};
+  const { skipBackfill = false, skipNotify = false, markSyncCompleted = false } = options || {};
   try {
     // Snapshot prior cache before fetching so we can detect newly-added emails.
     let previousCache = null;
+    let previousCacheMeta = null;
     try {
       const prev = await chrome.storage.local.get([
         'appliedEmails',
@@ -875,6 +886,7 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
         'offersEmails',
         'rejectedEmails',
         'irrelevantEmails',
+        EMAILS_CACHE_META_KEY,
       ]);
       previousCache = {
         applied: prev.appliedEmails || [],
@@ -883,8 +895,10 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
         rejected: prev.rejectedEmails || [],
         irrelevant: prev.irrelevantEmails || [],
       };
+      previousCacheMeta = prev[EMAILS_CACHE_META_KEY] || null;
     } catch (_) {
       previousCache = null;
+      previousCacheMeta = null;
     }
 
     // While a sync is in progress, keep these refreshes lightweight to avoid hammering the backend.
@@ -916,6 +930,11 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
           }
         : responseCategorizedEmails;
       const nextRelevantCount = countRelevantCategorizedEmails(nextCategorizedEmails);
+      const nextCacheMeta = buildEmailsCacheMeta(previousCacheMeta, {
+        syncInProgress: isSyncing,
+        totalRelevantCount: nextRelevantCount,
+        ...(markSyncCompleted ? { lastCompletedAt: new Date().toISOString() } : {}),
+      });
 
       // Update cache + UI immediately. Any optional backfill happens asynchronously after users see emails.
       await chrome.storage.local.set({
@@ -924,22 +943,20 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
         offersEmails: nextCategorizedEmails.offers || [],
         rejectedEmails: nextCategorizedEmails.rejected || [],
         irrelevantEmails: nextCategorizedEmails.irrelevant || [],
-        [EMAILS_CACHE_META_KEY]: {
-          updatedAt: Date.now(),
-          syncInProgress: isSyncing,
-          totalRelevantCount: nextRelevantCount,
-        },
+        [EMAILS_CACHE_META_KEY]: nextCacheMeta,
         // Keep totals in sync with DB so the dashboard doesn't depend on local array size.
         ...(response.categoryTotals ? { categoryTotals: response.categoryTotals } : {}),
       });
 
-      safeRuntimeSendMessage({
-        type: 'EMAILS_SYNCED',
-        success: true,
-        categorizedEmails: nextCategorizedEmails,
-        ...(response.categoryTotals ? { categoryTotals: response.categoryTotals } : {}),
-        syncInProgress,
-      });
+      if (!skipNotify) {
+        safeRuntimeSendMessage({
+          type: 'EMAILS_SYNCED',
+          success: true,
+          categorizedEmails: nextCategorizedEmails,
+          ...(response.categoryTotals ? { categoryTotals: response.categoryTotals } : {}),
+          syncInProgress,
+        });
+      }
 
       // Best-effort notifications (never block the UI update).
       if (!isSyncing && !skipNotify) {
@@ -1005,15 +1022,14 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
                 offersEmails: refreshed.categorizedEmails.offers || [],
                 rejectedEmails: refreshed.categorizedEmails.rejected || [],
                 irrelevantEmails: refreshed.categorizedEmails.irrelevant || [],
-                [EMAILS_CACHE_META_KEY]: {
-                  updatedAt: Date.now(),
+                [EMAILS_CACHE_META_KEY]: buildEmailsCacheMeta(nextCacheMeta, {
                   syncInProgress: false,
                   totalRelevantCount:
                     (refreshed.categorizedEmails.applied || []).length +
                     (refreshed.categorizedEmails.interviewed || []).length +
                     (refreshed.categorizedEmails.offers || []).length +
                     (refreshed.categorizedEmails.rejected || []).length,
-                },
+                }),
               });
               safeRuntimeSendMessage({
                 type: 'EMAILS_SYNCED',
@@ -1079,7 +1095,7 @@ async function pollSyncStatusAndRefresh(maxSeconds = 15 * 60, intervalMs = 10000
             // keep polling
           } else {
             // One final refresh at completion
-            await refreshStoredEmailsCache(false);
+            await refreshStoredEmailsCache(false, { markSyncCompleted: true });
             return;
           }
         }
@@ -1201,6 +1217,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         'interviewedEmails',
         'offersEmails',
         'rejectedEmails',
+        EMAILS_CACHE_META_KEY,
       ]);
       previousCache = {
         applied: prev.appliedEmails || [],
@@ -1208,6 +1225,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         offers: prev.offersEmails || [],
         rejected: prev.rejectedEmails || [],
       };
+      previousCache.meta = prev[EMAILS_CACHE_META_KEY] || null;
     } catch (_) {
       previousCache = null;
     }
@@ -1249,6 +1267,11 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
           offersEmails: response.categorizedEmails.offers || [],
           rejectedEmails: response.categorizedEmails.rejected || [],
           quotaData: response.quota || null, // Also cache quota data
+          [EMAILS_CACHE_META_KEY]: buildEmailsCacheMeta(previousCache?.meta, {
+            syncInProgress: false,
+            totalRelevantCount: countRelevantCategorizedEmails(response.categorizedEmails),
+            lastCompletedAt: new Date().toISOString(),
+          }),
           categoryTotals: response.categoryTotals || null, // NEW: Cache accurate category counts
           applicationStats: applicationStats || null // NEW: Cache application statistics
         });
@@ -1278,6 +1301,12 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
           irrelevant: currentCache.irrelevantEmails || [],
         };
         const mergedEmails = mergeCategorizedEmails(cachedEmails, response.categorizedEmails || {});
+        const cachedCount =
+          (mergedEmails.applied || []).length +
+          (mergedEmails.interviewed || []).length +
+          (mergedEmails.offers || []).length +
+          (mergedEmails.rejected || []).length +
+          (mergedEmails.irrelevant || []).length;
 
         await chrome.storage.local.set({
           appliedEmails: mergedEmails.applied || [],
@@ -1286,18 +1315,16 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
           rejectedEmails: mergedEmails.rejected || [],
           irrelevantEmails: mergedEmails.irrelevant || [],
           quotaData: response.quota || null,
+          [EMAILS_CACHE_META_KEY]: buildEmailsCacheMeta(previousCache?.meta, {
+            syncInProgress: true,
+            totalRelevantCount: cachedCount,
+          }),
           categoryTotals: response.categoryTotals || null, // NEW: Update category totals even during sync
           applicationStats: applicationStats || null // NEW: Update application stats even during sync
         });
         bgLogger.info('Sync in progress - merged backend emails into cache and updated quota/category totals.');
 
         const emailsForUi = mergedEmails;
-        const cachedCount =
-          (mergedEmails.applied || []).length +
-          (mergedEmails.interviewed || []).length +
-          (mergedEmails.offers || []).length +
-          (mergedEmails.rejected || []).length +
-          (mergedEmails.irrelevant || []).length;
 
         // Notify UI with current cached data (or primed response data) without blocking sync.
         safeRuntimeSendMessage({
@@ -1810,7 +1837,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
           }
 
-          const refreshed = await refreshStoredEmailsCache(undefined, { skipNotify: true });
+          const refreshed = await refreshStoredEmailsCache(undefined, { skipNotify: true, skipBackfill: true });
           sendResponse(refreshed);
         } catch (error) {
           console.error('❌ Applendium Background: Error refreshing stored email cache:', error);
@@ -1866,7 +1893,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({
               success: true,
               quota: status.quota,
-              sync: status.sync,
+              sync: {
+                ...status.sync,
+                lastCompletedAt: (
+                  await chrome.storage.local.get([EMAILS_CACHE_META_KEY]).catch(() => ({}))
+                )?.[EMAILS_CACHE_META_KEY]?.lastCompletedAt || null,
+              },
               dataCompleteness: status.dataCompleteness,
             });
           } else {
@@ -2893,7 +2925,9 @@ setPersistence(auth, indexedDBLocalPersistence)
 	            let shouldFull = true;
 	            try {
 	              const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
-	              const last = status?.sync?.lastSyncAt ? new Date(status.sync.lastSyncAt) : null;
+	              const meta = await chrome.storage.local.get([EMAILS_CACHE_META_KEY]).catch(() => ({}));
+	              const lastRaw = meta?.[EMAILS_CACHE_META_KEY]?.lastCompletedAt || status?.sync?.lastSyncAt;
+	              const last = lastRaw ? new Date(lastRaw) : null;
 	              if (last && (Date.now() - last.getTime()) < 24 * 60 * 60 * 1000) {
 	                shouldFull = false;
 	              }
@@ -2912,7 +2946,7 @@ setPersistence(auth, indexedDBLocalPersistence)
 	        }
 	      } else {
 	        console.log("✅ Applendium Background: Auth State Changed - User logged out.");
-	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']); // Clear all cached data on logout
+	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions', EMAILS_CACHE_META_KEY]); // Clear all cached data on logout
 	        safeRuntimeSendMessage({ type: 'AUTH_READY', success: true, loggedOut: true });
 	        broadcastAuthStateToContentScripts(false, null);
 	      }
@@ -2938,7 +2972,7 @@ setPersistence(auth, indexedDBLocalPersistence)
 	        }
 	      } else {
 	        console.log("Applendium Background: Auth State Changed (without persistence) - User logged out.");
-	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions']);
+	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions', EMAILS_CACHE_META_KEY]);
 	        safeRuntimeSendMessage({ type: 'AUTH_READY', success: true, loggedOut: true });
 	        broadcastAuthStateToContentScripts(false, null);
 	      }

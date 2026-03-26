@@ -20,6 +20,8 @@ import { getPremiumDashboardUrl } from './utils/runtimeConfig';
 import { CONFIG } from './utils/constants';
 import { ArrowLeft, Briefcase, CalendarDays, ExternalLink, LogOut, Mail, RefreshCw, Search, X } from 'lucide-react';
 
+const LONG_SYNC_WARNING_MS = 10 * 60 * 1000;
+
 const flattenCategorized = (categorized) => [
   ...(categorized?.applied || []),
   ...(categorized?.interviewed || []),
@@ -110,6 +112,7 @@ function App() {
     logout,
     fetchQuotaData,
     quotaData,
+    syncStatus,
     loadingAuth,
   } = useAuth();
 
@@ -129,6 +132,7 @@ function App() {
     markEmailAsRead,
     initialLoading,
     isSyncing,
+    syncStuck,
     loadingEmails,
     markingAllAsRead,
   } = useEmails(userEmail, userId, CONFIG);
@@ -138,6 +142,39 @@ function App() {
   const hasCachedEmails = useMemo(() => flattenCategorized(categorizedEmails).length > 0, [categorizedEmails]);
   const showInitialEmailLoading = isLoggedIn && initialLoading && !hasCachedEmails;
   const { quota, getWarningMessage, percentage } = useEmailQuota(quotaData, userPlan);
+  const isLongRunningSync = useMemo(() => {
+    if (!syncStatus?.inProgress || !syncStatus?.startedAt) return false;
+    const startedAt = new Date(syncStatus.startedAt);
+    if (Number.isNaN(startedAt.getTime())) return false;
+    return (Date.now() - startedAt.getTime()) >= LONG_SYNC_WARNING_MS;
+  }, [syncStatus?.inProgress, syncStatus?.startedAt]);
+  const isSyncStuck = syncStuck || isLongRunningSync;
+  const isSyncActive = !isSyncStuck && (isSyncing || Boolean(syncStatus?.inProgress));
+  const syncStatusLabel = useMemo(() => {
+    if (isSyncStuck) return 'Sync may be stuck';
+    if (isSyncActive) return 'Syncing in background...';
+
+    const rawLastSyncAt = syncStatus?.lastCompletedAt || syncStatus?.lastSyncAt;
+    if (!rawLastSyncAt) return 'No sync in progress';
+
+    const lastSyncAt = new Date(rawLastSyncAt);
+    if (Number.isNaN(lastSyncAt.getTime())) return 'No sync in progress';
+
+    const now = Date.now();
+    const diffMs = now - lastSyncAt.getTime();
+    const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+
+    if (diffMinutes < 1) return 'Last synced just now';
+    if (diffMinutes < 60) return `Last synced ${diffMinutes}m ago`;
+
+    const formatter = new Intl.DateTimeFormat(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    return `Last synced ${formatter.format(lastSyncAt)}`;
+  }, [isSyncActive, isSyncStuck, syncStatus?.lastCompletedAt, syncStatus?.lastSyncAt]);
 
   useEffect(() => {
     if (!selectedEmail?.id) return;
@@ -233,11 +270,11 @@ function App() {
 
   useEffect(() => {
     const handleBackgroundMessage = (message) => {
-      if ((message.type === 'EMAILS_SYNCED' || message.type === 'NEW_EMAILS_UPDATED') && message.userEmail === userEmail) {
-        if (!message.syncInProgress) {
-          fetchStoredEmails();
-          fetchQuotaData();
-        }
+      if (message.type !== 'EMAILS_SYNCED' && message.type !== 'NEW_EMAILS_UPDATED') return;
+      if (message.userEmail && message.userEmail !== userEmail) return;
+      if (!message.syncInProgress) {
+        fetchStoredEmails();
+        fetchQuotaData();
       }
     };
 
@@ -626,10 +663,10 @@ function App() {
             </div>
 
             <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card/80 px-3 py-2 text-[11px] text-muted-foreground shadow-sm">
-              <span>{isSyncing ? 'Syncing in background...' : 'Up to date'}</span>
+              <span>{syncStatusLabel}</span>
               <div className="flex items-center gap-3">
                 <button onClick={handleRefresh} className="inline-flex items-center gap-1 transition hover:text-foreground" type="button">
-                  <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`h-3.5 w-3.5 ${isSyncActive ? 'animate-spin' : ''}`} />
                   Refresh
                 </button>
                 <button onClick={openDashboard} className="inline-flex items-center gap-1 transition hover:text-foreground" type="button">
