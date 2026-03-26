@@ -822,7 +822,7 @@ function Dashboard({
       }
 
       // Prefer the background script's backend base URL (supports localhost override for development).
-      let backendBaseUrl = CONFIG?.ENDPOINTS?.BACKEND_BASE_URL || 'https://gmail-tracker-backend-215378038667.us-central1.run.app';
+      let backendBaseUrl = CONFIG?.ENDPOINTS?.BACKEND_BASE_URL || 'https://gmail-tracker-backend-674309673051.us-central1.run.app';
       try {
         const backendResp = await chrome.runtime.sendMessage({ type: 'GET_BACKEND_BASE_URL' });
         if (backendResp?.success && typeof backendResp.backendBaseUrl === 'string' && backendResp.backendBaseUrl.trim()) {
