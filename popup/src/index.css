@@ -161,8 +161,8 @@ body {
 }
 
 .status-applied {
-  background: hsl(var(--success) / 0.12);
-  color: hsl(var(--success));
+  background: hsl(var(--secondary));
+  color: hsl(var(--primary));
 }
 
 .status-interviewed {
@@ -171,8 +171,8 @@ body {
 }
 
 .status-offers {
-  background: hsl(var(--primary) / 0.12);
-  color: hsl(var(--primary));
+  background: hsl(var(--success) / 0.12);
+  color: hsl(var(--success));
 }
 
 .status-rejected {

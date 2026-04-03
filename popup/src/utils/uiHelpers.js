@@ -69,7 +69,7 @@ export function getCategoryBadgeColor(category) {
     case 'interviewed':
       return 'bg-warning/15 text-warning-foreground';
     case 'offers':
-      return 'bg-primary/10 text-primary';
+      return 'bg-success/10 text-success';
     case 'rejected':
       return 'bg-destructive/10 text-destructive';
     case 'irrelevant':
@@ -94,7 +94,7 @@ export function getCategoryColor(category) {
     case 'interviewed':
       return 'text-warning';
     case 'offers':
-      return 'text-primary';
+      return 'text-success';
     case 'rejected':
       return 'text-destructive';
     case 'irrelevant':

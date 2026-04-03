@@ -133,7 +133,7 @@ export default function QuickView({
       {quotaText && (
         <div className="rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-3 py-2">
           <div className="flex items-center justify-between text-xs text-gray-700 dark:text-zinc-200">
-            <span className="font-medium">Quota</span>
+            <span className="font-medium">Relevant email quota</span>
             <span className="tabular-nums">{quotaText}</span>
           </div>
           <div className="mt-2 h-2 w-full rounded-full bg-gray-100 dark:bg-zinc-700 overflow-hidden">

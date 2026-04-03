@@ -309,6 +309,35 @@ export function useEmails(userEmail, userId, CONFIG) {
     }
   }, [calculateUnreadCounts, userEmail, userId]);
 
+  useEffect(() => {
+    if (!isSyncing || !userEmail || !userId) return;
+
+    let cancelled = false;
+
+    const pollSyncState = async () => {
+      try {
+        const response = await sendMessageToBackground({ type: 'FETCH_QUOTA_DATA' });
+        if (cancelled) return;
+
+        if (response?.success && response?.sync?.inProgress === false) {
+          setIsSyncing(false);
+          setSyncStuck(false);
+          fetchStoredEmails().catch(() => {});
+        }
+      } catch (_) {
+        // Best-effort self-heal only.
+      }
+    };
+
+    pollSyncState();
+    const intervalId = setInterval(pollSyncState, 15000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [fetchStoredEmails, isSyncing, userEmail, userId]);
+
 
   /**
    * Requests the background script to initiate a new email synchronization with the backend.

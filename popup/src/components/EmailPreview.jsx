@@ -167,10 +167,19 @@ const sanitizeAndStyleEmailHTML = (html) => {
   return tempDiv.innerHTML;
 };
 
+const escapePlainTextForHtml = (text) => (
+  (text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+);
+
 const formatPlainTextEmail = (text) => {
   if (!text || typeof text !== 'string') return '';
 
-  let formatted = text
+  let formatted = escapePlainTextForHtml(text)
     .replace(/On\s+.+?\s+at\s+.+?,\s+.+?\s+wrote:\s*/gi, '\n--- Previous Message ---\n')
     .replace(/^-+\s*Original Message\s*-+$/gim, '\n--- Original Message ---\n')
     .replace(/^--\s*$/gm, '\n--- Signature ---\n');
@@ -402,19 +411,30 @@ export default function EmailPreview({
     };
   }, [email, lifecycle, threadArr]);
 
+  const presentationEmail = useMemo(() => ({
+    ...email,
+    isUserClosed: Boolean(email?.isUserClosed || applicationSummary?.user_closed_at),
+    isClosed: Boolean(email?.isClosed || applicationSummary?.user_closed_at || applicationSummary?.is_closed),
+  }), [
+    applicationSummary?.is_closed,
+    applicationSummary?.user_closed_at,
+    email,
+  ]);
+
   const {
     hasTerminalOutcome,
     isEffectivelyUserClosed,
     isEffectivelyClosed,
     shouldDisplayClosed,
     displayStatusKey,
-  } = useMemo(() => deriveEmailPresentationState(email, {
+  } = useMemo(() => deriveEmailPresentationState(presentationEmail, {
     applicationStatus: applicationSummary?.current_status || email?.applicationStatus,
     lifecycle: journeyData?.stages || [],
   }), [
     applicationSummary?.current_status,
     email,
     journeyData?.stages,
+    presentationEmail,
   ]);
 
   const showRepairJourney = useMemo(() => {
@@ -424,6 +444,31 @@ export default function EmailPreview({
     const appliedCount = stages.filter((stage) => (stage?.category || '').toString().toLowerCase() === 'applied').length;
     return appliedCount > 1 || stages.length >= 8;
   }, [journeyData, email?.applicationId]);
+
+  const hasVisibleTerminalStage = useMemo(() => {
+    const stages = Array.isArray(journeyData?.stages) ? journeyData.stages : [];
+    return stages.some((stage) => {
+      const normalized = normalizeApplicationStatusKey(stage?.category || stage?.current_status);
+      return normalized === 'offers' || normalized === 'rejected';
+    });
+  }, [journeyData?.stages]);
+
+  const shouldOfferStatusRepair = useMemo(() => {
+    if (!email?.applicationId) return false;
+    if (isEffectivelyUserClosed) return false;
+    const rawCategory = normalizeApplicationStatusKey(email?.category);
+    if (rawCategory !== 'applied' && rawCategory !== 'interviewed') return false;
+    return displayStatusKey === 'closed' && !hasVisibleTerminalStage;
+  }, [
+    displayStatusKey,
+    email?.applicationId,
+    email?.category,
+    hasVisibleTerminalStage,
+    isEffectivelyUserClosed,
+  ]);
+
+  const showRepairAction = showRepairJourney || shouldOfferStatusRepair;
+  const repairActionLabel = shouldOfferStatusRepair ? 'Repair status' : 'Repair journey';
 
   const lastActivityDate = useMemo(() => {
     const candidates = [];
@@ -861,9 +906,9 @@ export default function EmailPreview({
                 </div>
               )}
 
-              {showRepairJourney && (
+              {showRepairAction && (
                 <InlineButton variant="outline" onClick={handleRepairApplicationLinks} disabled={loadingLifecycle}>
-                  Repair journey
+                  {repairActionLabel}
                 </InlineButton>
               )}
             </div>

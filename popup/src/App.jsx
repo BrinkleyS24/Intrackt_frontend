@@ -13,12 +13,12 @@ import Modals from './components/Modals';
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
 import { useEmailQuota } from './hooks/useEmailQuota';
-import { countUniqueThreads, getApplicationKey, groupEmailsByThread } from './utils/grouping';
+import { getApplicationKey, groupEmailsByThread } from './utils/grouping';
 import { getCategoryTitle } from './utils/uiHelpers';
 import { getPremiumDashboardUrl } from './utils/runtimeConfig';
 
 import { CONFIG } from './utils/constants';
-import { ArrowLeft, Briefcase, CalendarDays, ExternalLink, LogOut, Mail, RefreshCw, Search, X } from 'lucide-react';
+import { ArrowLeft, Briefcase, CalendarDays, LogOut, Mail, RefreshCw, Search, X } from 'lucide-react';
 
 const LONG_SYNC_WARNING_MS = 10 * 60 * 1000;
 
@@ -49,7 +49,7 @@ const MAIN_TABS = [
   { id: 'all', label: 'All', activeClassName: 'bg-accent text-accent-foreground border-transparent' },
   { id: 'applied', label: 'Applied', activeClassName: 'bg-success text-success-foreground border-transparent' },
   { id: 'interviewed', label: 'Interviews', activeClassName: 'bg-warning text-warning-foreground border-transparent' },
-  { id: 'offers', label: 'Offers', activeClassName: 'bg-primary text-primary-foreground border-transparent' },
+  { id: 'offers', label: 'Offers', activeClassName: 'bg-success text-success-foreground border-transparent' },
   { id: 'rejected', label: 'Rejected', activeClassName: 'bg-destructive text-destructive-foreground border-transparent' },
 ];
 
@@ -90,6 +90,15 @@ const appLogger = {
   },
 };
 
+function getExtensionVersionLabel() {
+  try {
+    const manifest = globalThis?.chrome?.runtime?.getManifest?.() || {};
+    return manifest.version ? `v${manifest.version}` : '';
+  } catch (_) {
+    return '';
+  }
+}
+
 function App() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedEmail, setSelectedEmail] = useState(null);
@@ -100,6 +109,7 @@ function App() {
   const [listSearchQuery, setListSearchQuery] = useState('');
   const [dateRange, setDateRange] = useState('all');
   const [showDateFilter, setShowDateFilter] = useState(false);
+  const [stableAllViewSummary, setStableAllViewSummary] = useState(null);
   const hasTriggeredLoginSyncRef = useRef(false);
 
   const {
@@ -150,11 +160,12 @@ function App() {
   }, [syncStatus?.inProgress, syncStatus?.startedAt]);
   const isSyncStuck = syncStuck || isLongRunningSync;
   const isSyncActive = !isSyncStuck && (isSyncing || Boolean(syncStatus?.inProgress));
+  const extensionVersionLabel = useMemo(() => getExtensionVersionLabel(), []);
   const syncStatusLabel = useMemo(() => {
     if (isSyncStuck) return 'Sync may be stuck';
     if (isSyncActive) return 'Syncing in background...';
 
-    const rawLastSyncAt = syncStatus?.lastCompletedAt || syncStatus?.lastSyncAt;
+    const rawLastSyncAt = syncStatus?.lastSyncAt || syncStatus?.lastCompletedAt;
     if (!rawLastSyncAt) return 'No sync in progress';
 
     const lastSyncAt = new Date(rawLastSyncAt);
@@ -174,7 +185,7 @@ function App() {
       minute: '2-digit',
     });
     return `Last synced ${formatter.format(lastSyncAt)}`;
-  }, [isSyncActive, isSyncStuck, syncStatus?.lastCompletedAt, syncStatus?.lastSyncAt]);
+  }, [isSyncActive, isSyncStuck, syncStatus?.lastSyncAt, syncStatus?.lastCompletedAt]);
 
   useEffect(() => {
     if (!selectedEmail?.id) return;
@@ -325,6 +336,13 @@ function App() {
     [listSearchQuery]
   );
 
+  const allRelevantEmails = useMemo(() => [
+    ...(categorizedEmails.applied || []),
+    ...(categorizedEmails.interviewed || []),
+    ...(categorizedEmails.offers || []),
+    ...(categorizedEmails.rejected || []),
+  ], [categorizedEmails]);
+
   const filterConversationGroups = useCallback((groups, query, selectedDateRange = 'all') => {
     return (groups || []).filter((group) => {
       const latest = group?.latestEmail || {};
@@ -357,6 +375,54 @@ function App() {
       return true;
     });
   }, []);
+
+  const allViewConversationGroups = useMemo(
+    () => groupEmailsByThread(allRelevantEmails),
+    [allRelevantEmails]
+  );
+
+  const allViewFilteredGroups = useMemo(
+    () => filterConversationGroups(allViewConversationGroups, normalizedListSearchQuery, dateRange),
+    [allViewConversationGroups, dateRange, filterConversationGroups, normalizedListSearchQuery]
+  );
+
+  const allViewCategoryGroups = useMemo(() => ({
+    applied: filterConversationGroups(groupEmailsByThread(categorizedEmails.applied || []), normalizedListSearchQuery, dateRange),
+    interviewed: filterConversationGroups(groupEmailsByThread(categorizedEmails.interviewed || []), normalizedListSearchQuery, dateRange),
+    offers: filterConversationGroups(groupEmailsByThread(categorizedEmails.offers || []), normalizedListSearchQuery, dateRange),
+    rejected: filterConversationGroups(groupEmailsByThread(categorizedEmails.rejected || []), normalizedListSearchQuery, dateRange),
+  }), [categorizedEmails, dateRange, filterConversationGroups, normalizedListSearchQuery]);
+
+  const allViewLiveSummary = useMemo(
+    () => ({
+      counts: {
+        applied: allViewCategoryGroups.applied.length,
+        interviewed: allViewCategoryGroups.interviewed.length,
+        offers: allViewCategoryGroups.offers.length,
+        rejected: allViewCategoryGroups.rejected.length,
+      },
+      total: allViewFilteredGroups.length,
+    }),
+    [allViewCategoryGroups, allViewFilteredGroups.length]
+  );
+
+  const shouldFreezeHeadlineSummary =
+    isSyncActive
+    && !normalizedListSearchQuery
+    && dateRange === 'all';
+
+  useEffect(() => {
+    if (!isSyncActive && !normalizedListSearchQuery && dateRange === 'all') {
+      setStableAllViewSummary(allViewLiveSummary);
+    }
+  }, [allViewLiveSummary, dateRange, isSyncActive, normalizedListSearchQuery]);
+
+  const allViewHeadlineSummary = useMemo(() => {
+    if (shouldFreezeHeadlineSummary && stableAllViewSummary) {
+      return stableAllViewSummary;
+    }
+    return allViewLiveSummary;
+  }, [allViewLiveSummary, shouldFreezeHeadlineSummary, stableAllViewSummary]);
 
   const handleEmailSelect = useCallback((email, group = null) => {
     if (!email) return;
@@ -456,13 +522,6 @@ function App() {
     }
   }, [userPlan]);
 
-  const trackedEmailCount = useMemo(() => countUniqueThreads([
-    ...(categorizedEmails.applied || []),
-    ...(categorizedEmails.interviewed || []),
-    ...(categorizedEmails.offers || []),
-    ...(categorizedEmails.rejected || []),
-  ]), [categorizedEmails]);
-
   const countFilteredConversations = useCallback((categoryKey, options = {}) => {
     const { includeSearch = true, includeDate = true } = options;
     const emailsForCount =
@@ -483,6 +542,29 @@ function App() {
   }, [categorizedEmails, dateRange, filterConversationGroups, normalizedListSearchQuery]);
 
   const footerSummary = useMemo(() => {
+    if (selectedCategory === 'all' || selectedCategory === 'home') {
+      const activeView = allApplicationsFilter;
+      const count =
+        activeView === 'all'
+          ? allViewHeadlineSummary.total
+          : allViewHeadlineSummary.counts?.[activeView] || 0;
+
+      if (activeView === 'applied') {
+        return `${count} ${count === 1 ? 'application sent' : 'applications sent'}`;
+      }
+      if (activeView === 'interviewed') {
+        return `${count} ${count === 1 ? 'interview scheduled' : 'interviews scheduled'}`;
+      }
+      if (activeView === 'offers') {
+        return `${count} ${count === 1 ? 'offer received' : 'offers received'}`;
+      }
+      if (activeView === 'rejected') {
+        return `${count} ${count === 1 ? 'rejection received' : 'rejections received'}`;
+      }
+
+      return `${count} ${count === 1 ? 'tracked application' : 'tracked applications'}`;
+    }
+
     const activeView = (selectedCategory === 'all' || selectedCategory === 'home')
       ? allApplicationsFilter
       : selectedCategory;
@@ -505,8 +587,8 @@ function App() {
       return `${count} ${count === 1 ? 'rejection received' : 'rejections received'}`;
     }
 
-    return `${count} tracked emails`;
-  }, [allApplicationsFilter, countFilteredConversations, selectedCategory]);
+    return `${count} ${count === 1 ? 'tracked application' : 'tracked applications'}`;
+  }, [allApplicationsFilter, allViewHeadlineSummary, countFilteredConversations, selectedCategory]);
 
   const renderMainContent = () => {
     if (selectedCategory === 'emailPreview') {
@@ -527,33 +609,14 @@ function App() {
     }
 
     if (selectedCategory === 'all' || selectedCategory === 'home') {
-      const emailsAll =
+      const filteredConversations =
         allApplicationsFilter === 'all'
-          ? [
-              ...(categorizedEmails.applied || []),
-              ...(categorizedEmails.interviewed || []),
-              ...(categorizedEmails.offers || []),
-              ...(categorizedEmails.rejected || []),
-            ]
-          : categorizedEmails[allApplicationsFilter] || [];
-
-      const groupedConversations = groupEmailsByThread(emailsAll);
-      const filteredConversations = filterConversationGroups(groupedConversations, normalizedListSearchQuery, dateRange);
+          ? allViewFilteredGroups
+          : allViewCategoryGroups[allApplicationsFilter] || [];
       const totalConversations = filteredConversations.length;
       const allConversationEmails = filteredConversations.flatMap((conv) => conv.emails);
-      const getDateFilteredStat = (categoryKey) => (
-        filterConversationGroups(
-          groupEmailsByThread(categorizedEmails[categoryKey] || []),
-          '',
-          dateRange
-        ).length
-      );
-      const stats = {
-        applied: getDateFilteredStat('applied'),
-        interviewed: getDateFilteredStat('interviewed'),
-        offers: getDateFilteredStat('offers'),
-        rejected: getDateFilteredStat('rejected'),
-      };
+      const stats = allViewHeadlineSummary.counts;
+      const trackedApplicationCount = allViewHeadlineSummary.total;
 
       return (
         <div className="flex h-full flex-col">
@@ -626,7 +689,10 @@ function App() {
               <div className="space-y-1 px-0.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-muted-foreground">
-                    {quota.used} of {quota.total} emails tracked
+                    {quota.used} of {quota.total} relevant messages counted
+                    {trackedApplicationCount > 0
+                      ? ` across ${trackedApplicationCount} tracked ${trackedApplicationCount === 1 ? 'application' : 'applications'}`
+                      : ''}
                   </span>
                   <span className="text-[10px] font-medium text-accent">{percentage}%</span>
                 </div>
@@ -668,10 +734,6 @@ function App() {
                 <button onClick={handleRefresh} className="inline-flex items-center gap-1 transition hover:text-foreground" type="button">
                   <RefreshCw className={`h-3.5 w-3.5 ${isSyncActive ? 'animate-spin' : ''}`} />
                   Refresh
-                </button>
-                <button onClick={openDashboard} className="inline-flex items-center gap-1 transition hover:text-foreground" type="button">
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  {userPlan === 'premium' ? 'Dashboard' : 'Upgrade'}
                 </button>
                 <button onClick={logout} className="inline-flex items-center gap-1 transition hover:text-foreground" type="button">
                   <LogOut className="h-3.5 w-3.5" />
@@ -773,6 +835,11 @@ function App() {
   const headerAction = selectedCategory === 'emailPreview'
     ? handleBackToCategory
     : () => handleCategoryChange('all');
+  const headerMetaLabel = selectedCategory === 'emailPreview'
+    ? ''
+    : (selectedCategory === 'all' || selectedCategory === 'home'
+      ? (extensionVersionLabel || 'Applendium')
+      : getCategoryTitle(selectedCategory));
 
   return (
     <div className="flex h-[600px] max-h-[600px] w-[400px] flex-col overflow-hidden rounded-[18px] border border-border bg-background text-foreground shadow-[0_18px_40px_rgba(17,24,39,0.14)]">
@@ -798,7 +865,7 @@ function App() {
           </span>
         </div>
         <div className="text-[10px] text-primary-foreground/60">
-          {selectedCategory === 'all' || selectedCategory === 'home' ? 'v1.0' : getCategoryTitle(selectedCategory)}
+          {headerMetaLabel}
         </div>
       </div>
 
@@ -806,12 +873,14 @@ function App() {
         {renderMainContent()}
       </div>
 
-      <div className="flex items-center justify-between border-t border-border bg-muted/40 px-3 py-2 text-[10px]">
-        <span className="text-muted-foreground">{footerSummary}</span>
-        <button onClick={openDashboard} className="font-medium text-accent transition hover:text-accent/80" type="button">
-          {userPlan === 'premium' ? 'Open Dashboard ->' : 'Upgrade to Premium ->'}
-        </button>
-      </div>
+      {selectedCategory !== 'emailPreview' && (
+        <div className="flex items-center justify-between border-t border-border bg-muted/40 px-3 py-2 text-[10px]">
+          <span className="text-muted-foreground">{footerSummary}</span>
+          <button onClick={openDashboard} className="font-medium text-accent transition hover:text-accent/80" type="button">
+            {userPlan === 'premium' ? 'Open Dashboard ->' : 'Upgrade to Premium ->'}
+          </button>
+        </div>
+      )}
 
       <Modals
         isMisclassificationModalOpen={isMisclassificationModalOpen}

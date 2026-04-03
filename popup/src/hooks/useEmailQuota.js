@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 
+const DEFAULT_FREE_TRACKING_LIMIT = 100;
+
 /**
  * @typedef {Object} EmailQuota
  * @property {number} used
@@ -49,7 +51,7 @@ export function useEmailQuota(initialQuotaData, userPlan) {
             // Use 'totalProcessed' from backend response
             const used = initialQuotaData.totalProcessed || 0;
             // Determine total based on userPlan
-            const total = userPlan === 'premium' ? Infinity : (initialQuotaData.limit || 50); // Use initialQuotaData.limit if available, else default to 50
+            const total = userPlan === 'premium' ? Infinity : (initialQuotaData.limit || DEFAULT_FREE_TRACKING_LIMIT);
 
             const initialWarningLevel = getWarningLevel(used, total, userPlan); // Now 'getWarningLevel' is defined
 
@@ -63,7 +65,7 @@ export function useEmailQuota(initialQuotaData, userPlan) {
         }
         return {
             used: 0,
-            total: 50, // Default for free plan
+            total: DEFAULT_FREE_TRACKING_LIMIT,
             resetDate: new Date(),
             isAtLimit: false,
             warningLevel: 'none',
@@ -82,11 +84,11 @@ export function useEmailQuota(initialQuotaData, userPlan) {
             case 'exceeded':
                 return "Tracking limit reached. Upgrade for unlimited tracking.";
             case 'critical':
-                return `Only ${remaining} emails remaining in your tracking limit.`;
+                return `Only ${remaining} relevant emails remaining in your tracking limit.`;
             case 'warning':
                 return `You're approaching your tracking limit (${remaining} left).`;
             case 'approaching':
-                return `${quota.used}/${quota.total} tracked emails used.`;
+                return `${quota.used}/${quota.total} relevant emails tracked.`;
             default:
                 return null;
         }
@@ -115,7 +117,7 @@ export function useEmailQuota(initialQuotaData, userPlan) {
         if (initialQuotaData) {
             const resetDate = initialQuotaData.next_reset_date ? new Date(initialQuotaData.next_reset_date) : new Date();
             const used = initialQuotaData.totalProcessed || 0; // Use totalProcessed
-            const total = userPlan === 'premium' ? Infinity : (initialQuotaData.limit || 50); // Use userPlan and initialQuotaData.limit
+            const total = userPlan === 'premium' ? Infinity : (initialQuotaData.limit || DEFAULT_FREE_TRACKING_LIMIT);
 
             const newWarningLevel = getWarningLevel(used, total, userPlan); // Pass userPlan to getWarningLevel
 

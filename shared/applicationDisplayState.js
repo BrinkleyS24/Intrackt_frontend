@@ -37,9 +37,14 @@ export function deriveApplicationStatusFromLifecycle(applicationStatus, lifecycl
   if (lifecycleStatuses.includes('rejected')) return 'rejected';
   if (lifecycleStatuses.includes('offers')) return 'offers';
   if (lifecycleStatuses.includes('interviewed')) {
-    return normalizedApplicationStatus === 'applied'
+    return (!normalizedApplicationStatus || normalizedApplicationStatus === 'applied' || isTerminalApplicationStatus(normalizedApplicationStatus))
       ? 'interviewed'
-      : (normalizedApplicationStatus || 'interviewed');
+      : normalizedApplicationStatus;
+  }
+  if (lifecycleStatuses.includes('applied')) {
+    if (!normalizedApplicationStatus || isTerminalApplicationStatus(normalizedApplicationStatus) || normalizedApplicationStatus === 'closed') {
+      return 'applied';
+    }
   }
 
   return normalizedApplicationStatus;
@@ -55,8 +60,9 @@ export function hasTerminalLifecycleOutcome(applicationStatus, lifecycle = []) {
 export function deriveEmailPresentationState(email = {}, options = {}) {
   const fallbackCategory = options.fallbackCategory ?? null;
   const lifecycle = Array.isArray(options.lifecycle) ? options.lifecycle : [];
-  const resolvedApplicationStatus = normalizeApplicationStatusKey(
-    options.applicationStatus ?? email?.applicationStatus
+  const resolvedApplicationStatus = deriveApplicationStatusFromLifecycle(
+    options.applicationStatus ?? email?.applicationStatus,
+    lifecycle
   );
   const hasTerminalOutcome = hasTerminalLifecycleOutcome(resolvedApplicationStatus, lifecycle);
   const isEffectivelyUserClosed = Boolean(email?.applicationId && email?.isUserClosed && !hasTerminalOutcome);
@@ -65,10 +71,12 @@ export function deriveEmailPresentationState(email = {}, options = {}) {
   );
   const rawStatusKey = normalizeApplicationStatusKey(fallbackCategory ?? email?.category) || 'applied';
   const cachedDisplayCategory = normalizeApplicationStatusKey(email?.displayCategory);
-  const baseStatusKey =
-    cachedDisplayCategory ||
+  const derivedDisplayCategory =
     deriveDisplayCategory(rawStatusKey, resolvedApplicationStatus, isEffectivelyClosed) ||
     rawStatusKey;
+  const baseStatusKey =
+    (cachedDisplayCategory === 'closed' && !isEffectivelyClosed ? null : cachedDisplayCategory) ||
+    derivedDisplayCategory;
   const shouldDisplayClosed =
     baseStatusKey === 'closed' ||
     Boolean(isEffectivelyClosed && !isTerminalApplicationStatus(baseStatusKey));

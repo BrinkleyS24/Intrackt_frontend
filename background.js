@@ -33,6 +33,7 @@ const STORED_EMAILS_CACHE_MAX_AGE_MS = 15 * 1000;
 const APP_LINK_BACKFILL_STATE_KEY = 'appLinksBackfillStateV2';
 const APP_LINK_BACKFILL_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const IS_PRODUCTION_EXTENSION_BUILD = process.env.EXTENSION_BUILD_TARGET === 'production';
+const ENABLE_APPLICATION_LINK_BACKFILL = process.env.EXTENSION_ENABLE_APP_LINK_BACKFILL === 'true';
 const FALLBACK_BACKEND_BASE_URL = 'https://gmail-tracker-backend-674309673051.us-central1.run.app';
 const BUNDLED_BACKEND_BASE_URL = (
   IS_PRODUCTION_EXTENSION_BUILD
@@ -91,6 +92,259 @@ function buildGoogleOAuthUrl(redirectUri) {
   url.searchParams.set('prompt', 'consent');
   url.searchParams.set('scope', scopes.join(' '));
   return url.toString();
+}
+
+function isExtensionPageSenderUrl(senderUrl) {
+  return typeof senderUrl === 'string' && senderUrl.startsWith(`chrome-extension://${chrome.runtime.id}/`);
+}
+
+function isTrustedWebBridgeSenderUrl(senderUrl) {
+  if (typeof senderUrl !== 'string' || !senderUrl) return false;
+
+  try {
+    const url = new URL(senderUrl);
+    const isTrustedOrigin = url.origin === 'https://applendium.com' || url.origin === 'https://www.applendium.com';
+    const isTrustedPath = url.pathname === '/app' || url.pathname.startsWith('/app/');
+    return isTrustedOrigin && isTrustedPath;
+  } catch (_) {
+    return false;
+  }
+}
+
+const VALID_MARK_AS_READ_CATEGORIES = new Set(['applied', 'interviewed', 'offers', 'rejected', 'irrelevant']);
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function parsePositiveIntegerLike(value) {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) {
+    const parsed = Number.parseInt(value.trim(), 10);
+    if (Number.isInteger(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
+function validateOptionalString(value, { maxLength = 500, allowEmpty = false } = {}) {
+  if (value == null) return { valid: true, value: value };
+  if (typeof value !== 'string') return { valid: false, error: 'Expected a string value.' };
+  const trimmed = value.trim();
+  if (!allowEmpty && trimmed.length === 0) return { valid: false, error: 'Expected a non-empty string value.' };
+  if (trimmed.length > maxLength) return { valid: false, error: `String value is too long (max ${maxLength}).` };
+  return { valid: true, value: trimmed };
+}
+
+function validateIncomingMessage(message) {
+  if (!isPlainObject(message)) {
+    return { valid: false, error: 'Message payload must be an object.' };
+  }
+
+  if (typeof message.type !== 'string' || !message.type.trim()) {
+    return { valid: false, error: 'Message type is required.' };
+  }
+
+  const type = message.type.trim();
+  const normalized = { ...message, type };
+
+  switch (type) {
+    case 'SET_BACKEND_BASE_URL': {
+      if (message.backendBaseUrl == null || message.backendBaseUrl === '') return { valid: true, message: normalized };
+      const backendBaseUrl = validateOptionalString(message.backendBaseUrl, { maxLength: 500 });
+      if (!backendBaseUrl.valid) return { valid: false, error: `Invalid backendBaseUrl: ${backendBaseUrl.error}` };
+      return { valid: true, message: { ...normalized, backendBaseUrl: backendBaseUrl.value } };
+    }
+
+    case 'SET_PREMIUM_DASHBOARD_URL': {
+      if (message.premiumDashboardUrl == null || message.premiumDashboardUrl === '') return { valid: true, message: normalized };
+      const premiumDashboardUrl = validateOptionalString(message.premiumDashboardUrl, { maxLength: 500 });
+      if (!premiumDashboardUrl.valid) return { valid: false, error: `Invalid premiumDashboardUrl: ${premiumDashboardUrl.error}` };
+      return { valid: true, message: { ...normalized, premiumDashboardUrl: premiumDashboardUrl.value } };
+    }
+
+    case 'REFRESH_STORED_EMAILS_CACHE':
+      if (message.staleOnly != null && typeof message.staleOnly !== 'boolean') {
+        return { valid: false, error: 'Invalid staleOnly flag.' };
+      }
+      return { valid: true, message: normalized };
+
+    case 'FETCH_NEW_EMAILS':
+      if (message.fullRefresh != null && typeof message.fullRefresh !== 'boolean') {
+        return { valid: false, error: 'Invalid fullRefresh flag.' };
+      }
+      return { valid: true, message: normalized };
+
+    case 'SUGGESTION_ACTION':
+    case 'UNDO_SUGGESTION_ACTION': {
+      const threadId = validateOptionalString(message.threadId, { maxLength: 255 });
+      if (!threadId.valid) return { valid: false, error: `Invalid threadId: ${threadId.error}` };
+      const actionType = validateOptionalString(message.actionType, { maxLength: 100 });
+      if (!actionType.valid) return { valid: false, error: `Invalid actionType: ${actionType.error}` };
+      return { valid: true, message: { ...normalized, threadId: threadId.value, actionType: actionType.value } };
+    }
+
+    case 'SUGGESTION_SNOOZE': {
+      const threadId = validateOptionalString(message.threadId, { maxLength: 255 });
+      if (!threadId.valid) return { valid: false, error: `Invalid threadId: ${threadId.error}` };
+      const actionType = validateOptionalString(message.actionType, { maxLength: 100 });
+      if (!actionType.valid) return { valid: false, error: `Invalid actionType: ${actionType.error}` };
+      const snoozeDuration = parsePositiveIntegerLike(message.snoozeDuration);
+      if (!snoozeDuration || snoozeDuration > 24 * 30) {
+        return { valid: false, error: 'Invalid snoozeDuration.' };
+      }
+      return { valid: true, message: { ...normalized, threadId: threadId.value, actionType: actionType.value, snoozeDuration } };
+    }
+
+    case 'REPORT_MISCLASSIFICATION': {
+      if (!isPlainObject(message.emailData)) {
+        return { valid: false, error: 'Invalid emailData payload.' };
+      }
+      const emailId = parsePositiveIntegerLike(message.emailData.emailId ?? message.emailData.id);
+      if (!emailId) return { valid: false, error: 'Invalid misclassification emailId.' };
+      const threadId = validateOptionalString(message.emailData.threadId ?? message.emailData.thread_id, { maxLength: 255 });
+      if (!threadId.valid) return { valid: false, error: `Invalid misclassification threadId: ${threadId.error}` };
+      const correctedCategory = validateOptionalString(message.emailData.correctedCategory, { maxLength: 50 });
+      if (!correctedCategory.valid) return { valid: false, error: `Invalid correctedCategory: ${correctedCategory.error}` };
+      const originalCategory = validateOptionalString(message.emailData.originalCategory, { maxLength: 50, allowEmpty: true });
+      if (!originalCategory.valid) return { valid: false, error: `Invalid originalCategory: ${originalCategory.error}` };
+      return {
+        valid: true,
+        message: {
+          ...normalized,
+          emailData: {
+            ...message.emailData,
+            emailId,
+            threadId: threadId.value,
+            correctedCategory: correctedCategory.value,
+            originalCategory: originalCategory.value,
+          },
+        },
+      };
+    }
+
+    case 'UNDO_MISCLASSIFICATION': {
+      if (!isPlainObject(message.undoData)) {
+        return { valid: false, error: 'Invalid undoData payload.' };
+      }
+      const emailId = parsePositiveIntegerLike(message.undoData.emailId);
+      if (!emailId) return { valid: false, error: 'Invalid undo emailId.' };
+      const threadId = validateOptionalString(message.undoData.threadId, { maxLength: 255 });
+      if (!threadId.valid) return { valid: false, error: `Invalid undo threadId: ${threadId.error}` };
+      const originalCategory = validateOptionalString(message.undoData.originalCategory, { maxLength: 50 });
+      if (!originalCategory.valid) return { valid: false, error: `Invalid undo originalCategory: ${originalCategory.error}` };
+      const misclassifiedIntoCategory = validateOptionalString(message.undoData.misclassifiedIntoCategory, { maxLength: 50 });
+      if (!misclassifiedIntoCategory.valid) return { valid: false, error: `Invalid undo misclassifiedIntoCategory: ${misclassifiedIntoCategory.error}` };
+      return {
+        valid: true,
+        message: {
+          ...normalized,
+          undoData: {
+            ...message.undoData,
+            emailId,
+            threadId: threadId.value,
+            originalCategory: originalCategory.value,
+            misclassifiedIntoCategory: misclassifiedIntoCategory.value,
+          },
+        },
+      };
+    }
+
+    case 'MARK_SINGLE_EMAIL_AS_READ': {
+      if (!isPlainObject(message.payload)) {
+        return { valid: false, error: 'Invalid payload for MARK_SINGLE_EMAIL_AS_READ.' };
+      }
+      const emailId = parsePositiveIntegerLike(message.payload.emailId);
+      if (!emailId) return { valid: false, error: 'Invalid emailId.' };
+      return { valid: true, message: { ...normalized, payload: { ...message.payload, emailId } } };
+    }
+
+    case 'MARK_AS_READ': {
+      if (!isPlainObject(message.payload)) {
+        return { valid: false, error: 'Invalid payload for MARK_AS_READ.' };
+      }
+      const category = validateOptionalString(message.payload.category, { maxLength: 20 });
+      if (!category.valid) return { valid: false, error: `Invalid category: ${category.error}` };
+      if (!VALID_MARK_AS_READ_CATEGORIES.has(category.value.toLowerCase())) {
+        return { valid: false, error: 'Invalid category for MARK_AS_READ.' };
+      }
+      const userId = validateOptionalString(message.payload.userId, { maxLength: 255 });
+      if (!userId.valid) return { valid: false, error: `Invalid userId: ${userId.error}` };
+      return {
+        valid: true,
+        message: {
+          ...normalized,
+          payload: {
+            ...message.payload,
+            category: category.value.toLowerCase(),
+            userId: userId.value,
+          },
+        },
+      };
+    }
+
+    case 'UPDATE_COMPANY_NAME': {
+      const emailId = parsePositiveIntegerLike(message.emailId);
+      if (!emailId) return { valid: false, error: 'Invalid emailId.' };
+      const companyName = validateOptionalString(message.companyName, { maxLength: 100 });
+      if (!companyName.valid) return { valid: false, error: `Invalid companyName: ${companyName.error}` };
+      return { valid: true, message: { ...normalized, emailId, companyName: companyName.value } };
+    }
+
+    case 'UPDATE_POSITION': {
+      const emailId = parsePositiveIntegerLike(message.emailId);
+      if (!emailId) return { valid: false, error: 'Invalid emailId.' };
+      const position = validateOptionalString(message.position, { maxLength: 100 });
+      if (!position.valid) return { valid: false, error: `Invalid position: ${position.error}` };
+      return { valid: true, message: { ...normalized, emailId, position: position.value } };
+    }
+
+    case 'GET_CORRECTION_ANALYTICS': {
+      const since = validateOptionalString(message.since, { maxLength: 50 });
+      if (!since.valid) return { valid: false, error: `Invalid since: ${since.error}` };
+      return { valid: true, message: { ...normalized, since: since.value } };
+    }
+
+    case 'REPAIR_APPLICATION_LINKS': {
+      const applicationId = parsePositiveIntegerLike(message.applicationId);
+      if (!applicationId) return { valid: false, error: 'Invalid applicationId.' };
+      if (message.emailId != null) {
+        const emailId = parsePositiveIntegerLike(message.emailId);
+        if (!emailId) return { valid: false, error: 'Invalid emailId.' };
+        return { valid: true, message: { ...normalized, applicationId, emailId } };
+      }
+      return { valid: true, message: { ...normalized, applicationId } };
+    }
+
+    case 'SEND_EMAIL_REPLY': {
+      const threadId = validateOptionalString(message.threadId, { maxLength: 255 });
+      if (!threadId.valid) return { valid: false, error: `Invalid threadId: ${threadId.error}` };
+      const recipient = validateOptionalString(message.recipient, { maxLength: 320 });
+      if (!recipient.valid) return { valid: false, error: `Invalid recipient: ${recipient.error}` };
+      const subject = validateOptionalString(message.subject, { maxLength: 500, allowEmpty: true });
+      if (!subject.valid) return { valid: false, error: `Invalid subject: ${subject.error}` };
+      const body = validateOptionalString(message.body, { maxLength: 100000 });
+      if (!body.valid) return { valid: false, error: `Invalid body: ${body.error}` };
+      return {
+        valid: true,
+        message: {
+          ...normalized,
+          threadId: threadId.value,
+          recipient: recipient.value,
+          subject: subject.value,
+          body: body.value,
+        },
+      };
+    }
+
+    case 'ARCHIVE_EMAIL': {
+      const threadId = validateOptionalString(message.threadId, { maxLength: 255 });
+      if (!threadId.valid) return { valid: false, error: `Invalid threadId: ${threadId.error}` };
+      return { valid: true, message: { ...normalized, threadId: threadId.value } };
+    }
+
+    default:
+      return { valid: true, message: normalized };
+  }
 }
 
 // Broadcast auth state to all content scripts so the web app stays in sync.
@@ -632,6 +886,16 @@ function normalizeBaseUrl(url) {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
+function isLocalBaseUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const parsed = new URL(url);
+    return ['localhost', '127.0.0.1', '0.0.0.0', '[::1]'].includes(parsed.hostname);
+  } catch (_) {
+    return false;
+  }
+}
+
 let backendBaseUrlReadyResolve;
 const backendBaseUrlReadyPromise = new Promise((resolve) => {
   backendBaseUrlReadyResolve = resolve;
@@ -820,6 +1084,13 @@ async function apiFetch(endpoint, options = {}) {
       return error;
     }
     console.error(`❌ Applendium: Network or parsing error for ${url}:`, error);
+    if (isLocalBaseUrl(backendBaseUrl)) {
+      const overrideActive = backendBaseUrl !== DEFAULT_BACKEND_BASE_URL;
+      const localBackendMessage = overrideActive
+        ? `Local backend override is active (${backendBaseUrl}) but that server is unreachable. Reset the backend override or switch back to the production extension build.`
+        : `This extension build is configured for the local backend (${backendBaseUrl}) but that server is unreachable. Start the backend locally or use the production extension build.`;
+      throw new Error(localBackendMessage);
+    }
     throw new Error(`Network or server error: ${error.message}`);
   }
 }
@@ -967,8 +1238,9 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
         }
       }
 
-      // Optional relink backfill: do not block initial render.
-      if (!isSyncing && !skipBackfill) {
+      // Migration-style backfill is disabled by default in production builds.
+      // Linking fixes remain available through explicit user actions.
+      if (ENABLE_APPLICATION_LINK_BACKFILL && !isSyncing && !skipBackfill) {
         (async () => {
           const backfillState = await chrome.storage.local.get([APP_LINK_BACKFILL_STATE_KEY]).catch(() => ({}));
           const state = backfillState?.[APP_LINK_BACKFILL_STATE_KEY] || {};
@@ -1042,6 +1314,8 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
             bgLogger.warn?.('[backfill] Backfill failed:', e?.message || e);
           }
         })();
+      } else if (!ENABLE_APPLICATION_LINK_BACKFILL) {
+        await chrome.storage.local.remove([APP_LINK_BACKFILL_STATE_KEY]).catch(() => {});
       }
 
       const totalRelevantCount =
@@ -1560,10 +1834,18 @@ async function refreshSubscriptionStatus(userEmail, userId) {
 // --- Chrome Runtime Message Listener (for popup/content script communication) ---
 // Registered immediately upon activation.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  bgLogger.info(`Received message type: ${msg.type}`);
+  const incomingType = typeof msg?.type === 'string' ? msg.type : '<invalid>';
+  bgLogger.info(`Received message type: ${incomingType}`);
 
   // Use an async IIFE to allow await inside the listener
   (async () => {
+    const validation = validateIncomingMessage(msg);
+    if (!validation.valid) {
+      sendResponse({ success: false, error: validation.error });
+      return;
+    }
+    msg = validation.message;
+
     // Get current user info from local storage for API calls if available
     // This is important because auth.currentUser might not be immediately available
     // when a message comes in, but local storage should hold the last known state.
@@ -1628,7 +1910,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // Only allow extension pages (popup/options) to set this.
           // Content scripts run on web pages and should not be able to redirect the backend.
           const senderUrl = sender?.url || '';
-          const isExtensionPage = typeof senderUrl === 'string' && senderUrl.startsWith(`chrome-extension://${chrome.runtime.id}/`);
+          const isExtensionPage = isExtensionPageSenderUrl(senderUrl);
           const isServiceWorkerContext = !senderUrl; // some Chrome contexts omit sender.url
           const allowedSender = isExtensionPage || isServiceWorkerContext;
           if (!allowedSender) {
@@ -1663,7 +1945,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'SET_PREMIUM_DASHBOARD_URL':
         try {
           const senderUrl = sender?.url || '';
-          const isExtensionPage = typeof senderUrl === 'string' && senderUrl.startsWith(`chrome-extension://${chrome.runtime.id}/`);
+          const isExtensionPage = isExtensionPageSenderUrl(senderUrl);
           const isServiceWorkerContext = !senderUrl;
           const allowedSender = isExtensionPage || isServiceWorkerContext;
           if (!allowedSender) {
@@ -2092,6 +2374,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               } catch (e) {
                 console.warn('Applendium Background: Failed to apply local cache update after misclassification:', e?.message || e);
               }
+            }
+
+            try {
+              await refreshStoredEmailsCache(undefined, { skipBackfill: true });
+            } catch (e) {
+              console.warn('Applendium Background: Failed to refresh stored emails after misclassification:', e?.message || e);
             }
 
             // Trigger a sync after misclassification to refresh counts/quota and ensure consistency.
@@ -2536,8 +2824,77 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
+      case 'GET_EXTENSION_AUTH_STATE':
+        try {
+          const senderUrl = sender?.url || '';
+          const allowedSender =
+            isExtensionPageSenderUrl(senderUrl) ||
+            isTrustedWebBridgeSenderUrl(senderUrl);
+
+          if (!allowedSender) {
+            sendResponse({ success: false, error: 'Not allowed from this sender context.' });
+            break;
+          }
+
+          await waitForAuthReady();
+          const user = auth.currentUser;
+          sendResponse({
+            success: true,
+            loggedIn: Boolean(user && !user.isAnonymous),
+            email: user?.email || null,
+          });
+        } catch (error) {
+          bgLogger.error('Error getting extension auth state:', error);
+          sendResponse({ success: false, loggedIn: false, error: error.message });
+        }
+        break;
+
+      case 'GET_EXTENSION_WEB_AUTH':
+        try {
+          const senderUrl = sender?.url || '';
+          const allowedSender = isTrustedWebBridgeSenderUrl(senderUrl);
+
+          if (!allowedSender) {
+            sendResponse({ success: false, error: 'Not allowed from this sender context.' });
+            break;
+          }
+
+          await waitForAuthReady();
+          const user = auth.currentUser;
+          if (user && !user.isAnonymous) {
+            const response = await apiFetch('/api/auth/extension-token', {
+              method: 'POST',
+            });
+            if (!response?.success || !response?.firebaseToken) {
+              sendResponse({ success: false, error: response?.error || 'Failed to create web auth token.' });
+              break;
+            }
+            sendResponse({
+              success: true,
+              loggedIn: true,
+              firebaseToken: response.firebaseToken,
+              userEmail: response.userEmail || user.email || null,
+              userPlan: response.userPlan || null,
+            });
+          } else {
+            sendResponse({ success: false, loggedIn: false, error: 'User not authenticated' });
+          }
+        } catch (error) {
+          console.error('âŒ Applendium Background: Error getting web auth token:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
       case 'GET_ID_TOKEN':
         try {
+          const senderUrl = sender?.url || '';
+          const allowedSender = isExtensionPageSenderUrl(senderUrl);
+
+          if (!allowedSender) {
+            sendResponse({ success: false, error: 'Not allowed from this sender context.' });
+            break;
+          }
+
           // Wait for Firebase Auth to finish loading from IndexedDB
           // (critical on service-worker cold start)
           await waitForAuthReady();

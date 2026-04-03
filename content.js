@@ -6,14 +6,42 @@
 
 console.log("Applendium Content Script loaded.");
 
+function isAllowedBridgePath(pathname) {
+	return pathname === "/app" || pathname.startsWith("/app/");
+}
+
+if (!isAllowedBridgePath(window.location.pathname || "")) {
+	console.log("[Applendium Content] Bridge disabled on non-app route.");
+}
+
 try {
-	window.postMessage(
-		{
-			type: "APPLENDIUM_EXTENSION_READY",
-			extensionId: chrome?.runtime?.id || null,
-		},
-		window.location.origin
-	);
+	if (isAllowedBridgePath(window.location.pathname || "")) {
+		if (!chrome?.runtime?.sendMessage) {
+			window.postMessage(
+				{
+					type: "APPLENDIUM_EXTENSION_READY",
+					extensionId: chrome?.runtime?.id || null,
+					loggedIn: false,
+					email: null,
+				},
+				window.location.origin
+			);
+		} else {
+			chrome.runtime.sendMessage({ type: "GET_EXTENSION_AUTH_STATE" }, (response) => {
+				const runtimeError = chrome.runtime.lastError;
+				window.postMessage(
+					{
+						type: "APPLENDIUM_EXTENSION_READY",
+						extensionId: chrome?.runtime?.id || null,
+						loggedIn: Boolean(response?.loggedIn),
+						email: response?.email || null,
+						error: runtimeError?.message || null,
+					},
+					window.location.origin
+				);
+			});
+		}
+	}
 } catch (_) {
 	// Ignore errors from early page lifecycle or invalid origin.
 }
@@ -24,13 +52,14 @@ const AUTH_STATE_PUSH = "APPLENDIUM_AUTH_STATE_PUSH";
 
 // --- Respond to token requests from the web page ---
 window.addEventListener("message", (event) => {
+	if (!isAllowedBridgePath(window.location.pathname || "")) return;
 	if (event.source !== window) return;
 	if (event.origin !== window.location.origin) return;
 
 	const data = event.data || {};
 	if (data.type !== BRIDGE_REQUEST || !data.nonce) return;
 
-	console.log("[Applendium Content] Received bridge token request, forwarding to background...");
+	console.log("[Applendium Content] Received bridge auth request, forwarding to background...");
 
 	if (!chrome?.runtime?.sendMessage) {
 		console.warn("[Applendium Content] chrome.runtime.sendMessage unavailable (extension context invalidated?)");
@@ -41,7 +70,7 @@ window.addEventListener("message", (event) => {
 		return;
 	}
 
-	chrome.runtime.sendMessage({ type: "GET_ID_TOKEN" }, (response) => {
+	chrome.runtime.sendMessage({ type: "GET_EXTENSION_WEB_AUTH" }, (response) => {
 		if (chrome.runtime.lastError) {
 			console.warn("[Applendium Content] Runtime error:", chrome.runtime.lastError.message);
 			window.postMessage(
@@ -55,7 +84,7 @@ window.addEventListener("message", (event) => {
 			type: BRIDGE_RESPONSE,
 			nonce: data.nonce,
 			success: Boolean(response?.success),
-			token: response?.token || null,
+			firebaseToken: response?.firebaseToken || null,
 			error: response?.error || (response?.success ? null : "Failed to get token"),
 		};
 		window.postMessage(payload, window.location.origin);
@@ -66,6 +95,7 @@ window.addEventListener("message", (event) => {
 // When the user signs in/out of the extension, the background sends AUTH_STATE_CHANGED
 // to all content scripts. We forward it to the web page.
 chrome.runtime.onMessage.addListener((message) => {
+	if (!isAllowedBridgePath(window.location.pathname || "")) return;
 	if (message?.type === "AUTH_STATE_CHANGED") {
 		window.postMessage(
 			{

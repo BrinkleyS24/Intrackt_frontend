@@ -33,7 +33,7 @@ const STATUS_STYLES = {
   },
   offers: {
     badgeClassName: 'status-badge status-offers',
-    pillClassName: 'bg-primary/10 text-primary border border-primary/20',
+    pillClassName: 'bg-success/10 text-success border border-success/20',
   },
   rejected: {
     badgeClassName: 'status-badge status-rejected',
