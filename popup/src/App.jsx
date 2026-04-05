@@ -3,7 +3,7 @@
  * @description Main popup application shell for the extension.
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import EmailList from './components/EmailList';
 import EmailPreview from './components/EmailPreview';
 import LoadingOverlay from './components/LoadingOverlay';
@@ -18,7 +18,7 @@ import { getCategoryTitle } from './utils/uiHelpers';
 import { getPremiumDashboardUrl } from './utils/runtimeConfig';
 
 import { CONFIG } from './utils/constants';
-import { ArrowLeft, Briefcase, CalendarDays, LogOut, Mail, RefreshCw, Search, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Briefcase, CalendarDays, LogOut, Mail, RefreshCw, Search, X } from 'lucide-react';
 
 const LONG_SYNC_WARNING_MS = 10 * 60 * 1000;
 
@@ -80,6 +80,127 @@ const ListSearchBar = React.memo(function ListSearchBar({ value, onChange, place
   );
 });
 
+function getQuotaPillClassName(warningLevel) {
+  if (warningLevel === 'exceeded' || warningLevel === 'critical') {
+    return 'border border-destructive/30 bg-destructive/20 text-primary-foreground';
+  }
+
+  if (warningLevel === 'warning') {
+    return 'border border-warning/30 bg-warning/20 text-primary-foreground';
+  }
+
+  return 'bg-primary-foreground/10 text-primary-foreground/75';
+}
+
+function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOpenUpgrade }) {
+  const clampedPercentage = Math.max(0, Math.min(100, percentage || 0));
+  const isExceeded = quota?.warningLevel === 'exceeded';
+  const isCritical = quota?.warningLevel === 'critical';
+  const toneClassName = isExceeded || isCritical
+    ? 'border-destructive/25 bg-destructive/10'
+    : 'border-warning/25 bg-warning/10';
+  const accentTextClassName = isExceeded || isCritical ? 'text-destructive' : 'text-warning';
+
+  if (!quota) {
+    return null;
+  }
+
+  if (isExceeded) {
+    return (
+      <div className={`rounded-xl border px-3 py-2 shadow-sm ${toneClassName}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className={`flex items-center gap-1.5 text-[11px] font-semibold ${accentTextClassName}`}>
+              <AlertTriangle className="h-3.5 w-3.5" />
+              <span>Tracking limit reached</span>
+            </div>
+            {message && (
+              <p className="mt-1 text-[10px] leading-4 text-muted-foreground">{message}</p>
+            )}
+          </div>
+
+          <button
+            onClick={onOpenUpgrade}
+            className="shrink-0 rounded-full border border-destructive/25 bg-card/80 px-2.5 py-1 text-[10px] font-semibold text-destructive transition hover:bg-card"
+            type="button"
+          >
+            Upgrade
+          </button>
+        </div>
+
+        <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+          <span className="tabular-nums">{Math.min(quota.used, quota.total)}/{quota.total} tracked</span>
+          <span className={`font-semibold ${accentTextClassName}`}>{clampedPercentage}%</span>
+        </div>
+
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-background/70">
+          <div
+            className={`h-full rounded-full transition-all ${progressClassName}`}
+            style={{ width: `${clampedPercentage}%` }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-xl border px-3 py-2 shadow-sm ${toneClassName}`}>
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 text-[10px] leading-4 text-muted-foreground">
+          <span className={`mr-1 font-semibold ${accentTextClassName}`}>
+            {Math.min(quota.used, quota.total)}/{quota.total} tracked.
+          </span>
+          {message}
+        </p>
+        <span className={`shrink-0 text-[10px] font-semibold ${accentTextClassName}`}>{clampedPercentage}%</span>
+      </div>
+
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-background/70">
+        <div
+          className={`h-full rounded-full transition-all ${progressClassName}`}
+          style={{ width: `${clampedPercentage}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function QuotaHeaderBadge({ quota, label, warningLevel }) {
+  if (!quota || !label) {
+    return null;
+  }
+
+  const summary = `${Math.min(quota.used, quota.total)} of ${quota.total} tracked applications used on your free plan.`;
+  const detail = quota.isAtLimit
+    ? 'Existing tracked applications still sync, but new applications pause until your limit resets or you upgrade.'
+    : 'This count is based on tracked applications, not total emails.';
+  const tooltipId = 'quota-header-tooltip';
+
+  return (
+    <span className="relative inline-flex shrink-0 items-center group">
+      <span
+        className={`cursor-help rounded px-1.5 py-0.5 text-[10px] tabular-nums ${getQuotaPillClassName(warningLevel)}`}
+        title={`${summary} ${detail}`}
+        tabIndex={0}
+        aria-describedby={tooltipId}
+      >
+        {label}
+      </span>
+
+      <span
+        id={tooltipId}
+        role="tooltip"
+        className="pointer-events-none absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-border bg-card px-3 py-2 text-[10px] leading-4 text-foreground shadow-[0_10px_24px_rgba(15,23,42,0.18)] opacity-0 invisible transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+      >
+        <span className="absolute -top-1 left-3 h-2 w-2 rotate-45 border-l border-t border-border bg-card" />
+        <span className="block font-semibold text-foreground">Tracked application quota</span>
+        <span className="mt-1 block text-muted-foreground">{summary}</span>
+        <span className="mt-1 block text-muted-foreground">{detail}</span>
+      </span>
+    </span>
+  );
+}
+
 const appLogger = {
   info: () => {},
   warn: () => {},
@@ -110,7 +231,6 @@ function App() {
   const [dateRange, setDateRange] = useState('all');
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [stableAllViewSummary, setStableAllViewSummary] = useState(null);
-  const hasTriggeredLoginSyncRef = useRef(false);
 
   const {
     userPlan,
@@ -151,7 +271,7 @@ function App() {
   const isLoginPending = loadingAuth && isAuthReady && !isLoggedIn;
   const hasCachedEmails = useMemo(() => flattenCategorized(categorizedEmails).length > 0, [categorizedEmails]);
   const showInitialEmailLoading = isLoggedIn && initialLoading && !hasCachedEmails;
-  const { quota, getWarningMessage, percentage } = useEmailQuota(quotaData, userPlan);
+  const { quota, getWarningMessage, getProgressColor, percentage } = useEmailQuota(quotaData, userPlan);
   const isLongRunningSync = useMemo(() => {
     if (!syncStatus?.inProgress || !syncStatus?.startedAt) return false;
     const startedAt = new Date(syncStatus.startedAt);
@@ -161,6 +281,14 @@ function App() {
   const isSyncStuck = syncStuck || isLongRunningSync;
   const isSyncActive = !isSyncStuck && (isSyncing || Boolean(syncStatus?.inProgress));
   const extensionVersionLabel = useMemo(() => getExtensionVersionLabel(), []);
+  const hasQuotaData = Boolean(quotaData);
+  const quotaWarningLevel = quota?.warningLevel || 'none';
+  const quotaWarningMessage = getWarningMessage();
+  const quotaProgressClassName = getProgressColor();
+  const clampedQuotaPercentage = Math.max(0, Math.min(100, percentage));
+  const showHeaderQuotaPill = hasQuotaData && userPlan !== 'premium' && quota?.total !== Infinity;
+  const showQuotaStatusNotice = showHeaderQuotaPill && ['warning', 'critical', 'exceeded'].includes(quotaWarningLevel);
+  const headerQuotaLabel = showHeaderQuotaPill ? `${Math.min(quota.used, quota.total)}/${quota.total}` : null;
   const syncStatusLabel = useMemo(() => {
     if (isSyncStuck) return 'Sync may be stuck';
     if (isSyncActive) return 'Syncing in background...';
@@ -242,32 +370,6 @@ function App() {
         try {
           await fetchStoredEmails();
           fetchQuotaData();
-
-          if (!hasTriggeredLoginSyncRef.current) {
-            try {
-              const cached = await chrome.storage.local.get([
-                'appliedEmails',
-                'interviewedEmails',
-                'offersEmails',
-                'rejectedEmails',
-                'irrelevantEmails',
-              ]);
-              const cachedCount =
-                (cached.appliedEmails || []).length +
-                (cached.interviewedEmails || []).length +
-                (cached.offersEmails || []).length +
-                (cached.rejectedEmails || []).length +
-                (cached.irrelevantEmails || []).length;
-
-              if (cachedCount === 0) {
-                hasTriggeredLoginSyncRef.current = true;
-                fetchNewEmails(false).catch(() => {});
-              }
-            } catch (_) {
-              hasTriggeredLoginSyncRef.current = true;
-              fetchNewEmails(false).catch(() => {});
-            }
-          }
         } catch (_) {
           showNotification('Failed to load initial data.', 'error');
         }
@@ -277,7 +379,7 @@ function App() {
     };
 
     initialDataFetch();
-  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData, fetchNewEmails]);
+  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData]);
 
   useEffect(() => {
     const handleBackgroundMessage = (message) => {
@@ -522,6 +624,29 @@ function App() {
     }
   }, [userPlan]);
 
+  const renderQuotaStatusNotice = useCallback(() => {
+    if (!showQuotaStatusNotice || !quota) {
+      return null;
+    }
+
+    return (
+      <QuotaStatusNotice
+        quota={quota}
+        percentage={clampedQuotaPercentage}
+        progressClassName={quotaProgressClassName}
+        message={quotaWarningMessage}
+        onOpenUpgrade={openDashboard}
+      />
+    );
+  }, [
+    clampedQuotaPercentage,
+    openDashboard,
+    quota,
+    quotaProgressClassName,
+    quotaWarningMessage,
+    showQuotaStatusNotice,
+  ]);
+
   const countFilteredConversations = useCallback((categoryKey, options = {}) => {
     const { includeSearch = true, includeDate = true } = options;
     const emailsForCount =
@@ -616,7 +741,6 @@ function App() {
       const totalConversations = filteredConversations.length;
       const allConversationEmails = filteredConversations.flatMap((conv) => conv.emails);
       const stats = allViewHeadlineSummary.counts;
-      const trackedApplicationCount = allViewHeadlineSummary.total;
 
       return (
         <div className="flex h-full flex-col">
@@ -685,28 +809,7 @@ function App() {
               </div>
             </div>
 
-            {quota && quota.total !== Infinity && (
-              <div className="space-y-1 px-0.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-muted-foreground">
-                    {quota.used} of {quota.total} relevant messages counted
-                    {trackedApplicationCount > 0
-                      ? ` across ${trackedApplicationCount} tracked ${trackedApplicationCount === 1 ? 'application' : 'applications'}`
-                      : ''}
-                  </span>
-                  <span className="text-[10px] font-medium text-accent">{percentage}%</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-accent transition-all"
-                    style={{ width: `${Math.max(0, Math.min(100, percentage))}%` }}
-                  />
-                </div>
-                {getWarningMessage() && (
-                  <div className="text-[10px] text-muted-foreground">{getWarningMessage()}</div>
-                )}
-              </div>
-            )}
+            {renderQuotaStatusNotice()}
 
             <div className="flex gap-1.5 overflow-x-auto pb-1 popup-scrollbar">
               {MAIN_TABS.map((tab) => (
@@ -766,12 +869,13 @@ function App() {
 
     return (
       <div className="flex h-full flex-col">
-        <div className="px-4 pt-4">
+        <div className="space-y-3 px-4 pt-4">
           <ListSearchBar
             value={listSearchQuery}
             onChange={setListSearchQuery}
             placeholder={`Search ${getCategoryTitle(selectedCategory).toLowerCase()}...`}
           />
+          {renderQuotaStatusNotice()}
         </div>
         <EmailList
           emails={allConversationEmails}
@@ -790,6 +894,7 @@ function App() {
   if (!isLoggedIn) {
     return (
       <div className="flex min-h-full items-center justify-center p-4">
+        <Notification />
         <div className="w-full">
           <div className="mb-6 text-center">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/15">
@@ -863,6 +968,13 @@ function App() {
           <span className="rounded bg-primary-foreground/10 px-1.5 py-0.5 text-[10px] text-primary-foreground/75">
             {userPlan === 'premium' ? 'Premium' : 'Free'}
           </span>
+          {showHeaderQuotaPill && headerQuotaLabel && (
+            <QuotaHeaderBadge
+              quota={quota}
+              label={headerQuotaLabel}
+              warningLevel={quotaWarningLevel}
+            />
+          )}
         </div>
         <div className="text-[10px] text-primary-foreground/60">
           {headerMetaLabel}

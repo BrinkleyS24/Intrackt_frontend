@@ -52,7 +52,7 @@ export function EmailQuotaIndicator({ userPlan, quotaData }) {
       <div className="space-y-2">
         <div className="flex justify-between items-center text-xs text-gray-600 dark:text-zinc-400">
           <span>
-            {quota.used}/{totalLabel} relevant emails
+            {quota.used}/{totalLabel} tracked applications
           </span>
           <span>{percentage}%</span>
         </div>

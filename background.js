@@ -33,12 +33,16 @@ const STORED_EMAILS_CACHE_MAX_AGE_MS = 15 * 1000;
 const APP_LINK_BACKFILL_STATE_KEY = 'appLinksBackfillStateV2';
 const APP_LINK_BACKFILL_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const IS_PRODUCTION_EXTENSION_BUILD = process.env.EXTENSION_BUILD_TARGET === 'production';
+const FORCED_BACKEND_TARGET = (process.env.EXTENSION_FORCE_BACKEND_TARGET || '').toString().trim().toLowerCase();
 const ENABLE_APPLICATION_LINK_BACKFILL = process.env.EXTENSION_ENABLE_APP_LINK_BACKFILL === 'true';
 const FALLBACK_BACKEND_BASE_URL = 'https://gmail-tracker-backend-674309673051.us-central1.run.app';
+const PRODUCTION_BACKEND_BASE_URL = (
+  process.env.BACKEND_BASE_URL_PROD || FALLBACK_BACKEND_BASE_URL
+).replace(/\/$/, '');
 const BUNDLED_BACKEND_BASE_URL = (
   IS_PRODUCTION_EXTENSION_BUILD
-    ? (process.env.BACKEND_BASE_URL_PROD || FALLBACK_BACKEND_BASE_URL)
-    : (process.env.BACKEND_BASE_URL || FALLBACK_BACKEND_BASE_URL)
+    ? PRODUCTION_BACKEND_BASE_URL
+    : (process.env.BACKEND_BASE_URL || PRODUCTION_BACKEND_BASE_URL)
 ).replace(/\/$/, '');
 const BUNDLED_PREMIUM_DASHBOARD_URL = (
   IS_PRODUCTION_EXTENSION_BUILD
@@ -577,6 +581,34 @@ function countRelevantCategorizedEmails(categorizedEmails) {
   );
 }
 
+async function getCachedSyncState() {
+  const cached = await chrome.storage.local.get([
+    'appliedEmails',
+    'interviewedEmails',
+    'offersEmails',
+    'rejectedEmails',
+    'irrelevantEmails',
+    'quotaData',
+    'categoryTotals',
+    'applicationStats',
+    EMAILS_CACHE_META_KEY,
+  ]);
+
+  return {
+    categorizedEmails: {
+      applied: cached.appliedEmails || [],
+      interviewed: cached.interviewedEmails || [],
+      offers: cached.offersEmails || [],
+      rejected: cached.rejectedEmails || [],
+      irrelevant: cached.irrelevantEmails || [],
+    },
+    quota: cached.quotaData || null,
+    categoryTotals: cached.categoryTotals || null,
+    applicationStats: cached.applicationStats || null,
+    meta: cached[EMAILS_CACHE_META_KEY] || null,
+  };
+}
+
 function getStructuredField(value) {
   const normalized = (value || '').toString().trim();
   if (!normalized) return '';
@@ -812,8 +844,9 @@ async function waitForAuthReady(timeoutMs = AUTH_READY_TIMEOUT_MS) {
   }
 }
 
-// --- Backend base URL override (dev-only) ---
-// We intentionally restrict overrides to localhost to avoid malicious redirects.
+// --- Backend base URL override ---
+// We intentionally restrict overrides to localhost or the approved deployed backend
+// to avoid malicious redirects while still allowing quick dev/prod switching.
 const BACKEND_BASE_URL_STORAGE_KEY = 'backendBaseUrlOverride';
 const DEFAULT_BACKEND_BASE_URL = CONFIG_ENDPOINTS.BACKEND_BASE_URL;
 let backendBaseUrl = DEFAULT_BACKEND_BASE_URL;
@@ -842,13 +875,18 @@ function isAllowedBackendBaseUrlOverride(url) {
     host === '127.0.0.1' ||
     host === '0.0.0.0' ||
     host === '[::1]';
-  if (!isLocal) return false;
+  const normalizedBaseUrl = normalizeBaseUrl(parsed.href);
+  const allowedRemoteTargets = new Set([
+    normalizeBaseUrl(PRODUCTION_BACKEND_BASE_URL),
+    normalizeBaseUrl(BUNDLED_BACKEND_BASE_URL),
+  ]);
+  const isKnownRemoteTarget = allowedRemoteTargets.has(normalizedBaseUrl);
+  if (!isLocal && !isKnownRemoteTarget) return false;
 
   const manifest = chrome.runtime.getManifest?.() || {};
   const hostPermissions = Array.isArray(manifest?.host_permissions) ? manifest.host_permissions : [];
   const extensionPageCsp = manifest?.content_security_policy?.extension_pages || '';
   const normalizedOrigin = parsed.origin.replace(/\/$/, '');
-  const normalizedBaseUrl = normalizeBaseUrl(parsed.href);
 
   const hostPermissionAllowed = hostPermissions.some((pattern) => {
     const normalizedPattern = String(pattern || '').trim();
@@ -886,6 +924,18 @@ function normalizeBaseUrl(url) {
   return url.endsWith('/') ? url.slice(0, -1) : url;
 }
 
+function getForcedBackendBaseUrl() {
+  if (FORCED_BACKEND_TARGET === 'local') {
+    return normalizeBaseUrl(process.env.BACKEND_BASE_URL || BUNDLED_BACKEND_BASE_URL);
+  }
+
+  if (FORCED_BACKEND_TARGET === 'production') {
+    return normalizeBaseUrl(PRODUCTION_BACKEND_BASE_URL);
+  }
+
+  return '';
+}
+
 function isLocalBaseUrl(url) {
   if (!url || typeof url !== 'string') return false;
   try {
@@ -903,14 +953,25 @@ const backendBaseUrlReadyPromise = new Promise((resolve) => {
 
 (async () => {
   try {
-    const stored = await chrome.storage?.local?.get([BACKEND_BASE_URL_STORAGE_KEY]);
-    const override = stored?.[BACKEND_BASE_URL_STORAGE_KEY];
-    if (isAllowedBackendBaseUrlOverride(override)) {
-      backendBaseUrl = normalizeBaseUrl(override);
-      try { console.log('[bg][info]', `Using backend base URL override: ${backendBaseUrl}`); } catch (_) {}
-    } else if (override) {
-      try { console.warn('[bg][warn]', `Ignoring unsafe backend base URL override: ${String(override)}`); } catch (_) {}
-      try { await chrome.storage.local.remove([BACKEND_BASE_URL_STORAGE_KEY]); } catch (_) {}
+    const forcedBackendBaseUrl = getForcedBackendBaseUrl();
+    if (forcedBackendBaseUrl && isAllowedBackendBaseUrlOverride(forcedBackendBaseUrl)) {
+      backendBaseUrl = forcedBackendBaseUrl;
+      if (backendBaseUrl === DEFAULT_BACKEND_BASE_URL) {
+        try { await chrome.storage.local.remove([BACKEND_BASE_URL_STORAGE_KEY]); } catch (_) {}
+      } else {
+        try { await chrome.storage.local.set({ [BACKEND_BASE_URL_STORAGE_KEY]: backendBaseUrl }); } catch (_) {}
+      }
+      try { console.log('[bg][info]', `Forcing backend base URL for ${FORCED_BACKEND_TARGET} build: ${backendBaseUrl}`); } catch (_) {}
+    } else {
+      const stored = await chrome.storage?.local?.get([BACKEND_BASE_URL_STORAGE_KEY]);
+      const override = stored?.[BACKEND_BASE_URL_STORAGE_KEY];
+      if (isAllowedBackendBaseUrlOverride(override)) {
+        backendBaseUrl = normalizeBaseUrl(override);
+        try { console.log('[bg][info]', `Using backend base URL override: ${backendBaseUrl}`); } catch (_) {}
+      } else if (override) {
+        try { console.warn('[bg][warn]', `Ignoring unsafe backend base URL override: ${String(override)}`); } catch (_) {}
+        try { await chrome.storage.local.remove([BACKEND_BASE_URL_STORAGE_KEY]); } catch (_) {}
+      }
     }
   } catch (e) {
     try { console.warn('[bg][warn]', 'Failed to load backend base URL override:', e?.message || e); } catch (_) {}
@@ -1455,21 +1516,64 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
   // Coalesce duplicate sync triggers
   if (syncInFlight) {
     // Return current cached emails immediately instead of hitting backend again
-    const cached = await chrome.storage.local.get([
-      'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails', 'quotaData'
-    ]);
+    const cached = await getCachedSyncState();
     return {
       success: true,
-      categorizedEmails: {
-        applied: cached.appliedEmails || [],
-        interviewed: cached.interviewedEmails || [],
-        offers: cached.offersEmails || [],
-        rejected: cached.rejectedEmails || [],
-        irrelevant: cached.irrelevantEmails || [],
-      },
-      quota: cached.quotaData || null,
+      categorizedEmails: cached.categorizedEmails,
+      quota: cached.quota,
       sync: { inProgress: true }
     };
+  }
+
+  try {
+    const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
+    if (status?.success && status?.sync?.inProgress) {
+      const cached = await getCachedSyncState();
+      const nextQuota = status.quota || cached.quota || null;
+      const nextMeta = buildEmailsCacheMeta(cached.meta, {
+        syncInProgress: true,
+        totalRelevantCount: countRelevantCategorizedEmails(cached.categorizedEmails),
+      });
+
+      await chrome.storage.local.set({
+        quotaData: nextQuota,
+        [EMAILS_CACHE_META_KEY]: nextMeta,
+      });
+
+      safeRuntimeSendMessage({
+        type: 'EMAILS_SYNCED',
+        success: true,
+        categorizedEmails: cached.categorizedEmails,
+        ...(cached.categoryTotals ? { categoryTotals: cached.categoryTotals } : {}),
+        ...(cached.applicationStats ? { applicationStats: cached.applicationStats } : {}),
+        quota: nextQuota,
+        userEmail,
+        syncInProgress: true
+      });
+
+      const cachedCount = countRelevantCategorizedEmails(cached.categorizedEmails);
+      if (cachedCount === 0 || !cached.categoryTotals) {
+        refreshStoredEmailsCache(true, { skipBackfill: true }).catch((e) => {
+          bgLogger.warn?.('Failed to refresh stored emails while reusing active sync:', e?.message || e);
+        });
+      }
+
+      pollSyncStatusAndRefresh().catch((e) => {
+        console.warn('Applendium Background: polling failed while reusing active sync:', e?.message);
+      });
+
+      return {
+        success: true,
+        categorizedEmails: cached.categorizedEmails,
+        quota: nextQuota,
+        sync: {
+          inProgress: true,
+          startedAt: status?.sync?.startedAt || null,
+        },
+      };
+    }
+  } catch (error) {
+    bgLogger.warn?.('Sync preflight status check failed; proceeding with sync request:', error?.message || error);
   }
 
   syncInFlight = true;
@@ -1617,7 +1721,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         // This is best-effort and should never block the sync response.
         const shouldKickStoredRefresh =
           cachedCount === 0 &&
-          (Number(response?.quota?.usage || response?.quota?.totalProcessed || 0) > 0 ||
+          (Number(response?.quota?.relevantMessagesProcessed || response?.quota?.usage || response?.quota?.totalProcessed || 0) > 0 ||
             (response?.categoryTotals &&
               Object.values(response.categoryTotals).some((v) => Number(v || 0) > 0)));
         if (shouldKickStoredRefresh) {
@@ -1929,7 +2033,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (!isAllowedBackendBaseUrlOverride(requested)) {
             sendResponse({
               success: false,
-              error: 'Backend override must be a localhost URL allowed by the current extension manifest and CSP.',
+              error: 'Backend override must be localhost or the approved deployed backend URL allowed by the current extension manifest and CSP.',
             });
             break;
           }
@@ -2165,7 +2269,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 (cached.interviewedEmails || []).length +
                 (cached.offersEmails || []).length +
                 (cached.rejectedEmails || []).length;
-              const quotaUsage = Number(status?.quota?.usage || status?.quota?.totalProcessed || 0);
+              const quotaUsage = Number(status?.quota?.relevantMessagesProcessed || status?.quota?.usage || status?.quota?.totalProcessed || 0);
               if (cachedCount === 0 && quotaUsage > 0) {
                 refreshStoredEmailsCache(Boolean(status?.sync?.inProgress), { skipNotify: true, skipBackfill: true }).catch(() => {});
               }

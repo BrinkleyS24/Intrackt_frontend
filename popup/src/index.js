@@ -4,6 +4,15 @@ import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css'; // Import the main CSS file (Tailwind output)
 
+try {
+  // Opening the popup is treated as acknowledging the toolbar badge.
+  if (typeof chrome !== 'undefined' && chrome.action?.setBadgeText) {
+    chrome.action.setBadgeText({ text: '' });
+  }
+} catch (_) {
+  // Ignore badge-clear failures so popup startup is never blocked.
+}
+
 // Find the root DOM element where the React app will be mounted
 const container = document.getElementById('root');
 

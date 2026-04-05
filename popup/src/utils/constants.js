@@ -4,12 +4,16 @@
  * including API endpoints and pagination settings.
  */
 
-const IS_PRODUCTION_EXTENSION_BUILD = process.env.EXTENSION_BUILD_TARGET === 'production';
+export const IS_PRODUCTION_EXTENSION_BUILD = process.env.EXTENSION_BUILD_TARGET === 'production';
 const FALLBACK_BACKEND_BASE_URL = 'https://gmail-tracker-backend-674309673051.us-central1.run.app';
+export const LOCAL_BACKEND_BASE_URL = 'http://localhost:3000';
+export const PRODUCTION_BACKEND_BASE_URL = (
+  process.env.BACKEND_BASE_URL_PROD || FALLBACK_BACKEND_BASE_URL
+).replace(/\/$/, '');
 const BUNDLED_BACKEND_BASE_URL = (
   IS_PRODUCTION_EXTENSION_BUILD
-    ? (process.env.BACKEND_BASE_URL_PROD || FALLBACK_BACKEND_BASE_URL)
-    : (process.env.BACKEND_BASE_URL || FALLBACK_BACKEND_BASE_URL)
+    ? PRODUCTION_BACKEND_BASE_URL
+    : (process.env.BACKEND_BASE_URL || PRODUCTION_BACKEND_BASE_URL)
 ).replace(/\/$/, '');
 const BUNDLED_PREMIUM_DASHBOARD_URL = (
   IS_PRODUCTION_EXTENSION_BUILD

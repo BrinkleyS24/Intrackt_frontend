@@ -20,21 +20,35 @@ To go back to production: remove (or comment out) the line and rebuild.
 - Run the backend locally (default port `3000`).
 - Build the extension once and load it as an unpacked extension.
 
-### Recommended (Windows / OneDrive-safe) build flow
-Parcel can fail on Windows when building into a folder Chrome (or OneDrive/AV) is actively touching. Use this script to build **outside OneDrive** and keep a stable `current` folder you load into Chrome once:
+### Recommended build flow
+If you load the unpacked extension from `frontend/job_sort/popup/dist`, use:
 
 ```powershell
 cd frontend\job_sort
-.\scripts\build_extension_dev.ps1
+npm run use:local
 ```
 
 Then in `chrome://extensions` click **Load unpacked** and select:
 
 ```text
-%LOCALAPPDATA%\Applendium\extension-dev\current
+frontend/job_sort/popup/dist
 ```
 
-After you make code changes, rerun the script and click the extension **Reload** icon.
+After you make code changes, rerun the command and click the extension **Reload** icon.
+
+### Alternative: external build folder
+If you want the Windows / OneDrive-safe external build flow instead, use:
+
+```powershell
+cd frontend\job_sort
+npm run use:local:external
+```
+
+Then load:
+
+```text
+%LOCALAPPDATA%\Applendium\extension-dev\current
+```
 
 ## Alternative: set backend to localhost at runtime (one-time)
 1. Open `chrome://extensions`
@@ -81,7 +95,19 @@ chrome.storage.local.set({ backendBaseUrlOverride: 'http://localhost:3000' }).th
 ```
 
 ## Reset back to production Cloud Run
-Run:
+If you load from `frontend/job_sort/dist`, rebuild the prod bundle:
+
+```powershell
+npm run use:prod
+```
+
+If you load from `%LOCALAPPDATA%\Applendium\extension-dev\current`, use:
+
+```powershell
+npm run use:prod:external
+```
+
+Or run:
 
 ```js
 chrome.runtime.sendMessage({
@@ -132,4 +158,3 @@ chrome.runtime.sendMessage({
 ## Safety notes
 - The override only accepts `http://localhost:*` or `http://127.0.0.1:*` by design.
 - Do **not** ship `frontend/job_sort/manifest.json` to the Chrome Web Store as-is if you want to avoid localhost permissions in production. Use your production manifest/build.
-

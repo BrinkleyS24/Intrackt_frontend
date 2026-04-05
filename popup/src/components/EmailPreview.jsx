@@ -4,6 +4,7 @@ import { cn } from '../utils/cn';
 import { parseEmailDate, getCategoryTitle } from '../utils/uiHelpers';
 import { showNotification } from './Notification';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
+import { collapseJourneyStages } from '../utils/applicationPresentation';
 import CompanyField from './CompanyField';
 import { deriveEmailPresentationState, normalizeApplicationStatusKey } from '../../../shared/applicationDisplayState.js';
 
@@ -365,7 +366,7 @@ export default function EmailPreview({
     loadLifecycle(email?.applicationId);
   }, [email?.applicationId, loadLifecycle]);
 
-  const journeyData = useMemo(() => {
+  const rawJourneyData = useMemo(() => {
     const isRelevant = (value) => ['applied', 'interviewed', 'offers', 'rejected'].includes(normalizeApplicationStatusKey(value));
 
     const fromLifecycle = Array.isArray(lifecycle) ? lifecycle : [];
@@ -411,6 +412,13 @@ export default function EmailPreview({
     };
   }, [email, lifecycle, threadArr]);
 
+  const journeyStages = useMemo(
+    () => collapseJourneyStages(rawJourneyData?.stages || []),
+    [rawJourneyData?.stages]
+  );
+
+  const mergedJourneyStageCount = Math.max(0, (rawJourneyData?.stages?.length || 0) - journeyStages.length);
+
   const presentationEmail = useMemo(() => ({
     ...email,
     isUserClosed: Boolean(email?.isUserClosed || applicationSummary?.user_closed_at),
@@ -429,29 +437,29 @@ export default function EmailPreview({
     displayStatusKey,
   } = useMemo(() => deriveEmailPresentationState(presentationEmail, {
     applicationStatus: applicationSummary?.current_status || email?.applicationStatus,
-    lifecycle: journeyData?.stages || [],
+    lifecycle: rawJourneyData?.stages || [],
   }), [
     applicationSummary?.current_status,
     email,
-    journeyData?.stages,
+    rawJourneyData?.stages,
     presentationEmail,
   ]);
 
   const showRepairJourney = useMemo(() => {
-    if (journeyData?.source !== 'application') return false;
+    if (rawJourneyData?.source !== 'application') return false;
     if (!email?.applicationId) return false;
-    const stages = Array.isArray(journeyData?.stages) ? journeyData.stages : [];
+    const stages = Array.isArray(rawJourneyData?.stages) ? rawJourneyData.stages : [];
     const appliedCount = stages.filter((stage) => (stage?.category || '').toString().toLowerCase() === 'applied').length;
     return appliedCount > 1 || stages.length >= 8;
-  }, [journeyData, email?.applicationId]);
+  }, [rawJourneyData, email?.applicationId]);
 
   const hasVisibleTerminalStage = useMemo(() => {
-    const stages = Array.isArray(journeyData?.stages) ? journeyData.stages : [];
+    const stages = Array.isArray(rawJourneyData?.stages) ? rawJourneyData.stages : [];
     return stages.some((stage) => {
       const normalized = normalizeApplicationStatusKey(stage?.category || stage?.current_status);
       return normalized === 'offers' || normalized === 'rejected';
     });
-  }, [journeyData?.stages]);
+  }, [rawJourneyData?.stages]);
 
   const shouldOfferStatusRepair = useMemo(() => {
     if (!email?.applicationId) return false;
@@ -478,14 +486,14 @@ export default function EmailPreview({
       const date = parseEmailDate(message.date) || new Date(message.date);
       if (!Number.isNaN(date.getTime())) candidates.push(date);
     }
-    for (const stage of journeyData?.stages || []) {
+    for (const stage of rawJourneyData?.stages || []) {
       if (!stage?.date) continue;
       const date = parseEmailDate(stage.date) || new Date(stage.date);
       if (!Number.isNaN(date.getTime())) candidates.push(date);
     }
     if (candidates.length === 0) return null;
     return new Date(Math.max(...candidates.map((date) => date.getTime())));
-  }, [email?.date, journeyData?.stages, threadArr]);
+  }, [email?.date, rawJourneyData?.stages, threadArr]);
 
   const staleDays = useMemo(() => {
     if (!lastActivityDate) return null;
@@ -865,14 +873,14 @@ export default function EmailPreview({
               Application Journey
             </h3>
             <span className="text-[10px] text-accent">
-              {loadingLifecycle ? 'Loading...' : `${journeyData.stages.length} event${journeyData.stages.length === 1 ? '' : 's'}`}
+              {loadingLifecycle ? 'Loading...' : `${journeyStages.length} stage${journeyStages.length === 1 ? '' : 's'}`}
             </span>
           </div>
-          {journeyData.stages.length === 0 ? (
+          {journeyStages.length === 0 ? (
             <p className="mt-3 text-xs text-muted-foreground">No journey yet. Refresh to link this email to an application.</p>
           ) : (
             <div className="mt-3 space-y-3">
-              {journeyData.stages.map((stage, idx) => {
+              {journeyStages.map((stage, idx) => {
                 const stageKey = (stage.category || '').toString().toLowerCase();
                 const stageClassName = STATUS_CLASSES[stageKey] || STATUS_CLASSES.applied;
 
@@ -884,18 +892,31 @@ export default function EmailPreview({
                         <div className="min-w-0">
                           <span className={stageClassName}>{getCategoryTitle(stageKey)}</span>
                           <p className="mt-1 text-[11px] text-muted-foreground">{getJourneyDescription(stage.category)}</p>
+                          {stage.eventCount > 1 ? (
+                            <p className="mt-1 text-[11px] text-muted-foreground">
+                              {stage.eventCount} similar emails merged into this stage
+                            </p>
+                          ) : null}
                         </div>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatShortDate(stage.date)}</span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatShortDate(stage.lastDate || stage.date)}</span>
                       </div>
                       {stage.subject ? (
-                        <p className="mt-1 break-words text-[11px] text-foreground/80">{stage.subject}</p>
+                        <p className="mt-1 break-words text-[11px] text-foreground/80">
+                          {stage.eventCount > 1 ? `Latest: ${stage.subject}` : stage.subject}
+                        </p>
                       ) : null}
                     </div>
                   </div>
                 );
               })}
 
-              {journeyData.source === 'fallback' && (
+              {mergedJourneyStageCount > 0 && rawJourneyData.source === 'application' && (
+                <p className="text-[10px] text-muted-foreground">
+                  Merged {mergedJourneyStageCount} duplicate same-stage email{mergedJourneyStageCount === 1 ? '' : 's'} for clarity.
+                </p>
+              )}
+
+              {rawJourneyData.source === 'fallback' && (
                 <div className="space-y-2 pt-1">
                   <p className="text-[10px] text-muted-foreground">
                     Showing local stages. Full journey appears after this email is linked across categories.

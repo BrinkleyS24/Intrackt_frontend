@@ -17,6 +17,18 @@ const DEFAULT_FREE_TRACKING_LIMIT = 100;
  * @param {string} userPlan - The user's current plan ('free' or 'premium').
  */
 export function useEmailQuota(initialQuotaData, userPlan) {
+    const getQuotaUsed = (quotaData) => {
+        if (!quotaData) return 0;
+        if (Number.isFinite(quotaData.trackedApplications)) return quotaData.trackedApplications;
+        if (Number.isFinite(quotaData.usage)) return quotaData.usage;
+        return quotaData.totalProcessed || 0;
+    };
+
+    const getMessageVolume = (quotaData) => {
+        if (!quotaData) return 0;
+        return Number(quotaData.relevantMessagesProcessed || 0);
+    };
+
     // Helper function to determine warning level based on usage.
     // Moved to the top to ensure it's defined before being used in useState initializer.
     const getWarningLevel = (used, total, plan) => {
@@ -48,8 +60,8 @@ export function useEmailQuota(initialQuotaData, userPlan) {
         if (initialQuotaData) {
             // Ensure resetDate is a Date object, default to current date if not provided
             const resetDate = initialQuotaData.next_reset_date ? new Date(initialQuotaData.next_reset_date) : new Date();
-            // Use 'totalProcessed' from backend response
-            const used = initialQuotaData.totalProcessed || 0;
+            const used = getQuotaUsed(initialQuotaData);
+            const messageVolume = getMessageVolume(initialQuotaData);
             // Determine total based on userPlan
             const total = userPlan === 'premium' ? Infinity : (initialQuotaData.limit || DEFAULT_FREE_TRACKING_LIMIT);
 
@@ -61,6 +73,9 @@ export function useEmailQuota(initialQuotaData, userPlan) {
                 resetDate: resetDate,
                 isAtLimit: used >= total && total !== Infinity,
                 warningLevel: initialWarningLevel,
+                messageVolume,
+                limitReached: Boolean(initialQuotaData.limitReached),
+                limitBehavior: initialQuotaData.limitBehavior || null,
             };
         }
         return {
@@ -69,6 +84,9 @@ export function useEmailQuota(initialQuotaData, userPlan) {
             resetDate: new Date(),
             isAtLimit: false,
             warningLevel: 'none',
+            messageVolume: 0,
+            limitReached: false,
+            limitBehavior: null,
         };
     });
 
@@ -82,13 +100,16 @@ export function useEmailQuota(initialQuotaData, userPlan) {
 
         switch (quota.warningLevel) {
             case 'exceeded':
+                if (quota.limitBehavior === 'existing_continue_new_paused') {
+                    return "Tracking limit reached. Existing tracked applications still sync, but new ones are paused until your limit resets or you upgrade.";
+                }
                 return "Tracking limit reached. Upgrade for unlimited tracking.";
             case 'critical':
-                return `Only ${remaining} relevant emails remaining in your tracking limit.`;
+                return `Only ${remaining} tracked applications remaining in your limit.`;
             case 'warning':
                 return `You're approaching your tracking limit (${remaining} left).`;
             case 'approaching':
-                return `${quota.used}/${quota.total} relevant emails tracked.`;
+                return `${quota.used}/${quota.total} tracked applications used.`;
             default:
                 return null;
         }
@@ -116,7 +137,8 @@ export function useEmailQuota(initialQuotaData, userPlan) {
     useEffect(() => {
         if (initialQuotaData) {
             const resetDate = initialQuotaData.next_reset_date ? new Date(initialQuotaData.next_reset_date) : new Date();
-            const used = initialQuotaData.totalProcessed || 0; // Use totalProcessed
+            const used = getQuotaUsed(initialQuotaData);
+            const messageVolume = getMessageVolume(initialQuotaData);
             const total = userPlan === 'premium' ? Infinity : (initialQuotaData.limit || DEFAULT_FREE_TRACKING_LIMIT);
 
             const newWarningLevel = getWarningLevel(used, total, userPlan); // Pass userPlan to getWarningLevel
@@ -127,6 +149,9 @@ export function useEmailQuota(initialQuotaData, userPlan) {
                 resetDate: resetDate,
                 isAtLimit: used >= total && total !== Infinity,
                 warningLevel: newWarningLevel,
+                messageVolume,
+                limitReached: Boolean(initialQuotaData.limitReached),
+                limitBehavior: initialQuotaData.limitBehavior || null,
             });
         }
     }, [initialQuotaData, userPlan]); // Re-run effect when initialQuotaData or userPlan changes
