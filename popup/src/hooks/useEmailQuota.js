@@ -101,9 +101,9 @@ export function useEmailQuota(initialQuotaData, userPlan) {
         switch (quota.warningLevel) {
             case 'exceeded':
                 if (quota.limitBehavior === 'existing_continue_new_paused') {
-                    return "Tracking limit reached. Existing tracked applications still sync, but new ones are paused until your limit resets or you upgrade.";
+                    return "Tracking limit reached. Existing tracked applications still sync, but new ones are paused until your limit resets. Premium is not open yet.";
                 }
-                return "Tracking limit reached. Upgrade for unlimited tracking.";
+                return "Tracking limit reached. New tracked applications resume when your limit resets. Premium is not open yet.";
             case 'critical':
                 return `Only ${remaining} tracked applications remaining in your limit.`;
             case 'warning':

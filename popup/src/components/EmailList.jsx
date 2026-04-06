@@ -7,10 +7,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCheck } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { formatDate, getCategoryTitle } from '../utils/uiHelpers';
-import { countUniqueThreads, groupEmailsByThread } from '../utils/grouping';
+import { countUniqueThreads, getApplicationKey, groupEmailsByThread } from '../utils/grouping';
 import Pagination from './Pagination';
 import { CONFIG } from '../utils/constants';
 import { deriveEmailPresentationState, normalizeApplicationStatusKey } from '../../../shared/applicationDisplayState.js';
+import {
+  collapseJourneyStages,
+  deriveConversationCurrentStatus,
+  deriveConversationPresentationState,
+} from '../utils/applicationPresentation';
 
 const stripHtml = (html) => {
   if (!html || typeof html !== 'string') return '';
@@ -49,11 +54,139 @@ const STATUS_STYLES = {
   },
 };
 
+const LIFECYCLE_STAGES = [
+  {
+    key: 'applied',
+    label: 'Applied',
+    dotClassName: 'border-success bg-success',
+    textClassName: 'text-success',
+    lineClassName: 'bg-success',
+  },
+  {
+    key: 'interviewed',
+    label: 'Interview',
+    dotClassName: 'border-warning bg-warning',
+    textClassName: 'text-warning',
+    lineClassName: 'bg-warning',
+  },
+  {
+    key: 'offers',
+    label: 'Offer',
+    dotClassName: 'border-primary bg-primary',
+    textClassName: 'text-primary',
+    lineClassName: 'bg-primary',
+  },
+];
+
+const TERMINAL_STAGE_META = {
+  rejected: {
+    label: 'Rejected',
+    dotClassName: 'border-destructive bg-destructive',
+    textClassName: 'text-destructive',
+    lineClassName: 'bg-destructive/50',
+  },
+  closed: {
+    label: 'Closed',
+    dotClassName: 'border-muted-foreground/60 bg-muted-foreground/60',
+    textClassName: 'text-muted-foreground',
+    lineClassName: 'bg-muted-foreground/25',
+  },
+};
+
+function buildObservedLifecycle(group) {
+  const rawStages = (group?.emails || []).map((email) => ({
+    emailId: email?.id,
+    subject: email?.subject,
+    category: normalizeApplicationStatusKey(email?.category),
+    current_status: email?.applicationStatus,
+    date: email?.date,
+  }));
+
+  const collapsed = collapseJourneyStages(rawStages);
+  return new Set(
+    collapsed
+      .map((stage) => normalizeApplicationStatusKey(stage?.category || stage?.current_status))
+      .filter(Boolean)
+  );
+}
+
+function LifecycleStepper({ group, currentStatus }) {
+  const observedStages = useMemo(() => buildObservedLifecycle(group), [group]);
+  const terminalStatus = currentStatus === 'rejected' || currentStatus === 'closed' ? currentStatus : null;
+  const terminalMeta = terminalStatus ? TERMINAL_STAGE_META[terminalStatus] : null;
+  const lastReachedBaseIndex = useMemo(() => {
+    let lastIndex = -1;
+    LIFECYCLE_STAGES.forEach((stage, index) => {
+      if (observedStages.has(stage.key)) {
+        lastIndex = index;
+      }
+    });
+    return lastIndex;
+  }, [observedStages]);
+
+  return (
+    <div className="mt-2 flex items-center gap-0.5 overflow-hidden">
+      {LIFECYCLE_STAGES.map((stage, index) => {
+        const isObserved = observedStages.has(stage.key);
+        const isCurrent = currentStatus === stage.key;
+        const nextStage = LIFECYCLE_STAGES[index + 1];
+        const showConnector = Boolean(nextStage);
+        const connectorActive = isObserved && nextStage && observedStages.has(nextStage.key);
+
+        return (
+          <React.Fragment key={stage.key}>
+            {index > 0 && (
+              <div className={cn('h-0.5 w-4 shrink-0 rounded-full', connectorActive ? stage.lineClassName : 'bg-muted-foreground/20')} />
+            )}
+            <div className="flex min-w-0 flex-col items-center gap-0.5">
+              <span
+                className={cn(
+                  'h-2.5 w-2.5 rounded-full border-2 transition-colors',
+                  isObserved ? stage.dotClassName : 'border-muted-foreground/30 bg-transparent',
+                  isCurrent && 'ring-2 ring-background'
+                )}
+              />
+              <span
+                className={cn(
+                  'text-[8px] leading-none',
+                  isObserved ? stage.textClassName : 'text-muted-foreground/50',
+                  isCurrent && 'font-semibold'
+                )}
+              >
+                {stage.label}
+              </span>
+            </div>
+            {showConnector ? null : null}
+          </React.Fragment>
+        );
+      })}
+
+      {terminalMeta && (
+        <>
+          <div
+            className={cn(
+              'h-0.5 w-4 shrink-0 rounded-full',
+              lastReachedBaseIndex >= 0 ? terminalMeta.lineClassName : 'bg-muted-foreground/20'
+            )}
+          />
+          <div className="flex min-w-0 flex-col items-center gap-0.5">
+            <span className={cn('h-2.5 w-2.5 rounded-full border-2 ring-2 ring-background', terminalMeta.dotClassName)} />
+            <span className={cn('text-[8px] leading-none font-semibold', terminalMeta.textClassName)}>
+              {terminalMeta.label}
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function EmailList({
   emails,
   category,
   selectedEmail,
   onEmailSelect,
+  preGroupedThreads,
   totalEmails,
   totalMessages,
   onMarkAllAsRead,
@@ -79,7 +212,12 @@ function EmailList({
     setCurrentPage(1);
   }, [emails, activeFilter]);
 
-  const threadGroups = useMemo(() => groupEmailsByThread(emails), [emails]);
+  const threadGroups = useMemo(() => {
+    if (Array.isArray(preGroupedThreads)) {
+      return preGroupedThreads;
+    }
+    return groupEmailsByThread(emails);
+  }, [emails, preGroupedThreads]);
 
   const filteredThreadGroups = useMemo(() => {
     if (activeFilter === 'all') return threadGroups;
@@ -87,9 +225,12 @@ function EmailList({
     return threadGroups.filter((group) => {
       const email = group.latestEmail || {};
       const normalizedCategory = normalizeApplicationStatusKey(category);
-      const { isEffectivelyClosed } = deriveEmailPresentationState(email, {
-        fallbackCategory: normalizedCategory,
-      });
+      const presentation = category === 'all'
+        ? deriveConversationPresentationState(group)
+        : deriveEmailPresentationState(email, {
+            fallbackCategory: normalizedCategory,
+          });
+      const { isEffectivelyClosed } = presentation;
       const isActive = !isEffectivelyClosed && (normalizedCategory === 'applied' || normalizedCategory === 'interviewed');
       if (activeFilter === 'active') return isActive;
       if (activeFilter === 'inactive') return !isActive;
@@ -241,18 +382,40 @@ function EmailList({
         <div className={cn('flex-1 overflow-y-auto popup-scrollbar', compact ? 'bg-card' : 'px-3 py-3')}>
           <div className={cn(compact ? 'divide-y divide-border' : 'space-y-2')}>
             {paginatedThreadGroups.map((group) => {
-              const email = group.latestEmail || {};
-              const rawStatusKey = normalizeApplicationStatusKey(category === 'all' ? email.category : category) || 'applied';
-              const { displayStatusKey } = deriveEmailPresentationState(email, {
-                fallbackCategory: rawStatusKey,
-              });
-              const isManuallyClosed = displayStatusKey === 'closed';
+              const email = (group.latestEmail || group.earliestEmail) || {};
+              const conversationPresentation = compact && category === 'all'
+                ? deriveConversationPresentationState(group)
+                : null;
+              const rawStatusKey = normalizeApplicationStatusKey(
+                category === 'all'
+                  ? (conversationPresentation?.displayStatusKey || email.category)
+                  : category
+              ) || 'applied';
+              const presentationState = category === 'all' && conversationPresentation
+                ? conversationPresentation
+                : deriveEmailPresentationState(email, {
+                    fallbackCategory: rawStatusKey,
+                  });
+              const {
+                displayStatusKey,
+                shouldDisplayClosed,
+                isEffectivelyClosed,
+              } = presentationState;
+              const isVisuallyClosed = Boolean(shouldDisplayClosed || (displayStatusKey === 'closed' && isEffectivelyClosed));
               const statusStyle = STATUS_STYLES[displayStatusKey] || STATUS_STYLES.applied;
-              const rawPreview = group.preview || email.preview || email.body || '';
+              const rawPreview = group.preview || email.preview || email.html_body || email.body || '';
               const cleanPreview = stripHtml(rawPreview);
               const truncatedPreview = cleanPreview.length > 180 ? `${cleanPreview.slice(0, 180)}...` : cleanPreview;
-              const isSelected = selectedEmail && (selectedEmail.thread_id === group.threadId || selectedEmail.threadId === group.threadId);
+              const selectedApplicationKey = selectedEmail ? getApplicationKey(selectedEmail) : null;
+              const isSelected = selectedEmail && (
+                selectedEmail.thread_id === group.threadId ||
+                selectedEmail.threadId === group.threadId ||
+                selectedApplicationKey === group.threadId
+              );
               const isUnread = group.unreadCount > 0;
+              const displayDate = group.date || email.date;
+              const displaySubject = email.subject || group.subject;
+              const displaySender = email.sender || email.from || group.from;
 
               const rawPosition = (email.position || '').trim();
               const safePosition = (
@@ -266,9 +429,11 @@ function EmailList({
                 <button
                   key={group.threadId}
                   onClick={() => onEmailSelect(email, group)}
+                  data-testid="email-thread-card"
+                  data-thread-id={group.threadId}
                   className={cn(
                     'w-full text-left transition-colors',
-                    isManuallyClosed
+                    isVisuallyClosed
                       ? compact
                         ? 'rounded-xl border border-dashed border-muted-foreground/25 bg-muted/30 px-3 py-3 opacity-60'
                         : 'rounded-2xl border border-dashed border-muted-foreground/25 bg-muted/30 p-4 shadow-sm opacity-60'
@@ -284,22 +449,22 @@ function EmailList({
                       <div
                         className={cn(
                           'popup-line-clamp-1 text-sm',
-                          isManuallyClosed
+                          isVisuallyClosed
                             ? 'font-medium text-muted-foreground line-through'
                             : isUnread
                               ? 'font-semibold text-foreground'
                               : 'font-medium text-foreground/90'
                         )}
                       >
-                        {group.subject}
+                        {displaySubject}
                       </div>
                       <div className="popup-line-clamp-1 mt-1 text-[11px] text-muted-foreground">
-                        {email.sender || email.from}
+                        {displaySender}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       {isUnread && <span className="h-2 w-2 rounded-full bg-accent" />}
-                      <span className="text-[10px] text-muted-foreground">{formatDate(group.date)}</span>
+                      <span className="text-[10px] text-muted-foreground">{formatDate(displayDate)}</span>
                     </div>
                   </div>
 
@@ -322,6 +487,10 @@ function EmailList({
                     )}
                   </div>
 
+                  {compact && category === 'all' && (
+                    <LifecycleStepper group={group} currentStatus={displayStatusKey} />
+                  )}
+
                   {isUnread && !compact && (
                     <div className="mt-2">
                       <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium', statusStyle.pillClassName)}>
@@ -330,9 +499,11 @@ function EmailList({
                     </div>
                   )}
 
-                  <p className={cn('popup-line-clamp-1 mt-2 text-[11px] text-muted-foreground', !compact && 'popup-line-clamp-2')}>
-                    {truncatedPreview || 'No preview available.'}
-                  </p>
+                  {!compact && (
+                    <p className="popup-line-clamp-2 mt-2 text-[11px] text-muted-foreground">
+                      {truncatedPreview || 'No preview available.'}
+                    </p>
+                  )}
                 </button>
               );
             })}

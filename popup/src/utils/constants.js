@@ -36,7 +36,7 @@ export const CONFIG = {
     SUGGESTION_ACTION: '/api/suggestions/action', // Endpoint for marking suggestions as completed
     SUGGESTION_SNOOZE: '/api/suggestions/snooze', // Endpoint for snoozing suggestions
     SUGGESTION_STATES: '/api/suggestions/states', // Endpoint for fetching suggestion states
-    // Note: SEND_EMAIL_REPLY is handled by the background script directly with Gmail API, not via a specific backend endpoint.
+    // Reply-from-extension is intentionally deferred for the Chrome Store launch.
     // Note: QUOTA data is returned as part of the SYNC_EMAILS response, not a separate endpoint.
   },
   PREMIUM_DASHBOARD_URL: BUNDLED_PREMIUM_DASHBOARD_URL,

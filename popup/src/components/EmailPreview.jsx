@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Briefcase, Building2, Clock, ExternalLink, Flag, Reply, Send, TrendingUp, X } from 'lucide-react';
+import { Briefcase, Building2, Clock, ExternalLink, Flag, TrendingUp, X } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { parseEmailDate, getCategoryTitle } from '../utils/uiHelpers';
 import { showNotification } from './Notification';
@@ -295,9 +295,7 @@ const getJourneyDescription = (category) => {
 
 export default function EmailPreview({
   email,
-  onReply,
   onOpenMisclassificationModal,
-  loadingEmails,
   onUpdateCompanyName,
   onUpdatePosition,
   userEmail,
@@ -309,11 +307,6 @@ export default function EmailPreview({
     : [email];
 
   const [activeIdx, setActiveIdx] = useState(0);
-  const [showReplyForm, setShowReplyForm] = useState(false);
-  const [replyRecipient, setReplyRecipient] = useState('');
-  const [replySubject, setReplySubject] = useState('');
-  const [replyBody, setReplyBody] = useState('');
-  const [sending, setSending] = useState(false);
   const [lifecycle, setLifecycle] = useState(null);
   const [applicationSummary, setApplicationSummary] = useState(null);
   const [loadingLifecycle, setLoadingLifecycle] = useState(false);
@@ -353,13 +346,6 @@ export default function EmailPreview({
 
   useEffect(() => {
     setActiveIdx(0);
-    const first = threadArr[0];
-    const fromValue = first?.from || '';
-    const emailMatch = fromValue.match(/<([^>]+)>/);
-    setReplyRecipient(emailMatch ? emailMatch[1] : fromValue);
-    setReplySubject((email.subject || '').toLowerCase().startsWith('re:') ? email.subject : `Re: ${email.subject || ''}`);
-    setReplyBody('');
-    setShowReplyForm(false);
   }, [email, threadArr]);
 
   useEffect(() => {
@@ -552,23 +538,6 @@ export default function EmailPreview({
     );
   };
 
-  const handleReplySubmit = async (event) => {
-    event.preventDefault();
-    if (!replyRecipient || !replySubject || !replyBody.trim()) {
-      showNotification('Please fill in recipient, subject and message body.', 'warning');
-      return;
-    }
-
-    try {
-      setSending(true);
-      await onReply(email.thread_id || email.threadId || email.thread, replyRecipient.trim(), replySubject.trim(), replyBody.trim());
-      setReplyBody('');
-      setShowReplyForm(false);
-    } finally {
-      setSending(false);
-    }
-  };
-
   const handleOpenGmail = async () => {
     const gmailUrl = buildGmailThreadUrl(email, userEmail);
     if (!gmailUrl) {
@@ -718,61 +687,6 @@ export default function EmailPreview({
 
   const statusClassName = STATUS_CLASSES[displayStatusKey] || STATUS_CLASSES.applied;
 
-  if (showReplyForm) {
-    return (
-      <div className="space-y-4 px-4 py-4">
-        <div>
-          <p className="text-xs text-muted-foreground">Replying to</p>
-          <p className="mt-1 text-xl font-semibold text-foreground">{email.subject}</p>
-          <p className="mt-1 text-sm text-muted-foreground">{email.from}</p>
-        </div>
-
-        <form onSubmit={handleReplySubmit} className="space-y-4">
-          <div className="space-y-2">
-            <input
-              type="email"
-              value={replyRecipient}
-              onChange={(event) => setReplyRecipient(event.target.value)}
-              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20"
-              placeholder="Recipient"
-              required
-            />
-            <input
-              type="text"
-              value={replySubject}
-              onChange={(event) => setReplySubject(event.target.value)}
-              className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20"
-              placeholder="Subject"
-              required
-            />
-            <textarea
-              value={replyBody}
-              onChange={(event) => setReplyBody(event.target.value)}
-              rows={8}
-              className="w-full resize-none rounded-2xl border border-border bg-card px-3 py-3 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20"
-              placeholder="Write your reply..."
-              required
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => setShowReplyForm(false)}
-              className="text-sm text-muted-foreground transition hover:text-foreground"
-              type="button"
-            >
-              Cancel
-            </button>
-            <InlineButton className="px-4 py-2 text-sm" disabled={sending || loadingEmails} type="submit">
-              <Send className="h-4 w-4" />
-              {sending || loadingEmails ? 'Sending...' : 'Send Reply'}
-            </InlineButton>
-          </div>
-        </form>
-      </div>
-    );
-  }
-
   return (
     <>
       <style
@@ -799,7 +713,7 @@ export default function EmailPreview({
         }}
       />
 
-      <div className="space-y-4 px-4 py-4">
+      <div data-testid="email-preview" className="space-y-4 px-4 py-4">
         <div>
           <h2
             className={cn(
@@ -937,11 +851,6 @@ export default function EmailPreview({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <InlineButton onClick={() => setShowReplyForm(true)} disabled={sending || loadingEmails}>
-            <Reply className="h-3.5 w-3.5" />
-            Reply
-          </InlineButton>
-
           {isEffectivelyUserClosed && (
             <InlineButton variant="outline" onClick={handleReopenApplication} disabled={reopeningApplication}>
               <TrendingUp className="h-3.5 w-3.5" />

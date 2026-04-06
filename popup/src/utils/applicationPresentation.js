@@ -11,11 +11,27 @@ const toTime = (value) => {
 };
 
 export function deriveConversationCurrentStatus(group) {
+  const presentation = deriveConversationPresentationState(group);
+  return normalizeApplicationStatusKey(presentation?.displayStatusKey) || 'applied';
+}
+
+export function deriveConversationPresentationState(group) {
   const emails = Array.isArray(group?.emails) ? [...group.emails] : [];
-  if (emails.length === 0) return 'applied';
+  if (emails.length === 0) {
+    return deriveEmailPresentationState({}, { fallbackCategory: 'applied' });
+  }
 
   const sorted = emails.sort((a, b) => toTime(b?.date) - toTime(a?.date));
   const latestEmail = sorted[0] || {};
+  const representativeEmail =
+    sorted.find((email) => (
+      email?.applicationId ||
+      email?.application_id ||
+      email?.applicationStatus ||
+      email?.isClosed ||
+      email?.isUserClosed ||
+      email?.displayCategory
+    )) || latestEmail;
   const lifecycle = sorted.map((email) => ({
     category: email?.category,
     current_status: email?.applicationStatus,
@@ -23,18 +39,33 @@ export function deriveConversationCurrentStatus(group) {
   }));
   const statusHint =
     sorted.find((email) => email?.applicationStatus)?.applicationStatus ||
+    representativeEmail?.applicationStatus ||
     latestEmail?.applicationStatus ||
     null;
   const resolvedApplicationStatus = deriveApplicationStatusFromLifecycle(statusHint, lifecycle);
-  const { displayStatusKey } = deriveEmailPresentationState(latestEmail, {
+  const mergedPresentationEmail = {
+    ...latestEmail,
+    applicationId:
+      representativeEmail?.applicationId ||
+      representativeEmail?.application_id ||
+      latestEmail?.applicationId ||
+      latestEmail?.application_id ||
+      null,
+    applicationStatus: resolvedApplicationStatus || representativeEmail?.applicationStatus || latestEmail?.applicationStatus || null,
+    isClosed: sorted.some((email) => Boolean(email?.isClosed)) || Boolean(representativeEmail?.isClosed),
+    isUserClosed: sorted.some((email) => Boolean(email?.isUserClosed)) || Boolean(representativeEmail?.isUserClosed),
+    displayCategory:
+      representativeEmail?.displayCategory ||
+      sorted.find((email) => normalizeApplicationStatusKey(email?.displayCategory))?.displayCategory ||
+      latestEmail?.displayCategory ||
+      null,
+  };
+
+  return deriveEmailPresentationState(mergedPresentationEmail, {
     fallbackCategory: normalizeApplicationStatusKey(latestEmail?.category) || 'applied',
     applicationStatus: resolvedApplicationStatus,
     lifecycle,
   });
-
-  return normalizeApplicationStatusKey(
-    displayStatusKey || resolvedApplicationStatus || latestEmail?.category
-  ) || 'applied';
 }
 
 export function attachConversationStatuses(groups = []) {

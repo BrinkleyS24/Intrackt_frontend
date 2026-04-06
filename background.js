@@ -17,6 +17,11 @@ import {
   isTerminalApplicationStatus,
   normalizeApplicationStatusKey,
 } from './shared/applicationDisplayState.js';
+import {
+  DEFAULT_EXTENSION_TEST_SCENARIO_ID,
+  getExtensionTestScenario,
+  listExtensionTestScenarios,
+} from './testing/mockScenarios.js';
 
 // Initialize Firebase App in the background script.
 const app = initializeApp(firebaseConfig);
@@ -49,6 +54,25 @@ const BUNDLED_PREMIUM_DASHBOARD_URL = (
     ? (process.env.PREMIUM_DASHBOARD_URL_PROD || 'https://applendium.com')
     : (process.env.PREMIUM_DASHBOARD_URL || 'https://applendium.com')
 ).toString().trim();
+const EXTENSION_TESTING_ENABLED = !IS_PRODUCTION_EXTENSION_BUILD;
+const EXTENSION_TEST_STATE_KEY = 'applendiumExtensionTestStateV1';
+const EXTENSION_TEST_SNAPSHOT_KEY = 'applendiumExtensionTestSnapshotV1';
+const EXTENSION_TEST_APPLICATIONS_KEY = 'applendiumExtensionTestApplicationsV1';
+const EXTENSION_TEST_LAST_MISCLASSIFICATION_KEY = 'applendiumExtensionTestLastMisclassificationV1';
+const EXTENSION_TEST_MUTABLE_STORAGE_KEYS = [
+  'userEmail',
+  'userName',
+  'userId',
+  'userPlan',
+  'quotaData',
+  'appliedEmails',
+  'interviewedEmails',
+  'offersEmails',
+  'rejectedEmails',
+  'irrelevantEmails',
+  'categoryTotals',
+  EMAILS_CACHE_META_KEY,
+];
 
 // In MV3, `chrome.runtime.sendMessage()` returns a Promise if no callback is provided.
 // If the popup is closed there may be no listeners, which can otherwise cause
@@ -166,6 +190,17 @@ function validateIncomingMessage(message) {
       return { valid: true, message: { ...normalized, premiumDashboardUrl: premiumDashboardUrl.value } };
     }
 
+    case 'LIST_EXTENSION_TEST_SCENARIOS':
+    case 'GET_EXTENSION_TEST_STATE':
+    case 'DEACTIVATE_EXTENSION_TEST_MODE':
+      return { valid: true, message: normalized };
+
+    case 'ACTIVATE_EXTENSION_TEST_SCENARIO': {
+      const scenarioId = validateOptionalString(message.scenarioId, { maxLength: 100 });
+      if (!scenarioId.valid) return { valid: false, error: `Invalid scenarioId: ${scenarioId.error}` };
+      return { valid: true, message: { ...normalized, scenarioId: scenarioId.value } };
+    }
+
     case 'REFRESH_STORED_EMAILS_CACHE':
       if (message.staleOnly != null && typeof message.staleOnly !== 'boolean') {
         return { valid: false, error: 'Invalid staleOnly flag.' };
@@ -209,8 +244,15 @@ function validateIncomingMessage(message) {
       if (!threadId.valid) return { valid: false, error: `Invalid misclassification threadId: ${threadId.error}` };
       const correctedCategory = validateOptionalString(message.emailData.correctedCategory, { maxLength: 50 });
       if (!correctedCategory.valid) return { valid: false, error: `Invalid correctedCategory: ${correctedCategory.error}` };
+      const normalizedCorrectedCategory = canonicalizeCategoryLabel(correctedCategory.value);
+      if (!normalizedCorrectedCategory) {
+        return { valid: false, error: 'Invalid correctedCategory.' };
+      }
       const originalCategory = validateOptionalString(message.emailData.originalCategory, { maxLength: 50, allowEmpty: true });
       if (!originalCategory.valid) return { valid: false, error: `Invalid originalCategory: ${originalCategory.error}` };
+      const normalizedOriginalCategory = originalCategory.value
+        ? canonicalizeCategoryLabel(originalCategory.value) || originalCategory.value
+        : originalCategory.value;
       return {
         valid: true,
         message: {
@@ -219,8 +261,8 @@ function validateIncomingMessage(message) {
             ...message.emailData,
             emailId,
             threadId: threadId.value,
-            correctedCategory: correctedCategory.value,
-            originalCategory: originalCategory.value,
+            correctedCategory: normalizedCorrectedCategory,
+            originalCategory: normalizedOriginalCategory,
           },
         },
       };
@@ -238,6 +280,10 @@ function validateIncomingMessage(message) {
       if (!originalCategory.valid) return { valid: false, error: `Invalid undo originalCategory: ${originalCategory.error}` };
       const misclassifiedIntoCategory = validateOptionalString(message.undoData.misclassifiedIntoCategory, { maxLength: 50 });
       if (!misclassifiedIntoCategory.valid) return { valid: false, error: `Invalid undo misclassifiedIntoCategory: ${misclassifiedIntoCategory.error}` };
+      const normalizedOriginalCategory = canonicalizeCategoryLabel(originalCategory.value);
+      if (!normalizedOriginalCategory) return { valid: false, error: 'Invalid undo originalCategory.' };
+      const normalizedMisclassifiedIntoCategory = canonicalizeCategoryLabel(misclassifiedIntoCategory.value);
+      if (!normalizedMisclassifiedIntoCategory) return { valid: false, error: 'Invalid undo misclassifiedIntoCategory.' };
       return {
         valid: true,
         message: {
@@ -246,8 +292,8 @@ function validateIncomingMessage(message) {
             ...message.undoData,
             emailId,
             threadId: threadId.value,
-            originalCategory: originalCategory.value,
-            misclassifiedIntoCategory: misclassifiedIntoCategory.value,
+            originalCategory: normalizedOriginalCategory,
+            misclassifiedIntoCategory: normalizedMisclassifiedIntoCategory,
           },
         },
       };
@@ -388,6 +434,12 @@ const CATEGORY_NOTIFICATION_META = {
 
 function normalizeCategoryKey(value) {
   return (value || '').toString().trim().toLowerCase();
+}
+
+function canonicalizeCategoryLabel(value) {
+  const normalized = normalizeCategoryKey(value);
+  if (!VALID_MARK_AS_READ_CATEGORIES.has(normalized)) return null;
+  return capitalizeFirst(normalized);
 }
 
 function flattenCategorizedEmails(categorizedEmails) {
@@ -791,7 +843,7 @@ const CONFIG_ENDPOINTS = {
   UNDO_MISCLASSIFICATION: '/api/emails/undo-misclassification',
   FETCH_USER_PLAN: '/api/user',
   UPDATE_USER_PLAN: '/api/user/update-plan',
-  SEND_REPLY: '/api/emails/send-reply', // Legacy backend stub (kept for fallback / logging)
+  SEND_REPLY: '/api/emails/send-reply',
   ARCHIVE_EMAIL: '/api/emails/archive', // Ensure this matches your backend's archive endpoint
   UPDATE_COMPANY_NAME: '/api/emails/:emailId/company', // PATCH endpoint for company name correction
   CORRECTION_ANALYTICS: '/api/emails/analytics/corrections', // GET endpoint for correction analytics
@@ -1043,6 +1095,879 @@ const bgLogger = {
   }
 };
 
+function buildExtensionTestingStatus(testState = null) {
+  if (!EXTENSION_TESTING_ENABLED) {
+    return {
+      supported: false,
+      active: false,
+      scenarioId: null,
+      label: null,
+      description: null,
+      activatedAt: null,
+      sync: null,
+    };
+  }
+
+  return {
+    supported: true,
+    active: Boolean(testState?.active),
+    scenarioId: testState?.scenarioId || null,
+    label: testState?.label || null,
+    description: testState?.description || null,
+    activatedAt: testState?.activatedAt || null,
+    sync: testState?.sync || null,
+  };
+}
+
+function getCategorizedEmailsFromStorageRecord(stored = {}) {
+  return {
+    applied: stored.appliedEmails || [],
+    interviewed: stored.interviewedEmails || [],
+    offers: stored.offersEmails || [],
+    rejected: stored.rejectedEmails || [],
+    irrelevant: stored.irrelevantEmails || [],
+  };
+}
+
+function buildCategorizedEmailStoragePayload(categorizedEmails = {}) {
+  return {
+    appliedEmails: categorizedEmails.applied || [],
+    interviewedEmails: categorizedEmails.interviewed || [],
+    offersEmails: categorizedEmails.offers || [],
+    rejectedEmails: categorizedEmails.rejected || [],
+    irrelevantEmails: categorizedEmails.irrelevant || [],
+  };
+}
+
+function buildTestingCategoryTotals(categorizedEmails = {}) {
+  return {
+    applied: (categorizedEmails.applied || []).length,
+    interviewed: (categorizedEmails.interviewed || []).length,
+    offers: (categorizedEmails.offers || []).length,
+    rejected: (categorizedEmails.rejected || []).length,
+    irrelevant: (categorizedEmails.irrelevant || []).length,
+    relevant: countRelevantCategorizedEmails(categorizedEmails),
+  };
+}
+
+function getTestingThreadId(email) {
+  return (
+    email?.thread_id ||
+    email?.threadId ||
+    email?.thread ||
+    email?.id ||
+    null
+  );
+}
+
+function countTrackedApplicationsFromCategorizedEmails(categorizedEmails = {}) {
+  const keys = new Set();
+  const relevantCategories = ['applied', 'interviewed', 'offers', 'rejected'];
+
+  for (const category of relevantCategories) {
+    for (const email of categorizedEmails[category] || []) {
+      const appId = email?.applicationId || email?.application_id;
+      const company = (email?.company_name || '').toString().trim().toLowerCase();
+      const position = (email?.position || '').toString().trim().toLowerCase();
+      const threadId = getTestingThreadId(email);
+      const fallbackId = email?.id;
+      const key =
+        (appId ? `app:${appId}` : null) ||
+        (company && position ? `cp:${company}:${position}` : null) ||
+        (threadId ? `thread:${threadId}` : null) ||
+        (fallbackId ? `email:${fallbackId}` : null);
+
+      if (key) keys.add(String(key));
+    }
+  }
+
+  return keys.size;
+}
+
+function buildExtensionTestingSnapshot(stored = {}, state = null) {
+  const categorizedEmails = getCategorizedEmailsFromStorageRecord(stored);
+  const categoryTotals = stored.categoryTotals || buildTestingCategoryTotals(categorizedEmails);
+  const trackedApplications = Number.isFinite(stored?.quotaData?.trackedApplications)
+    ? stored.quotaData.trackedApplications
+    : countTrackedApplicationsFromCategorizedEmails(categorizedEmails);
+
+  return {
+    auth: {
+      isLoggedIn: Boolean(stored.userEmail && stored.userId),
+      email: stored.userEmail || null,
+      name: stored.userName || null,
+      userId: stored.userId || null,
+    },
+    userPlan: stored.userPlan || 'free',
+    quota: stored.quotaData || null,
+    trackedApplications,
+    categoryTotals,
+    sync: state?.sync || null,
+  };
+}
+
+async function getExtensionTestingState() {
+  const stored = await chrome.storage.local.get([
+    EXTENSION_TEST_STATE_KEY,
+    EXTENSION_TEST_APPLICATIONS_KEY,
+    EXTENSION_TEST_LAST_MISCLASSIFICATION_KEY,
+    'userEmail',
+    'userName',
+    'userId',
+    'userPlan',
+    'quotaData',
+    'categoryTotals',
+    'appliedEmails',
+    'interviewedEmails',
+    'offersEmails',
+    'rejectedEmails',
+    'irrelevantEmails',
+  ]);
+  const state = stored[EXTENSION_TEST_STATE_KEY] || null;
+  return {
+    supported: EXTENSION_TESTING_ENABLED,
+    active: Boolean(EXTENSION_TESTING_ENABLED && state?.active),
+    state,
+    applications: stored[EXTENSION_TEST_APPLICATIONS_KEY] || {},
+    lastMisclassification: stored[EXTENSION_TEST_LAST_MISCLASSIFICATION_KEY] || null,
+    snapshot: buildExtensionTestingSnapshot(stored, state),
+  };
+}
+
+async function captureExtensionTestingSnapshotIfNeeded() {
+  if (!EXTENSION_TESTING_ENABLED) return null;
+
+  const stored = await chrome.storage.local.get([
+    EXTENSION_TEST_SNAPSHOT_KEY,
+    ...EXTENSION_TEST_MUTABLE_STORAGE_KEYS,
+  ]);
+
+  if (stored[EXTENSION_TEST_SNAPSHOT_KEY]) {
+    return stored[EXTENSION_TEST_SNAPSHOT_KEY];
+  }
+
+  const snapshot = {
+    capturedAt: new Date().toISOString(),
+  };
+
+  for (const key of EXTENSION_TEST_MUTABLE_STORAGE_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(stored, key)) {
+      snapshot[key] = stored[key];
+    }
+  }
+
+  await chrome.storage.local.set({ [EXTENSION_TEST_SNAPSHOT_KEY]: snapshot });
+  return snapshot;
+}
+
+async function updateExtensionTestingStateRecord(mutator) {
+  if (!EXTENSION_TESTING_ENABLED) return null;
+  const stored = await chrome.storage.local.get([EXTENSION_TEST_STATE_KEY]);
+  const current = stored[EXTENSION_TEST_STATE_KEY] || null;
+  const next = await mutator(current);
+  if (next == null) {
+    await chrome.storage.local.remove([EXTENSION_TEST_STATE_KEY]);
+    return null;
+  }
+  await chrome.storage.local.set({ [EXTENSION_TEST_STATE_KEY]: next });
+  return next;
+}
+
+async function updateExtensionTestingApplications(mutator) {
+  if (!EXTENSION_TESTING_ENABLED) return {};
+  const stored = await chrome.storage.local.get([EXTENSION_TEST_APPLICATIONS_KEY]);
+  const current = stored[EXTENSION_TEST_APPLICATIONS_KEY] || {};
+  const next = await mutator(current);
+  await chrome.storage.local.set({ [EXTENSION_TEST_APPLICATIONS_KEY]: next || {} });
+  return next || {};
+}
+
+async function broadcastExtensionTestingState(testStateOverride = undefined) {
+  const stored = await chrome.storage.local.get([
+    ...EXTENSION_TEST_MUTABLE_STORAGE_KEYS,
+    EXTENSION_TEST_STATE_KEY,
+  ]);
+  const categorizedEmails = getCategorizedEmailsFromStorageRecord(stored);
+  const testingState = typeof testStateOverride === 'undefined'
+    ? (stored[EXTENSION_TEST_STATE_KEY] || null)
+    : testStateOverride;
+
+  broadcastAuthStateToContentScripts(Boolean(stored.userEmail), stored.userEmail || null);
+  safeRuntimeSendMessage({
+    type: 'EMAILS_SYNCED',
+    success: true,
+    categorizedEmails,
+    categoryTotals: stored.categoryTotals || buildTestingCategoryTotals(categorizedEmails),
+    syncInProgress: Boolean(testingState?.sync?.inProgress),
+  });
+  safeRuntimeSendMessage({
+    type: 'EXTENSION_TEST_STATE_CHANGED',
+    testing: buildExtensionTestingStatus(testingState),
+  });
+}
+
+async function refreshExtensionTestingQuota(categorizedEmails) {
+  const stored = await chrome.storage.local.get(['quotaData', 'userPlan', EXTENSION_TEST_STATE_KEY]);
+  const existingQuota = stored.quotaData || null;
+  if (!existingQuota) return null;
+  if (stored[EXTENSION_TEST_STATE_KEY]?.quotaLocked) {
+    return existingQuota;
+  }
+
+  const trackedApplications = countTrackedApplicationsFromCategorizedEmails(categorizedEmails);
+  const relevantMessagesProcessed = countRelevantCategorizedEmails(categorizedEmails);
+  const nextQuota = {
+    ...existingQuota,
+    trackedApplications,
+    totalProcessed: trackedApplications,
+    relevantMessagesProcessed,
+    limitReached: stored.userPlan === 'premium'
+      ? false
+      : trackedApplications >= Number(existingQuota.limit || 100),
+  };
+  await chrome.storage.local.set({ quotaData: nextQuota });
+  return nextQuota;
+}
+
+async function mutateExtensionTestingCategorizedEmails(mutator) {
+  const stored = await chrome.storage.local.get([
+    'appliedEmails',
+    'interviewedEmails',
+    'offersEmails',
+    'rejectedEmails',
+    'irrelevantEmails',
+    'categoryTotals',
+    EMAILS_CACHE_META_KEY,
+  ]);
+  const current = getCategorizedEmailsFromStorageRecord(stored);
+  const result = await mutator(current);
+  if (!result) return null;
+
+  const nextCategorizedEmails = result.categorizedEmails || result;
+  const categoryTotals = result.categoryTotals || buildTestingCategoryTotals(nextCategorizedEmails);
+  const nextQuota = await refreshExtensionTestingQuota(nextCategorizedEmails);
+
+  await chrome.storage.local.set({
+    ...buildCategorizedEmailStoragePayload(nextCategorizedEmails),
+    categoryTotals,
+    ...(nextQuota ? { quotaData: nextQuota } : {}),
+    [EMAILS_CACHE_META_KEY]: buildEmailsCacheMeta(stored[EMAILS_CACHE_META_KEY], {
+      syncInProgress: false,
+      lastCompletedAt: new Date().toISOString(),
+      totalRelevantCount: countRelevantCategorizedEmails(nextCategorizedEmails),
+    }),
+  });
+
+  safeRuntimeSendMessage({
+    type: 'EMAILS_SYNCED',
+    success: true,
+    categorizedEmails: nextCategorizedEmails,
+    categoryTotals,
+    syncInProgress: false,
+  });
+
+  return {
+    ...(result && typeof result === 'object' ? result : {}),
+    categorizedEmails: nextCategorizedEmails,
+    categoryTotals,
+  };
+}
+
+async function installExtensionTestScenario(scenarioId) {
+  if (!EXTENSION_TESTING_ENABLED) {
+    return { success: false, error: 'Extension test mode is only available in the development build.' };
+  }
+
+  const scenario = getExtensionTestScenario(scenarioId);
+  if (!scenario) {
+    return { success: false, error: `Unknown test scenario: ${String(scenarioId)}` };
+  }
+
+  await captureExtensionTestingSnapshotIfNeeded();
+
+  const categorizedEmails = scenario.categorizedEmails || {};
+  const testingState = {
+    active: true,
+    scenarioId: scenario.id,
+    label: scenario.label,
+    description: scenario.description,
+    activatedAt: new Date().toISOString(),
+    quotaLocked: scenario.lockQuota !== false,
+    sync: {
+      inProgress: Boolean(scenario.sync?.inProgress),
+      startedAt: scenario.sync?.startedAt || null,
+      lastSyncAt: scenario.sync?.lastSyncAt || null,
+      lastCompletedAt: scenario.sync?.lastCompletedAt || scenario.sync?.lastSyncAt || null,
+    },
+  };
+
+  const payload = {
+    ...buildCategorizedEmailStoragePayload(categorizedEmails),
+    categoryTotals: scenario.categoryTotals || buildTestingCategoryTotals(categorizedEmails),
+    [EMAILS_CACHE_META_KEY]: buildEmailsCacheMeta(null, {
+      syncInProgress: false,
+      lastCompletedAt: scenario.sync?.lastCompletedAt || scenario.sync?.lastSyncAt || new Date().toISOString(),
+      totalRelevantCount: countRelevantCategorizedEmails(categorizedEmails),
+    }),
+    [EXTENSION_TEST_STATE_KEY]: testingState,
+    [EXTENSION_TEST_APPLICATIONS_KEY]: scenario.applications || {},
+  };
+
+  if (scenario.auth) {
+    payload.userEmail = scenario.auth.email;
+    payload.userName = scenario.auth.name || scenario.auth.email;
+    payload.userId = scenario.auth.userId;
+    payload.userPlan = scenario.userPlan || 'free';
+  }
+
+  if (scenario.quotaData) {
+    payload.quotaData = scenario.quotaData;
+  }
+
+  await chrome.storage.local.set(payload);
+
+  const keysToRemove = [EXTENSION_TEST_LAST_MISCLASSIFICATION_KEY];
+  if (!scenario.auth) {
+    keysToRemove.push('userEmail', 'userName', 'userId', 'userPlan', 'quotaData');
+  } else if (!scenario.quotaData) {
+    keysToRemove.push('quotaData');
+  }
+  if (keysToRemove.length > 0) {
+    await chrome.storage.local.remove(Array.from(new Set(keysToRemove)));
+  }
+
+  await broadcastExtensionTestingState(testingState);
+
+  return {
+    success: true,
+    testing: buildExtensionTestingStatus(testingState),
+    scenario: {
+      id: scenario.id,
+      label: scenario.label,
+      description: scenario.description,
+    },
+  };
+}
+
+async function deactivateExtensionTestMode() {
+  if (!EXTENSION_TESTING_ENABLED) {
+    return { success: true, testing: buildExtensionTestingStatus(null), restored: false };
+  }
+
+  const stored = await chrome.storage.local.get([EXTENSION_TEST_SNAPSHOT_KEY]);
+  const snapshot = stored[EXTENSION_TEST_SNAPSHOT_KEY] || null;
+  const restorePayload = {};
+  const keysToRemove = [
+    EXTENSION_TEST_STATE_KEY,
+    EXTENSION_TEST_APPLICATIONS_KEY,
+    EXTENSION_TEST_LAST_MISCLASSIFICATION_KEY,
+    EXTENSION_TEST_SNAPSHOT_KEY,
+  ];
+
+  for (const key of EXTENSION_TEST_MUTABLE_STORAGE_KEYS) {
+    if (snapshot && Object.prototype.hasOwnProperty.call(snapshot, key)) {
+      restorePayload[key] = snapshot[key];
+    } else {
+      keysToRemove.push(key);
+    }
+  }
+
+  if (Object.keys(restorePayload).length > 0) {
+    await chrome.storage.local.set(restorePayload);
+  }
+  await chrome.storage.local.remove(Array.from(new Set(keysToRemove)));
+  await broadcastExtensionTestingState(null);
+
+  return {
+    success: true,
+    restored: Boolean(snapshot),
+    testing: buildExtensionTestingStatus(null),
+  };
+}
+
+async function touchExtensionTestingSyncState() {
+  const now = new Date().toISOString();
+  return updateExtensionTestingStateRecord((current) => {
+    if (!current) return current;
+    return {
+      ...current,
+      sync: {
+        ...(current.sync || {}),
+        inProgress: false,
+        startedAt: null,
+        lastSyncAt: now,
+        lastCompletedAt: now,
+      },
+    };
+  });
+}
+
+function findEmailInCategorizedEmails(categorizedEmails, emailId) {
+  const normalizedEmailId = String(emailId);
+  for (const category of ['applied', 'interviewed', 'offers', 'rejected', 'irrelevant']) {
+    const emails = categorizedEmails[category] || [];
+    const email = emails.find((item) => String(item?.id) === normalizedEmailId);
+    if (email) {
+      return { category, email };
+    }
+  }
+  return null;
+}
+
+async function setExtensionTestingEmailReadState(emailId, isRead = true) {
+  return mutateExtensionTestingCategorizedEmails((categorizedEmails) => {
+    const located = findEmailInCategorizedEmails(categorizedEmails, emailId);
+    if (!located) return null;
+
+    return {
+      ...categorizedEmails,
+      [located.category]: (categorizedEmails[located.category] || []).map((email) => (
+        String(email?.id) === String(emailId) ? { ...email, is_read: Boolean(isRead) } : email
+      )),
+    };
+  });
+}
+
+async function markExtensionTestingCategoryRead(category) {
+  const normalizedCategory = normalizeCategoryKey(category);
+  return mutateExtensionTestingCategorizedEmails((categorizedEmails) => ({
+    ...categorizedEmails,
+    [normalizedCategory]: (categorizedEmails[normalizedCategory] || []).map((email) => ({
+      ...email,
+      is_read: true,
+    })),
+  }));
+}
+
+async function updateExtensionTestingEmailFields(emailId, updates = {}) {
+  return mutateExtensionTestingCategorizedEmails((categorizedEmails) => {
+    const located = findEmailInCategorizedEmails(categorizedEmails, emailId);
+    if (!located) return null;
+
+    return {
+      ...categorizedEmails,
+      [located.category]: (categorizedEmails[located.category] || []).map((email) => (
+        String(email?.id) === String(emailId)
+          ? { ...email, ...updates }
+          : email
+      )),
+    };
+  });
+}
+
+async function moveExtensionTestingEmailToCategory(emailId, targetCategory) {
+  const normalizedTargetCategory = normalizeCategoryKey(targetCategory);
+  if (!VALID_MARK_AS_READ_CATEGORIES.has(normalizedTargetCategory)) {
+    return null;
+  }
+
+  return mutateExtensionTestingCategorizedEmails((categorizedEmails) => {
+    const located = findEmailInCategorizedEmails(categorizedEmails, emailId);
+    if (!located) return null;
+
+    const originalEmail = located.email;
+    const sourceEmails = (categorizedEmails[located.category] || []).filter((email) => String(email?.id) !== String(emailId));
+    const targetEmails = categorizedEmails[normalizedTargetCategory] || [];
+    const movedEmail = {
+      ...originalEmail,
+      category: capitalizeFirst(normalizedTargetCategory),
+      displayCategory: normalizedTargetCategory,
+    };
+
+    return {
+      categorizedEmails: {
+        ...categorizedEmails,
+        [located.category]: sourceEmails,
+        [normalizedTargetCategory]: [movedEmail, ...targetEmails],
+      },
+      movedEmail,
+      originalEmail,
+      sourceCategory: located.category,
+      targetCategory: normalizedTargetCategory,
+    };
+  });
+}
+
+async function archiveExtensionTestingThread(threadId) {
+  return mutateExtensionTestingCategorizedEmails((categorizedEmails) => {
+    const next = {};
+    for (const category of ['applied', 'interviewed', 'offers', 'rejected', 'irrelevant']) {
+      next[category] = (categorizedEmails[category] || []).filter((email) => String(getTestingThreadId(email)) !== String(threadId));
+    }
+    return next;
+  });
+}
+
+async function appendExtensionTestingReply(threadId, recipient, subject, body, currentUserEmail) {
+  const response = await mutateExtensionTestingCategorizedEmails((categorizedEmails) => {
+    let matchedCategory = null;
+    let latestEmail = null;
+
+    for (const category of ['applied', 'interviewed', 'offers', 'rejected', 'irrelevant']) {
+      const threadEmails = (categorizedEmails[category] || []).filter((email) => String(getTestingThreadId(email)) === String(threadId));
+      if (threadEmails.length > 0) {
+        matchedCategory = category;
+        latestEmail = threadEmails
+          .slice()
+          .sort((a, b) => new Date(b?.date || 0) - new Date(a?.date || 0))[0];
+        break;
+      }
+    }
+
+    if (!matchedCategory || !latestEmail) return null;
+
+    const replyId = Date.now();
+    const replyDate = new Date().toISOString();
+    const replyEmail = {
+      ...latestEmail,
+      id: replyId,
+      thread_id: getTestingThreadId(latestEmail),
+      from: currentUserEmail || 'me@applendium.dev',
+      sender: currentUserEmail || 'me@applendium.dev',
+      subject,
+      body,
+      html_body: `<p>${body}</p>`,
+      preview: body,
+      date: replyDate,
+      is_read: true,
+    };
+
+    return {
+      ...categorizedEmails,
+      [matchedCategory]: [replyEmail, ...(categorizedEmails[matchedCategory] || [])],
+    };
+  });
+
+  if (!response) {
+    return { success: false, error: 'Thread not found.' };
+  }
+
+  return {
+    success: true,
+    gmailMessageId: `mock-${Date.now()}`,
+    threadId,
+  };
+}
+
+async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingState, currentUserEmail }) {
+  switch (msg.type) {
+    case 'LIST_EXTENSION_TEST_SCENARIOS':
+      sendResponse({
+        success: true,
+        scenarios: EXTENSION_TESTING_ENABLED ? listExtensionTestScenarios() : [],
+        testing: buildExtensionTestingStatus(testingState.state),
+        snapshot: testingState.snapshot || null,
+      });
+      return true;
+
+    case 'GET_EXTENSION_TEST_STATE':
+      sendResponse({
+        success: true,
+        scenarios: EXTENSION_TESTING_ENABLED ? listExtensionTestScenarios() : [],
+        testing: buildExtensionTestingStatus(testingState.state),
+        snapshot: testingState.snapshot || null,
+      });
+      return true;
+
+    case 'ACTIVATE_EXTENSION_TEST_SCENARIO':
+      sendResponse(
+        EXTENSION_TESTING_ENABLED
+          ? await installExtensionTestScenario(msg.scenarioId)
+          : { success: false, error: 'Extension test mode is only available in the development build.' }
+      );
+      return true;
+
+    case 'DEACTIVATE_EXTENSION_TEST_MODE':
+      sendResponse(await deactivateExtensionTestMode());
+      return true;
+
+    default:
+      break;
+  }
+
+  if (!testingState.active) {
+    return false;
+  }
+
+  switch (msg.type) {
+    case 'LOGIN_GOOGLE_OAUTH': {
+      const nextScenarioId = testingState.state?.scenarioId === 'logged-out'
+        ? DEFAULT_EXTENSION_TEST_SCENARIO_ID
+        : (testingState.state?.scenarioId || DEFAULT_EXTENSION_TEST_SCENARIO_ID);
+      sendResponse(await installExtensionTestScenario(nextScenarioId));
+      return true;
+    }
+
+    case 'LOGOUT':
+      sendResponse(await installExtensionTestScenario('logged-out'));
+      return true;
+
+    case 'REFRESH_STORED_EMAILS_CACHE':
+    case 'FETCH_NEW_EMAILS': {
+      const nextTestingState = await touchExtensionTestingSyncState();
+      const stored = await chrome.storage.local.get([
+        'quotaData',
+        'categoryTotals',
+        'appliedEmails',
+        'interviewedEmails',
+        'offersEmails',
+        'rejectedEmails',
+        'irrelevantEmails',
+      ]);
+      const categorizedEmails = getCategorizedEmailsFromStorageRecord(stored);
+      safeRuntimeSendMessage({
+        type: 'EMAILS_SYNCED',
+        success: true,
+        categorizedEmails,
+        categoryTotals: stored.categoryTotals || buildTestingCategoryTotals(categorizedEmails),
+        syncInProgress: false,
+      });
+      sendResponse({
+        success: true,
+        categorizedEmails,
+        quota: stored.quotaData || null,
+        testing: buildExtensionTestingStatus(nextTestingState),
+      });
+      return true;
+    }
+
+    case 'FETCH_QUOTA_DATA': {
+      const stored = await chrome.storage.local.get(['quotaData']);
+      sendResponse({
+        success: true,
+        quota: stored.quotaData || null,
+        sync: testingState.state?.sync || null,
+        testing: buildExtensionTestingStatus(testingState.state),
+      });
+      return true;
+    }
+
+    case 'MARK_SINGLE_EMAIL_AS_READ': {
+      const result = await setExtensionTestingEmailReadState(msg.payload.emailId, true);
+      sendResponse(result ? { success: true } : { success: false, error: 'Email not found.' });
+      return true;
+    }
+
+    case 'MARK_AS_READ': {
+      const result = await markExtensionTestingCategoryRead(msg.payload.category);
+      sendResponse(result ? { success: true } : { success: false, error: 'Category not found.' });
+      return true;
+    }
+
+    case 'UPDATE_COMPANY_NAME': {
+      const result = await updateExtensionTestingEmailFields(msg.emailId, {
+        company_name: msg.companyName,
+        company_name_corrected: msg.companyName,
+        extraction_method: 'manual-test-mode',
+      });
+      sendResponse(
+        result
+          ? {
+              success: true,
+              email: {
+                id: msg.emailId,
+                company_name: msg.companyName,
+                company_name_corrected: msg.companyName,
+                extraction_method: 'manual-test-mode',
+              },
+            }
+          : { success: false, error: 'Email not found.' }
+      );
+      return true;
+    }
+
+    case 'UPDATE_POSITION': {
+      const result = await updateExtensionTestingEmailFields(msg.emailId, {
+        position: msg.position,
+        position_corrected: msg.position,
+        extraction_method: 'manual-test-mode',
+      });
+      sendResponse(
+        result
+          ? {
+              success: true,
+              email: {
+                id: msg.emailId,
+                position: msg.position,
+                position_corrected: msg.position,
+                extraction_method: 'manual-test-mode',
+              },
+            }
+          : { success: false, error: 'Email not found.' }
+      );
+      return true;
+    }
+
+    case 'ARCHIVE_EMAIL': {
+      const result = await archiveExtensionTestingThread(msg.threadId);
+      sendResponse(result ? { success: true } : { success: false, error: 'Thread not found.' });
+      return true;
+    }
+
+    case 'REPORT_MISCLASSIFICATION': {
+      const moveResult = await moveExtensionTestingEmailToCategory(
+        msg.emailData.emailId,
+        msg.emailData.correctedCategory
+      );
+      if (!moveResult) {
+        sendResponse({ success: false, error: 'Email not found.' });
+        return true;
+      }
+
+      await chrome.storage.local.set({
+        [EXTENSION_TEST_LAST_MISCLASSIFICATION_KEY]: {
+          emailId: msg.emailData.emailId,
+          sourceCategory: moveResult.sourceCategory,
+          targetCategory: moveResult.targetCategory,
+          snapshot: moveResult.originalEmail,
+        },
+      });
+
+      sendResponse({
+        success: true,
+        removed: moveResult.targetCategory === 'irrelevant',
+      });
+      return true;
+    }
+
+    case 'UNDO_MISCLASSIFICATION': {
+      const undoState = testingState.lastMisclassification;
+      if (!undoState || String(undoState.emailId) !== String(msg.undoData.emailId)) {
+        sendResponse({ success: false, error: 'No matching misclassification to undo.' });
+        return true;
+      }
+
+      const undoResult = await mutateExtensionTestingCategorizedEmails((categorizedEmails) => {
+        const next = {};
+        for (const category of ['applied', 'interviewed', 'offers', 'rejected', 'irrelevant']) {
+          next[category] = (categorizedEmails[category] || []).filter((email) => String(email?.id) !== String(undoState.emailId));
+        }
+        next[undoState.sourceCategory] = [undoState.snapshot, ...(next[undoState.sourceCategory] || [])];
+        return next;
+      });
+
+      if (!undoResult) {
+        sendResponse({ success: false, error: 'Failed to restore the previous email state.' });
+        return true;
+      }
+
+      await chrome.storage.local.remove([EXTENSION_TEST_LAST_MISCLASSIFICATION_KEY]);
+      sendResponse({ success: true });
+      return true;
+    }
+
+    case 'SEND_EMAIL_REPLY':
+      sendResponse(await appendExtensionTestingReply(
+        msg.threadId,
+        msg.recipient,
+        msg.subject,
+        msg.body,
+        currentUserEmail
+      ));
+      return true;
+
+    case 'FETCH_APPLICATION_LIFECYCLE': {
+      const application = testingState.applications?.[msg.applicationId] || testingState.applications?.[String(msg.applicationId)];
+      if (!application) {
+        sendResponse({ success: false, error: 'Application not found in test mode.' });
+        return true;
+      }
+      sendResponse({
+        success: true,
+        application: application.application,
+        lifecycle: application.lifecycle || [],
+      });
+      return true;
+    }
+
+    case 'LINK_APPLICATION_ROLE': {
+      const stored = await chrome.storage.local.get([
+        'appliedEmails',
+        'interviewedEmails',
+        'offersEmails',
+        'rejectedEmails',
+        'irrelevantEmails',
+      ]);
+      const categorizedEmails = getCategorizedEmailsFromStorageRecord(stored);
+      const located = findEmailInCategorizedEmails(categorizedEmails, msg.emailId);
+      sendResponse({
+        success: true,
+        applicationId: located?.email?.applicationId || located?.email?.application_id || null,
+        linkedApplicationId: located?.email?.applicationId || located?.email?.application_id || null,
+      });
+      return true;
+    }
+
+    case 'CLOSE_APPLICATION': {
+      const updatedApplications = await updateExtensionTestingApplications((current) => {
+        const existing = current?.[msg.applicationId] || current?.[String(msg.applicationId)];
+        if (!existing) return current;
+        return {
+          ...current,
+          [msg.applicationId]: {
+            ...existing,
+            application: {
+              ...existing.application,
+              is_closed: true,
+              user_closed_at: new Date().toISOString(),
+              close_reason: msg.reason || null,
+            },
+          },
+        };
+      });
+      const updatedEntry = updatedApplications?.[msg.applicationId] || updatedApplications?.[String(msg.applicationId)];
+      if (!updatedEntry) {
+        sendResponse({ success: false, error: 'Application not found.' });
+        return true;
+      }
+      await patchCachedEmailsForApplication(msg.applicationId, updatedEntry.application);
+      sendResponse({ success: true, application: updatedEntry.application });
+      return true;
+    }
+
+    case 'REOPEN_APPLICATION': {
+      const updatedApplications = await updateExtensionTestingApplications((current) => {
+        const existing = current?.[msg.applicationId] || current?.[String(msg.applicationId)];
+        if (!existing) return current;
+        return {
+          ...current,
+          [msg.applicationId]: {
+            ...existing,
+            application: {
+              ...existing.application,
+              is_closed: false,
+              user_closed_at: null,
+              close_reason: null,
+            },
+          },
+        };
+      });
+      const updatedEntry = updatedApplications?.[msg.applicationId] || updatedApplications?.[String(msg.applicationId)];
+      if (!updatedEntry) {
+        sendResponse({ success: false, error: 'Application not found.' });
+        return true;
+      }
+      await patchCachedEmailsForApplication(msg.applicationId, updatedEntry.application);
+      sendResponse({ success: true, application: updatedEntry.application });
+      return true;
+    }
+
+    case 'REPAIR_APPLICATION_LINKS': {
+      const application = testingState.applications?.[msg.applicationId] || testingState.applications?.[String(msg.applicationId)];
+      sendResponse({
+        success: Boolean(application),
+        applicationId: application?.application?.id || msg.applicationId,
+        emailUpdates: [],
+        ...(application ? {} : { error: 'Application not found.' }),
+      });
+      return true;
+    }
+
+    default:
+      return false;
+  }
+}
+
 /**
  * Generic fetch wrapper for backend API calls.
  * Automatically adds authorization header if a Firebase user is logged in.
@@ -1133,11 +2058,20 @@ async function apiFetch(endpoint, options = {}) {
         // Not JSON, continue with default error handling
       }
       
-      throw new Error(`Backend error: ${response.status} - ${errorText}`);
+      const backendError = new Error(`Backend error: ${response.status} - ${errorText}`);
+      backendError.backendResponse = true;
+      throw backendError;
     }
 
-    const data = await response.json();
-  bgLogger.info(`API success: ${url}`, data);
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError) {
+      const backendParseError = new Error(`Backend returned invalid JSON: ${parseError.message}`);
+      backendParseError.backendResponse = true;
+      throw backendParseError;
+    }
+    bgLogger.info(`API success: ${url}`, data);
     return data;
   } catch (error) {
     // Check if this is already a structured response (from our error handling above)
@@ -1145,6 +2079,9 @@ async function apiFetch(endpoint, options = {}) {
       return error;
     }
     console.error(`❌ Applendium: Network or parsing error for ${url}:`, error);
+    if (error.backendResponse) {
+      throw error;
+    }
     if (isLocalBaseUrl(backendBaseUrl)) {
       const overrideActive = backendBaseUrl !== DEFAULT_BACKEND_BASE_URL;
       const localBackendMessage = overrideActive
@@ -1956,6 +2893,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const currentUserInfo = await chrome.storage.local.get(['userEmail', 'userId']);
     const currentUserId = currentUserInfo.userId;
     const currentUserEmail = currentUserInfo.userEmail;
+    const extensionTestingState = await getExtensionTestingState();
+
+    if (await maybeHandleExtensionTestingMessage({
+      msg,
+      sendResponse,
+      testingState: extensionTestingState,
+      currentUserEmail,
+    })) {
+      return;
+    }
 
 	    // Check if user info is available for operations requiring it
 	    const isUserAuthenticated = !!auth.currentUser && !auth.currentUser.isAnonymous;
@@ -1971,6 +2918,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       'SET_PREMIUM_DASHBOARD_URL',
       'GET_BUILD_INFO',
       'GET_ID_TOKEN',
+      'LIST_EXTENSION_TEST_SCENARIOS',
+      'GET_EXTENSION_TEST_STATE',
+      'ACTIVATE_EXTENSION_TEST_SCENARIO',
+      'DEACTIVATE_EXTENSION_TEST_MODE',
     ]);
     if (!isUserAuthenticated && !hasCachedUserInfo && !unauthAllowed.has(msg.type)) {
       console.warn(`Applendium Background: User not authenticated or user info not cached for message type: ${msg.type}.`);
@@ -1997,6 +2948,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             premiumDashboardUrlDefault: DEFAULT_PREMIUM_DASHBOARD_URL,
             premiumDashboardUrlOverridden: premiumDashboardUrl !== DEFAULT_PREMIUM_DASHBOARD_URL,
           },
+          testing: buildExtensionTestingStatus(extensionTestingState.state),
         });
         break;
       }

@@ -63,6 +63,7 @@ const ListSearchBar = React.memo(function ListSearchBar({ value, onChange, place
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
+          data-testid="list-search-input"
           className="w-full rounded-xl border border-border bg-card py-2.5 pl-10 pr-10 text-sm text-foreground shadow-sm outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20"
         />
         {value && (
@@ -92,7 +93,7 @@ function getQuotaPillClassName(warningLevel) {
   return 'bg-primary-foreground/10 text-primary-foreground/75';
 }
 
-function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOpenUpgrade }) {
+function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOpenPremiumPage }) {
   const clampedPercentage = Math.max(0, Math.min(100, percentage || 0));
   const isExceeded = quota?.warningLevel === 'exceeded';
   const isCritical = quota?.warningLevel === 'critical';
@@ -107,7 +108,7 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
 
   if (isExceeded) {
     return (
-      <div className={`rounded-xl border px-3 py-2 shadow-sm ${toneClassName}`}>
+      <div data-testid="quota-status-notice" className={`rounded-xl border px-3 py-2 shadow-sm ${toneClassName}`}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className={`flex items-center gap-1.5 text-[11px] font-semibold ${accentTextClassName}`}>
@@ -120,11 +121,12 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
           </div>
 
           <button
-            onClick={onOpenUpgrade}
+            onClick={onOpenPremiumPage}
+            data-testid="quota-premium-status-button"
             className="shrink-0 rounded-full border border-destructive/25 bg-card/80 px-2.5 py-1 text-[10px] font-semibold text-destructive transition hover:bg-card"
             type="button"
           >
-            Upgrade
+            Premium status
           </button>
         </div>
 
@@ -144,7 +146,7 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
   }
 
   return (
-    <div className={`rounded-xl border px-3 py-2 shadow-sm ${toneClassName}`}>
+    <div data-testid="quota-status-notice" className={`rounded-xl border px-3 py-2 shadow-sm ${toneClassName}`}>
       <div className="flex items-start justify-between gap-2">
         <p className="min-w-0 text-[10px] leading-4 text-muted-foreground">
           <span className={`mr-1 font-semibold ${accentTextClassName}`}>
@@ -172,7 +174,7 @@ function QuotaHeaderBadge({ quota, label, warningLevel }) {
 
   const summary = `${Math.min(quota.used, quota.total)} of ${quota.total} tracked applications used on your free plan.`;
   const detail = quota.isAtLimit
-    ? 'Existing tracked applications still sync, but new applications pause until your limit resets or you upgrade.'
+    ? 'Existing tracked applications still sync, but new applications pause until your limit resets.'
     : 'This count is based on tracked applications, not total emails.';
   const tooltipId = 'quota-header-tooltip';
 
@@ -251,7 +253,6 @@ function App() {
     fetchStoredEmails,
     fetchNewEmails,
     handleReportMisclassification,
-    handleSendEmailReply,
     handleArchiveEmail,
     handleUpdateCompanyName,
     handleUpdatePosition,
@@ -263,7 +264,6 @@ function App() {
     initialLoading,
     isSyncing,
     syncStuck,
-    loadingEmails,
     markingAllAsRead,
   } = useEmails(userEmail, userId, CONFIG);
 
@@ -396,6 +396,19 @@ function App() {
   }, [userEmail, fetchStoredEmails, fetchQuotaData]);
 
   useEffect(() => {
+    if (!isAuthReady || !isLoggedIn) return;
+    if (!isSyncing && !syncStatus?.inProgress) return;
+
+    fetchQuotaData().catch(() => {});
+
+    const intervalId = setInterval(() => {
+      fetchQuotaData().catch(() => {});
+    }, 15000);
+
+    return () => clearInterval(intervalId);
+  }, [isAuthReady, isLoggedIn, isSyncing, syncStatus?.inProgress, fetchQuotaData]);
+
+  useEffect(() => {
     const handleForceLogout = (message) => {
       if (message.type === 'FORCE_LOGOUT') {
         showNotification(message.reason || 'You have been logged out for security reasons.', 'error');
@@ -438,13 +451,6 @@ function App() {
     [listSearchQuery]
   );
 
-  const allRelevantEmails = useMemo(() => [
-    ...(categorizedEmails.applied || []),
-    ...(categorizedEmails.interviewed || []),
-    ...(categorizedEmails.offers || []),
-    ...(categorizedEmails.rejected || []),
-  ], [categorizedEmails]);
-
   const filterConversationGroups = useCallback((groups, query, selectedDateRange = 'all') => {
     return (groups || []).filter((group) => {
       const latest = group?.latestEmail || {};
@@ -477,6 +483,13 @@ function App() {
       return true;
     });
   }, []);
+
+  const allRelevantEmails = useMemo(() => [
+    ...(categorizedEmails.applied || []),
+    ...(categorizedEmails.interviewed || []),
+    ...(categorizedEmails.offers || []),
+    ...(categorizedEmails.rejected || []),
+  ], [categorizedEmails]);
 
   const allViewConversationGroups = useMemo(
     () => groupEmailsByThread(allRelevantEmails),
@@ -589,22 +602,17 @@ function App() {
     }
   }, [categoryBeforePreview, closeMisclassificationModal, handleReportMisclassification]);
 
-  const handleReplySubmit = useCallback(async (threadId, recipient, subject, body) => {
-    await handleSendEmailReply(threadId, recipient, subject, body);
-    await fetchStoredEmails();
-  }, [handleSendEmailReply, fetchStoredEmails]);
-
   const handleArchive = useCallback(async (threadId) => {
     await handleArchiveEmail(threadId);
     await fetchStoredEmails();
     setSelectedEmail(null);
   }, [handleArchiveEmail, fetchStoredEmails]);
 
-  const openDashboard = useCallback(async () => {
+  const openPremiumStatusPage = useCallback(async () => {
     const rawUrl = await getPremiumDashboardUrl();
 
     if (!rawUrl) {
-      showNotification(userPlan === 'premium' ? 'Dashboard URL is not configured yet.' : 'Upgrade URL is not configured yet.', 'info');
+      showNotification('Premium page URL is not configured yet.', 'info');
       return;
     }
 
@@ -615,14 +623,14 @@ function App() {
       baseUrl = rawUrl.replace(/\/+$/, '');
     }
 
-    const url = `${baseUrl}${userPlan === 'premium' ? '/dashboard' : '/upgrade'}`;
+    const url = `${baseUrl}/upgrade`;
 
     try {
       chrome.tabs.create({ url });
     } catch (_) {
       window.open(url, '_blank', 'noopener,noreferrer');
     }
-  }, [userPlan]);
+  }, []);
 
   const renderQuotaStatusNotice = useCallback(() => {
     if (!showQuotaStatusNotice || !quota) {
@@ -635,12 +643,12 @@ function App() {
         percentage={clampedQuotaPercentage}
         progressClassName={quotaProgressClassName}
         message={quotaWarningMessage}
-        onOpenUpgrade={openDashboard}
+        onOpenPremiumPage={openPremiumStatusPage}
       />
     );
   }, [
     clampedQuotaPercentage,
-    openDashboard,
+    openPremiumStatusPage,
     quota,
     quotaProgressClassName,
     quotaWarningMessage,
@@ -721,11 +729,9 @@ function App() {
         <EmailPreview
           email={selectedEmail}
           onBack={handleBackToCategory}
-          onReply={handleReplySubmit}
           onArchive={handleArchive}
           onOpenMisclassificationModal={openMisclassificationModal}
           userPlan={userPlan}
-          loadingEmails={loadingEmails}
           onUpdateCompanyName={handleUpdateCompanyName}
           onUpdatePosition={handleUpdatePosition}
           userEmail={userEmail}
@@ -813,12 +819,13 @@ function App() {
 
             <div className="flex gap-1.5 overflow-x-auto pb-1 popup-scrollbar">
               {MAIN_TABS.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => {
-                    setAllApplicationsFilter(tab.id);
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setAllApplicationsFilter(tab.id);
                     setShowDateFilter(false);
                   }}
+                  data-testid={`main-tab-${tab.id}`}
                   className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
                     allApplicationsFilter === tab.id
                       ? tab.activeClassName
@@ -832,9 +839,9 @@ function App() {
             </div>
 
             <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card/80 px-3 py-2 text-[11px] text-muted-foreground shadow-sm">
-              <span>{syncStatusLabel}</span>
+              <span data-testid="sync-status-label">{syncStatusLabel}</span>
               <div className="flex items-center gap-3">
-                <button onClick={handleRefresh} className="inline-flex items-center gap-1 transition hover:text-foreground" type="button">
+                <button onClick={handleRefresh} className="inline-flex items-center gap-1 transition hover:text-foreground" data-testid="refresh-button" type="button">
                   <RefreshCw className={`h-3.5 w-3.5 ${isSyncActive ? 'animate-spin' : ''}`} />
                   Refresh
                 </button>
@@ -851,6 +858,7 @@ function App() {
             category={allApplicationsFilter === 'all' ? 'all' : allApplicationsFilter}
             selectedEmail={selectedEmail}
             onEmailSelect={handleEmailSelect}
+            preGroupedThreads={filteredConversations}
             totalEmails={totalConversations}
             totalMessages={filteredConversations.reduce((sum, conv) => sum + (conv.emails?.length || 0), 0)}
             onMarkAllAsRead={allApplicationsFilter === 'all' ? undefined : markEmailsAsReadForCategory}
@@ -893,7 +901,7 @@ function App() {
 
   if (!isLoggedIn) {
     return (
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div data-testid="extension-popup-root" className="flex min-h-full items-center justify-center p-4">
         <Notification />
         <div className="w-full">
           <div className="mb-6 text-center">
@@ -915,6 +923,7 @@ function App() {
             <button
               onClick={loginGoogleOAuth}
               disabled={isLoginPending}
+              data-testid="login-google-button"
               className={`flex w-full items-center justify-center space-x-2 rounded-xl border px-4 py-3 font-semibold shadow-sm transition-colors duration-200 ${
                 isLoginPending
                   ? 'cursor-not-allowed border-border bg-muted text-muted-foreground'
@@ -947,7 +956,7 @@ function App() {
       : getCategoryTitle(selectedCategory));
 
   return (
-    <div className="flex h-[600px] max-h-[600px] w-[400px] flex-col overflow-hidden rounded-[18px] border border-border bg-background text-foreground shadow-[0_18px_40px_rgba(17,24,39,0.14)]">
+    <div data-testid="extension-popup-root" className="flex h-[600px] max-h-[600px] w-[400px] flex-col overflow-hidden rounded-[18px] border border-border bg-background text-foreground shadow-[0_18px_40px_rgba(17,24,39,0.14)]">
       {isLoadingApp && <LoadingOverlay message="Signing in..." />}
       {showInitialEmailLoading && <LoadingOverlay message="Loading emails..." />}
       <Notification />
@@ -957,6 +966,7 @@ function App() {
           {showBackButton && (
             <button
               onClick={headerAction}
+              data-testid="popup-header-back"
               className="inline-flex h-7 w-7 items-center justify-center rounded-full text-primary-foreground/80 transition hover:bg-primary-foreground/10 hover:text-primary-foreground"
               type="button"
             >
@@ -965,7 +975,7 @@ function App() {
           )}
           <Mail className="h-4 w-4 shrink-0 text-accent" />
           <span className="truncate text-sm font-semibold text-primary-foreground">Applendium</span>
-          <span className="rounded bg-primary-foreground/10 px-1.5 py-0.5 text-[10px] text-primary-foreground/75">
+          <span data-testid="plan-badge" className="rounded bg-primary-foreground/10 px-1.5 py-0.5 text-[10px] text-primary-foreground/75">
             {userPlan === 'premium' ? 'Premium' : 'Free'}
           </span>
           {showHeaderQuotaPill && headerQuotaLabel && (
@@ -988,8 +998,8 @@ function App() {
       {selectedCategory !== 'emailPreview' && (
         <div className="flex items-center justify-between border-t border-border bg-muted/40 px-3 py-2 text-[10px]">
           <span className="text-muted-foreground">{footerSummary}</span>
-          <button onClick={openDashboard} className="font-medium text-accent transition hover:text-accent/80" type="button">
-            {userPlan === 'premium' ? 'Open Dashboard ->' : 'Upgrade to Premium ->'}
+          <button onClick={openPremiumStatusPage} className="font-medium text-accent transition hover:text-accent/80" data-testid="dashboard-link" type="button">
+            {userPlan === 'premium' ? 'Premium status ->' : 'Premium coming soon ->'}
           </button>
         </div>
       )}

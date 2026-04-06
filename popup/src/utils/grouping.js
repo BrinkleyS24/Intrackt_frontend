@@ -349,12 +349,15 @@ export function groupEmailsByThread(emails) {
       threadId: g.threadId,
       subject,
       date: latest?.date,
+      latestDate: latest?.date,
+      earliestDate: earliest?.date,
       from: latest?.from,
       is_read: unreadCount === 0,
       messageCount,
       unreadCount,
       preview,
       latestEmail: latest,
+      earliestEmail: earliest,
       emails: g.emails, // Include all emails in this group for thread viewing
     });
   }
