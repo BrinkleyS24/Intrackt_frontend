@@ -205,7 +205,11 @@ function QuotaHeaderBadge({ quota, label, warningLevel }) {
 
 const appLogger = {
   info: () => {},
-  warn: () => {},
+  warn: (...args) => {
+    try {
+      console.warn('[app][warn]', ...args);
+    } catch (_) {}
+  },
   error: (...args) => {
     try {
       console.error('[app][error]', ...args);
@@ -398,8 +402,8 @@ function App() {
             await chrome.storage.local.remove(LEGACY_SELECTED_CATEGORY_STORAGE_KEYS);
           }
         }
-      } catch (_) {
-        // Non-fatal: storage can be unavailable in some contexts.
+      } catch (error) {
+        appLogger.warn('Failed to restore selected category from storage:', error?.message || error);
       } finally {
         hasRestoredSelectedCategoryRef.current = true;
       }
@@ -441,27 +445,44 @@ function App() {
   }, [userEmail, fetchStoredEmails, fetchQuotaData]);
 
   useEffect(() => {
+    const refreshSyncStatus = async () => {
+      try {
+        const result = await fetchQuotaData();
+        if (result?.success === false) {
+          appLogger.warn('Background quota refresh returned a degraded response:', result?.error || 'Unknown error');
+        }
+      } catch (error) {
+        appLogger.warn('Background quota refresh failed during sync:', error?.message || error);
+      }
+    };
+
     if (!isAuthReady || !isLoggedIn) return;
     if (!isSyncing && !syncStatus?.inProgress) return;
 
-    fetchQuotaData().catch(() => {});
+    refreshSyncStatus();
 
     const intervalId = setInterval(() => {
-      fetchQuotaData().catch(() => {});
+      refreshSyncStatus();
     }, 15000);
 
     return () => clearInterval(intervalId);
   }, [isAuthReady, isLoggedIn, isSyncing, syncStatus?.inProgress, fetchQuotaData]);
 
   useEffect(() => {
-    const handleForceLogout = (message) => {
+    const handleRuntimeStatusMessage = (message) => {
       if (message.type === 'FORCE_LOGOUT') {
         showNotification(message.reason || 'You have been logged out for security reasons.', 'error');
+        return;
+      }
+
+      if (message.type === 'BACKGROUND_WARNING' && message.message) {
+        appLogger.warn(`Background warning (${message.code || 'unknown'}):`, message.detail || message.message);
+        showNotification(message.message, 'warning', null, message.timeout || 8000);
       }
     };
 
-    chrome.runtime.onMessage.addListener(handleForceLogout);
-    return () => chrome.runtime.onMessage.removeListener(handleForceLogout);
+    chrome.runtime.onMessage.addListener(handleRuntimeStatusMessage);
+    return () => chrome.runtime.onMessage.removeListener(handleRuntimeStatusMessage);
   }, []);
 
   const handleRefresh = useCallback(async () => {
@@ -489,7 +510,9 @@ function App() {
     }
     try {
       chrome.storage?.local?.set({ [SELECTED_CATEGORY_STORAGE_KEY]: normalizedCategory });
-    } catch (_) {}
+    } catch (error) {
+      appLogger.warn('Failed to persist selected category:', error?.message || error);
+    }
   }, []);
 
   const normalizedListSearchQuery = useMemo(

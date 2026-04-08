@@ -96,6 +96,10 @@ export function useEmails(userEmail, userId, CONFIG) {
     irrelevant: 0,
   });
 
+  const logEmailWarning = useCallback((context, error) => {
+    console.warn('[useEmails][warn]', context, error?.message || error || 'Unknown error');
+  }, []);
+
   /**
    * Calculates and updates the unread counts for all email categories.
    * Counts unread threads instead of individual unread emails for consistency.
@@ -296,7 +300,9 @@ export function useEmails(userEmail, userId, CONFIG) {
           sendMessageToBackground({
             type: 'REFRESH_STORED_EMAILS_CACHE',
             staleOnly: true,
-          }).catch(() => {});
+          }).catch((error) => {
+            logEmailWarning('Failed to request stale stored-email cache refresh.', error);
+          });
         }
       }
     } catch (error) {
@@ -309,7 +315,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         setInitialLoading(false);
       }
     }
-  }, [calculateUnreadCounts, userEmail, userId]);
+  }, [calculateUnreadCounts, logEmailWarning, userEmail, userId]);
 
   useEffect(() => {
     if (!isSyncing || !userEmail || !userId) return;
@@ -331,10 +337,14 @@ export function useEmails(userEmail, userId, CONFIG) {
         if (response?.success && response?.sync?.inProgress === false) {
           setIsSyncing(false);
           setSyncStuck(false);
-          fetchStoredEmails().catch(() => {});
+          fetchStoredEmails().catch((error) => {
+            logEmailWarning('Failed to refresh stored emails after sync completion.', error);
+            showNotification('Sync finished, but refreshing the latest tracked emails failed. Try Refresh again.', 'warning');
+          });
         }
       } catch (error) {
         if (cancelled) return;
+        logEmailWarning('Failed to poll background sync status.', error);
         syncPollFailureCountRef.current += 1;
         if (syncPollFailureCountRef.current >= 2 && !syncPollWarningShownRef.current) {
           syncPollWarningShownRef.current = true;
@@ -355,7 +365,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       cancelled = true;
       clearInterval(intervalId);
     };
-  }, [fetchStoredEmails, isSyncing, userEmail, userId]);
+  }, [fetchStoredEmails, isSyncing, logEmailWarning, userEmail, userId]);
 
 
   /**

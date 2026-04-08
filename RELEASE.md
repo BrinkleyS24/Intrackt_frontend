@@ -57,6 +57,14 @@ npm run smoke:prod:chrome
 frontend/job_sort/applendium-extension-v<version>.zip
 ```
 
+## Rollback
+
+If a bad package is submitted or published, use the runbook in:
+
+```text
+frontend/job_sort/ROLLBACK.md
+```
+
 ## Verification command only
 
 If you already built the production bundle and only want to validate it:

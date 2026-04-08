@@ -41,6 +41,8 @@ const EMAILS_CACHE_META_KEY = 'emailsCacheMetaV1';
 const STORED_EMAILS_CACHE_MAX_AGE_MS = 15 * 1000;
 const APP_LINK_BACKFILL_STATE_KEY = 'appLinksBackfillStateV2';
 const APP_LINK_BACKFILL_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const BACKGROUND_DIAGNOSTICS_STORAGE_KEY = 'applendiumBackgroundDiagnosticsV1';
+const MAX_BACKGROUND_DIAGNOSTICS = 20;
 const IS_PRODUCTION_EXTENSION_BUILD = process.env.EXTENSION_BUILD_TARGET === 'production';
 const FORCED_BACKEND_TARGET = (process.env.EXTENSION_FORCE_BACKEND_TARGET || '').toString().trim().toLowerCase();
 const ENABLE_APPLICATION_LINK_BACKFILL = process.env.EXTENSION_ENABLE_APP_LINK_BACKFILL === 'true';
@@ -1146,6 +1148,61 @@ const bgLogger = {
     try { console.error('[bg][error]', ...args); } catch (_) {}
   }
 };
+
+function formatBackgroundError(error) {
+  if (!error) return 'Unknown error';
+  if (typeof error === 'string') return error;
+  if (typeof error?.message === 'string' && error.message.trim()) return error.message.trim();
+  try {
+    return JSON.stringify(error);
+  } catch (_) {
+    return String(error);
+  }
+}
+
+function persistBackgroundDiagnostic(entry) {
+  return chrome.storage.local
+    .get([BACKGROUND_DIAGNOSTICS_STORAGE_KEY])
+    .then((stored) => {
+      const existing = Array.isArray(stored?.[BACKGROUND_DIAGNOSTICS_STORAGE_KEY])
+        ? stored[BACKGROUND_DIAGNOSTICS_STORAGE_KEY]
+        : [];
+      const next = [...existing.slice(-(MAX_BACKGROUND_DIAGNOSTICS - 1)), entry];
+      return chrome.storage.local.set({ [BACKGROUND_DIAGNOSTICS_STORAGE_KEY]: next });
+    });
+}
+
+function reportBackgroundWarning({
+  code,
+  context,
+  error = null,
+  userMessage = null,
+  timeout = 8000,
+  detail = null,
+}) {
+  const detailMessage = detail || formatBackgroundError(error);
+  bgLogger.warn(`[${code}] ${context}: ${detailMessage}`);
+
+  persistBackgroundDiagnostic({
+    at: new Date().toISOString(),
+    level: 'warn',
+    code,
+    context,
+    detail: detailMessage,
+  }).catch((persistError) => {
+    bgLogger.warn('Failed to persist background diagnostic:', formatBackgroundError(persistError));
+  });
+
+  if (userMessage) {
+    safeRuntimeSendMessage({
+      type: 'BACKGROUND_WARNING',
+      code,
+      message: userMessage,
+      detail: detailMessage,
+      timeout,
+    });
+  }
+}
 
 function buildExtensionTestingStatus(testState = null) {
   if (!EXTENSION_TESTING_ENABLED) {
@@ -2420,7 +2477,13 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
                   count: 0,
                   lastRunAt: Date.now(),
                 }
-              }).catch(() => {});
+              }).catch((error) => {
+                reportBackgroundWarning({
+                  code: 'backfill_state_reset_failed',
+                  context: 'Failed to reset application-link backfill state',
+                  error,
+                });
+              });
             }
             return;
           }
@@ -2439,7 +2502,13 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
                 count: signatureState.count,
                 lastRunAt: Date.now(),
               }
-            }).catch(() => {});
+            }).catch((error) => {
+              reportBackgroundWarning({
+                code: 'backfill_state_persist_failed',
+                context: 'Failed to persist application-link backfill state',
+                error,
+              });
+            });
 
             // Refetch once so cached emails include `applicationId` and updated `isClosed`.
             const refreshed = await apiFetch(CONFIG_ENDPOINTS.FETCH_STORED_EMAILS, {
@@ -2474,7 +2543,13 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
           }
         })();
       } else if (!ENABLE_APPLICATION_LINK_BACKFILL) {
-        await chrome.storage.local.remove([APP_LINK_BACKFILL_STATE_KEY]).catch(() => {});
+        await chrome.storage.local.remove([APP_LINK_BACKFILL_STATE_KEY]).catch((error) => {
+          reportBackgroundWarning({
+            code: 'backfill_state_clear_failed',
+            context: 'Failed to clear disabled application-link backfill state',
+            error,
+          });
+        });
       }
 
       const totalRelevantCount =
@@ -2824,7 +2899,14 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
             (response?.categoryTotals &&
               Object.values(response.categoryTotals).some((v) => Number(v || 0) > 0)));
         if (shouldKickStoredRefresh) {
-          refreshStoredEmailsCache(true, { skipNotify: true, skipBackfill: true }).catch(() => {});
+          refreshStoredEmailsCache(true, { skipNotify: true, skipBackfill: true }).catch((error) => {
+            reportBackgroundWarning({
+              code: 'sync_prime_cache_refresh_failed',
+              context: 'Failed to refresh stored emails while priming the first sync result set',
+              error,
+              userMessage: 'Your sync started, but loading the first set of tracked emails failed. Try Refresh again.',
+            });
+          });
         }
       }
 
@@ -2869,7 +2951,13 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
             bgLogger.warn?.('Failed to persist/publish application stats:', e?.message || e);
           }
         })
-        .catch(() => {});
+        .catch((error) => {
+          reportBackgroundWarning({
+            code: 'application_stats_publish_failed',
+            context: 'Failed to publish deferred application stats after sync',
+            error,
+          });
+        });
       return { success: true, categorizedEmails: response.categorizedEmails, quota: response.quota };
     } else {
       // Check if this is a scope or auth error requiring re-authentication
@@ -2983,7 +3071,13 @@ async function monitorPaymentFlow(tabId, userEmail, userId) {
         if (statusResponse?.success && statusResponse.subscription?.status === 'active') {
       bgLogger.info('Subscription detected as active during payment flow');
           cleanup();
-          chrome.tabs.remove(tabId).catch(() => {}); // Tab might already be closed
+          chrome.tabs.remove(tabId).catch((error) => {
+            reportBackgroundWarning({
+              code: 'payment_tab_close_failed',
+              context: 'Failed to close payment tab after successful premium activation',
+              error,
+            });
+          }); // Tab might already be closed
           resolve({ success: true, sessionCompleted: true, plan: 'premium' });
         }
       } catch (error) {
@@ -2995,7 +3089,13 @@ async function monitorPaymentFlow(tabId, userEmail, userId) {
     timeoutId = setTimeout(() => {
   bgLogger.info('Payment flow timed out after 10 minutes');
       cleanup();
-      chrome.tabs.remove(tabId).catch(() => {}); // Tab might already be closed
+      chrome.tabs.remove(tabId).catch((error) => {
+        reportBackgroundWarning({
+          code: 'payment_tab_close_failed',
+          context: 'Failed to close payment tab after timeout',
+          error,
+        });
+      }); // Tab might already be closed
       resolve({ success: true, cancelled: true });
     }, 600000);
   });
@@ -3444,10 +3544,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 (cached.rejectedEmails || []).length;
               const quotaUsage = Number(status?.quota?.relevantMessagesProcessed || status?.quota?.usage || status?.quota?.totalProcessed || 0);
               if (cachedCount === 0 && quotaUsage > 0) {
-                refreshStoredEmailsCache(Boolean(status?.sync?.inProgress), { skipNotify: true, skipBackfill: true }).catch(() => {});
+                refreshStoredEmailsCache(Boolean(status?.sync?.inProgress), { skipNotify: true, skipBackfill: true }).catch((error) => {
+                  reportBackgroundWarning({
+                    code: 'quota_poll_cache_refresh_failed',
+                    context: 'Failed to refresh stored emails after quota polling detected tracked activity',
+                    error,
+                    userMessage: 'Tracked emails are available, but loading the latest list failed. Try Refresh again.',
+                  });
+                });
               }
-            } catch (_) {
-              // ignore
+            } catch (error) {
+              reportBackgroundWarning({
+                code: 'quota_poll_cache_probe_failed',
+                context: 'Failed to inspect cached email counts during quota polling',
+                error,
+              });
             }
             sendResponse({
               success: true,
@@ -3455,7 +3566,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               sync: {
                 ...status.sync,
                 lastCompletedAt: (
-                  await chrome.storage.local.get([EMAILS_CACHE_META_KEY]).catch(() => ({}))
+                  await chrome.storage.local.get([EMAILS_CACHE_META_KEY]).catch((error) => {
+                    reportBackgroundWarning({
+                      code: 'quota_poll_meta_read_failed',
+                      context: 'Failed to read email cache metadata during quota polling',
+                      error,
+                    });
+                    return {};
+                  })
                 )?.[EMAILS_CACHE_META_KEY]?.lastCompletedAt || null,
               },
               dataCompleteness: status.dataCompleteness,
@@ -4661,4 +4779,15 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await checkSyncWatchdog();
   }
 });
+
+try {
+  self.addEventListener('unhandledrejection', (event) => {
+    bgLogger.error('Unhandled promise rejection in background worker:', formatBackgroundError(event?.reason));
+  });
+  self.addEventListener('error', (event) => {
+    bgLogger.error('Unhandled background worker error:', event?.message || formatBackgroundError(event?.error));
+  });
+} catch (_) {
+  // Service worker listeners are best-effort only.
+}
 
