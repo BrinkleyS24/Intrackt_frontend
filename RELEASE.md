@@ -35,12 +35,23 @@ npm run test:e2e
 - `manifest.json`
 - `manifest.prod.json`
 
-3. Smoke the production popup copy:
+3. For a real OAuth smoke, set a stable manifest key before building:
+- `EXTENSION_MANIFEST_KEY_PROD` or `EXTENSION_MANIFEST_KEY`
+- optionally `EXTENSION_EXPECTED_ID_PROD` to assert the exact extension ID during smoke
+
+4. Run both smoke passes:
+
+```powershell
+npm run smoke:prod
+npm run smoke:prod:chrome
+```
+
+5. Smoke the production popup copy:
 - free users should see `Premium coming soon`, not `Upgrade to Premium`
 - quota-limit users should open the premium holding page, not a live checkout flow
 - reply is not exposed in the email preview
 
-4. Upload the zip created in:
+6. Upload the zip created in:
 
 ```text
 frontend/job_sort/applendium-extension-v<version>.zip

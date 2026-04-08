@@ -16,6 +16,32 @@ the bundled `background.js` — no DevTools commands needed.
 
 To go back to production: remove (or comment out) the line and rebuild.
 
+## Stable OAuth identity for unpacked smoke/dev builds
+
+If you need Google OAuth to work in an unpacked build, the build must include a stable
+extension public key. Otherwise Chrome assigns a random extension ID and the redirect URI
+changes on every load.
+
+Set one of these in `frontend/job_sort/.env` before building:
+
+```text
+EXTENSION_MANIFEST_KEY_LOCAL=<base64 public key>
+```
+
+or the generic fallback:
+
+```text
+EXTENSION_MANIFEST_KEY=<base64 public key>
+```
+
+Optional:
+
+```text
+EXTENSION_EXPECTED_ID_LOCAL=<expected extension id>
+```
+
+That lets `npm run smoke:local` fail fast if the unpacked build does not match the intended OAuth identity.
+
 ## Prereqs
 - Run the backend locally (default port `3000`).
 - Build the extension once and load it as an unpacked extension.

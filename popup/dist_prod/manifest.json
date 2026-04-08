@@ -52,11 +52,14 @@
         "https://www.applendium.com/app",
         "https://www.applendium.com/app/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
     }
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://gmail-tracker-backend-674309673051.us-central1.run.app https://*.googleapis.com https://www.googleapis.com https://accounts.google.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com;"
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqS7DsqoLwLXc/Cud2EXzfqCByYiRgoFM9J0JNG/p7wFYQu6afFHl4n9mUdeBZX/wvU2xMV9K+vR7FEPP3rq3Tr95r977+p3D4sxgyyNsfBo4tCyA9tBFoFmK3dF+dpFyoPh92XgFwSY1rR9JQrO9R0MppXHLNeIqrz7CCrDnP920kXBlVvmssZmz7lx7IyagGerbXSMY9zHJQHmr8TEqDqcy3AgJTxYWsJzA8GaD/F4rT43S+pDLYxAQDnz10WgHvTp+ZQTX8P74qmdCCpVibP5EiPlsjpHzz0FSY9VD8Jbf4qnHbkXI2gIO7e8agYToTZa0p7/rqZYJwY/KnxC4QIDAQAB="
 }
