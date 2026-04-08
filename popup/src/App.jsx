@@ -3,7 +3,7 @@
  * @description Main popup application shell for the extension.
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import EmailList from './components/EmailList';
 import EmailPreview from './components/EmailPreview';
 import LoadingOverlay from './components/LoadingOverlay';
@@ -233,6 +233,9 @@ function App() {
   const [dateRange, setDateRange] = useState('all');
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [stableAllViewSummary, setStableAllViewSummary] = useState(null);
+  const selectedCategoryRef = useRef('all');
+  const hasRestoredSelectedCategoryRef = useRef(false);
+  const hasUserNavigatedCategoryRef = useRef(false);
 
   const {
     userPlan,
@@ -268,6 +271,9 @@ function App() {
   } = useEmails(userEmail, userId, CONFIG);
 
   const isLoadingApp = loadingAuth && !isLoggedIn;
+  useEffect(() => {
+    selectedCategoryRef.current = selectedCategory;
+  }, [selectedCategory]);
   const isLoginPending = loadingAuth && isAuthReady && !isLoggedIn;
   const hasCachedEmails = useMemo(() => flattenCategorized(categorizedEmails).length > 0, [categorizedEmails]);
   const showInitialEmailLoading = isLoggedIn && initialLoading && !hasCachedEmails;
@@ -320,7 +326,23 @@ function App() {
     if (selectedCategory !== 'emailPreview') return;
 
     const all = flattenCategorized(categorizedEmails);
-    const updated = all.find((email) => email.id === selectedEmail.id);
+    const selectedApplicationKey = getApplicationKey(selectedEmail);
+    const selectedThreadId = selectedEmail.thread_id || selectedEmail.threadId || selectedEmail.thread;
+
+    const sortByNewest = (emails) => [...emails].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    let updated = all.find((email) => email.id === selectedEmail.id);
+    if (!updated && selectedApplicationKey && selectedApplicationKey !== 'unknown') {
+      updated = sortByNewest(
+        all.filter((email) => getApplicationKey(email) === selectedApplicationKey)
+      )[0];
+    }
+    if (!updated && selectedThreadId) {
+      updated = sortByNewest(
+        all.filter((email) => (email.thread_id || email.threadId || email.thread) === selectedThreadId)
+      )[0];
+    }
+
     if (!updated) {
       setSelectedEmail(null);
       setSelectedCategory(categoryBeforePreview || 'all');
@@ -329,7 +351,25 @@ function App() {
 
     setSelectedEmail((prev) => {
       if (!prev) return prev;
-      return { ...updated, threadMessages: prev.threadMessages };
+
+      let nextThreadMessages = prev.threadMessages;
+      if (selectedApplicationKey && selectedApplicationKey !== 'unknown') {
+        const applicationThreadMessages = sortByNewest(
+          all.filter((email) => getApplicationKey(email) === selectedApplicationKey)
+        );
+        if (applicationThreadMessages.length > 0) {
+          nextThreadMessages = applicationThreadMessages;
+        }
+      } else if (selectedThreadId) {
+        const threadMessages = sortByNewest(
+          all.filter((email) => (email.thread_id || email.threadId || email.thread) === selectedThreadId)
+        );
+        if (threadMessages.length > 0) {
+          nextThreadMessages = threadMessages;
+        }
+      }
+
+      return { ...updated, threadMessages: nextThreadMessages };
     });
   }, [categorizedEmails, selectedEmail?.id, selectedCategory, categoryBeforePreview]);
 
@@ -348,7 +388,10 @@ function App() {
 
         if (selectedCat) {
           const normalizedSelectedCategory = normalizeStoredCategory(selectedCat);
-          setSelectedCategory(normalizedSelectedCategory);
+
+          if (!hasUserNavigatedCategoryRef.current && selectedCategoryRef.current === 'all') {
+            setSelectedCategory(normalizedSelectedCategory);
+          }
 
           if (!storage[SELECTED_CATEGORY_STORAGE_KEY]) {
             await chrome.storage.local.set({ [SELECTED_CATEGORY_STORAGE_KEY]: normalizedSelectedCategory });
@@ -357,10 +400,12 @@ function App() {
         }
       } catch (_) {
         // Non-fatal: storage can be unavailable in some contexts.
+      } finally {
+        hasRestoredSelectedCategoryRef.current = true;
       }
     };
 
-    if (isAuthReady) restoreSelectedCategory();
+    if (isAuthReady && !hasRestoredSelectedCategoryRef.current) restoreSelectedCategory();
   }, [isAuthReady]);
 
   useEffect(() => {
@@ -433,6 +478,7 @@ function App() {
 
   const handleCategoryChange = useCallback((category) => {
     const normalizedCategory = normalizeStoredCategory(category);
+    hasUserNavigatedCategoryRef.current = true;
     setSelectedCategory(normalizedCategory);
     setSelectedEmail(null);
     setListSearchQuery('');
@@ -572,12 +618,14 @@ function App() {
         .sort((a, b) => new Date(b.date) - new Date(a.date));
     }
 
+    hasUserNavigatedCategoryRef.current = true;
     setCategoryBeforePreview(selectedCategory);
     setSelectedEmail({ ...email, threadMessages });
     setSelectedCategory('emailPreview');
   }, [categorizedEmails, markEmailAsRead, selectedCategory]);
 
   const handleBackToCategory = useCallback(() => {
+    hasUserNavigatedCategoryRef.current = true;
     setSelectedEmail(null);
     setSelectedCategory(categoryBeforePreview || 'all');
   }, [categoryBeforePreview]);
@@ -960,7 +1008,6 @@ function App() {
       {isLoadingApp && <LoadingOverlay message="Signing in..." />}
       {showInitialEmailLoading && <LoadingOverlay message="Loading emails..." />}
       <Notification />
-
       <div className="flex items-center justify-between bg-primary px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           {showBackButton && (

@@ -10,7 +10,7 @@ import { initializeApp } from 'firebase/app';
 // CORRECTED: Added setPersistence, indexedDBLocalPersistence for auth state persistence
 import { getAuth, signInWithCustomToken, signOut, onAuthStateChanged, setPersistence, indexedDBLocalPersistence } from 'firebase/auth';
 
-import { firebaseConfig } from './firebaseConfig';
+import { firebaseConfig, firebaseConfigIsComplete } from './firebaseConfig';
 import {
   deriveApplicationStatusFromLifecycle,
   deriveDisplayCategory,
@@ -23,9 +23,13 @@ import {
   listExtensionTestScenarios,
 } from './testing/mockScenarios.js';
 
-// Initialize Firebase App in the background script.
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+const FIREBASE_AUTH_AVAILABLE = firebaseConfigIsComplete;
+
+// Initialize Firebase App in the background script when config is available.
+// Development/test builds should still boot the background worker without Firebase
+// so the extension lab and non-auth surfaces remain debuggable.
+const app = FIREBASE_AUTH_AVAILABLE ? initializeApp(firebaseConfig) : null;
+const auth = FIREBASE_AUTH_AVAILABLE ? getAuth(app) : { currentUser: null };
 
 // --- Constants ---
 const SYNC_INTERVAL_MINUTES = 5; // How often to sync emails
@@ -54,6 +58,10 @@ const BUNDLED_PREMIUM_DASHBOARD_URL = (
     ? (process.env.PREMIUM_DASHBOARD_URL_PROD || 'https://applendium.com')
     : (process.env.PREMIUM_DASHBOARD_URL || 'https://applendium.com')
 ).toString().trim();
+const DEFAULT_API_TIMEOUT_MS = Number.isFinite(Number.parseInt(process.env.EXTENSION_API_TIMEOUT_MS || '', 10))
+  ? Math.max(5_000, Number.parseInt(process.env.EXTENSION_API_TIMEOUT_MS || '', 10))
+  : 30_000;
+const LONG_RUNNING_API_TIMEOUT_MS = 5 * 60 * 1000;
 const EXTENSION_TESTING_ENABLED = !IS_PRODUCTION_EXTENSION_BUILD;
 const EXTENSION_TEST_STATE_KEY = 'applendiumExtensionTestStateV1';
 const EXTENSION_TEST_SNAPSHOT_KEY = 'applendiumExtensionTestSnapshotV1';
@@ -85,6 +93,33 @@ function safeRuntimeSendMessage(message) {
   } catch (_) {
     // ignore
   }
+}
+
+function assertRuntimeUrlConfig(label, value) {
+  if (!value) {
+    throw new Error(`[extension][config] ${label} is missing.`);
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch (_) {
+    throw new Error(`[extension][config] ${label} must be an absolute URL. Received: ${value}`);
+  }
+
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error(`[extension][config] ${label} must use http or https. Received: ${value}`);
+  }
+}
+
+try {
+  assertRuntimeUrlConfig('BACKEND_BASE_URL', BUNDLED_BACKEND_BASE_URL);
+  assertRuntimeUrlConfig('PREMIUM_DASHBOARD_URL', BUNDLED_PREMIUM_DASHBOARD_URL);
+} catch (error) {
+  if (IS_PRODUCTION_EXTENSION_BUILD) {
+    throw error;
+  }
+  console.warn(error?.message || error);
 }
 
 function buildEmailsCacheMeta(currentMeta = null, overrides = {}) {
@@ -873,6 +908,14 @@ function resolveAuthReady(reason = 'unspecified') {
   authReadyResolve();
 }
 
+function getFirebaseAuthUnavailableResponse() {
+  return {
+    success: false,
+    error: 'Firebase auth is not configured for this build.',
+    errorCode: 'AUTH_CONFIG_MISSING',
+  };
+}
+
 async function waitForAuthReady(timeoutMs = AUTH_READY_TIMEOUT_MS) {
   if (authReadyResolved) return;
 
@@ -894,6 +937,15 @@ async function waitForAuthReady(timeoutMs = AUTH_READY_TIMEOUT_MS) {
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
   }
+}
+
+if (!FIREBASE_AUTH_AVAILABLE) {
+  try {
+    console.warn('[bg] Firebase auth disabled because config is incomplete.');
+  } catch (_) {
+    // ignore
+  }
+  resolveAuthReady('firebase-config-missing');
 }
 
 // --- Backend base URL override ---
@@ -1206,6 +1258,34 @@ function buildExtensionTestingSnapshot(stored = {}, state = null) {
   };
 }
 
+function buildLightweightExtensionTestingSnapshot(stored = {}, state = null) {
+  const categoryTotals = stored.categoryTotals || {
+    applied: 0,
+    interviewed: 0,
+    offers: 0,
+    rejected: 0,
+    irrelevant: 0,
+    relevant: 0,
+  };
+  const trackedApplications = Number.isFinite(stored?.quotaData?.trackedApplications)
+    ? stored.quotaData.trackedApplications
+    : Number(categoryTotals.relevant || 0);
+
+  return {
+    auth: {
+      isLoggedIn: Boolean(stored.userEmail && stored.userId),
+      email: stored.userEmail || null,
+      name: stored.userName || null,
+      userId: stored.userId || null,
+    },
+    userPlan: stored.userPlan || 'free',
+    quota: stored.quotaData || null,
+    trackedApplications,
+    categoryTotals,
+    sync: state?.sync || null,
+  };
+}
+
 async function getExtensionTestingState() {
   const stored = await chrome.storage.local.get([
     EXTENSION_TEST_STATE_KEY,
@@ -1231,6 +1311,25 @@ async function getExtensionTestingState() {
     applications: stored[EXTENSION_TEST_APPLICATIONS_KEY] || {},
     lastMisclassification: stored[EXTENSION_TEST_LAST_MISCLASSIFICATION_KEY] || null,
     snapshot: buildExtensionTestingSnapshot(stored, state),
+  };
+}
+
+async function getExtensionTestingLabState() {
+  const stored = await chrome.storage.local.get([
+    EXTENSION_TEST_STATE_KEY,
+    'userEmail',
+    'userName',
+    'userId',
+    'userPlan',
+    'quotaData',
+    'categoryTotals',
+  ]);
+  const state = stored[EXTENSION_TEST_STATE_KEY] || null;
+  return {
+    supported: EXTENSION_TESTING_ENABLED,
+    active: Boolean(EXTENSION_TESTING_ENABLED && state?.active),
+    state,
+    snapshot: buildLightweightExtensionTestingSnapshot(stored, state),
   };
 }
 
@@ -1383,7 +1482,9 @@ async function installExtensionTestScenario(scenarioId) {
     return { success: false, error: `Unknown test scenario: ${String(scenarioId)}` };
   }
 
-  await captureExtensionTestingSnapshotIfNeeded();
+  captureExtensionTestingSnapshotIfNeeded().catch((error) => {
+    bgLogger.warn?.('Failed to capture extension test snapshot before scenario activation:', error?.message || error);
+  });
 
   const categorizedEmails = scenario.categorizedEmails || {};
   const testingState = {
@@ -1977,7 +2078,13 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
  * @returns {Promise<object>} The JSON response from the backend.
  */
 async function apiFetch(endpoint, options = {}) {
-  const { skipAuthReady = false, ...fetchOptions } = options;
+  const {
+    skipAuthReady = false,
+    query,
+    timeoutMs = DEFAULT_API_TIMEOUT_MS,
+    signal,
+    ...fetchOptions
+  } = options;
 
   // Do not block pre-login OAuth bootstrap/exchange calls on Firebase auth initialization.
   if (!skipAuthReady) {
@@ -2021,29 +2128,54 @@ async function apiFetch(endpoint, options = {}) {
 
   // Build URL with optional query params support
   let url = `${backendBaseUrl}${endpoint}`;
-  if (fetchOptions.query && typeof fetchOptions.query === 'object') {
-    const qs = new URLSearchParams(fetchOptions.query).toString();
+  if (query && typeof query === 'object') {
+    const qs = new URLSearchParams(query).toString();
     if (qs) {
       url += (url.includes('?') ? '&' : '?') + qs;
     }
   }
   bgLogger.info(`API call: ${url} method=${fetchOptions.method || 'GET'}`);
 
+  const abortController = typeof AbortController === 'function' ? new AbortController() : null;
+  let timeoutHandle = null;
+  let timedOut = false;
+  let removeAbortRelay = null;
+
+  if (abortController && signal) {
+    if (signal.aborted) {
+      abortController.abort(signal.reason);
+    } else {
+      const relayAbort = () => abortController.abort(signal.reason);
+      signal.addEventListener('abort', relayAbort, { once: true });
+      removeAbortRelay = () => signal.removeEventListener('abort', relayAbort);
+    }
+  }
+
+  if (abortController && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+    timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      abortController.abort(new Error(`Request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  }
+
   try {
     const response = await fetch(url, {
       ...fetchOptions,
-      headers: headers,
+      headers,
       // Ensure body is stringified only if it's an object and not already a string
       body: fetchOptions.body && typeof fetchOptions.body === 'object' ? JSON.stringify(fetchOptions.body) : fetchOptions.body,
+      ...(abortController ? { signal: abortController.signal } : {}),
     });
+    const requestId = response.headers.get('x-request-id') || null;
 
     if (!response.ok) {
       const errorText = await response.text();
+      let errorJson = null;
       console.error(`❌ Applendium: API Error ${response.status} from ${url}:`, errorText);
       
       // Try to parse error as JSON to preserve errorCode and other fields
       try {
-        const errorJson = JSON.parse(errorText);
+        errorJson = JSON.parse(errorText);
         if (errorJson.errorCode || errorJson.requiresReauth) {
           // Return the structured error response instead of throwing
           // This allows the caller to handle auth errors properly
@@ -2051,15 +2183,28 @@ async function apiFetch(endpoint, options = {}) {
             success: false,
             error: errorJson.error || errorJson.message || `Backend error: ${response.status}`,
             errorCode: errorJson.errorCode,
-            requiresReauth: errorJson.requiresReauth
+            requiresReauth: errorJson.requiresReauth,
+            requestId: errorJson.requestId || requestId,
+            statusCode: response.status,
           };
         }
       } catch (parseError) {
         // Not JSON, continue with default error handling
       }
       
-      const backendError = new Error(`Backend error: ${response.status} - ${errorText}`);
+      const backendMessage = errorJson?.error
+        || errorJson?.message
+        || errorText
+        || `Backend error: ${response.status}`;
+      if (requestId) {
+        console.error(`Applendium: backend requestId for ${url}: ${requestId}`);
+      }
+      const backendError = new Error(backendMessage);
       backendError.backendResponse = true;
+      backendError.statusCode = response.status;
+      backendError.requestId = errorJson?.requestId || requestId || null;
+      backendError.errorCode = errorJson?.errorCode || null;
+      backendError.requiresReauth = Boolean(errorJson?.requiresReauth);
       throw backendError;
     }
 
@@ -2069,16 +2214,25 @@ async function apiFetch(endpoint, options = {}) {
     } catch (parseError) {
       const backendParseError = new Error(`Backend returned invalid JSON: ${parseError.message}`);
       backendParseError.backendResponse = true;
+      backendParseError.statusCode = response.status;
+      backendParseError.requestId = requestId;
       throw backendParseError;
     }
     bgLogger.info(`API success: ${url}`, data);
     return data;
   } catch (error) {
-    // Check if this is already a structured response (from our error handling above)
-    if (error.errorCode || error.requiresReauth) {
-      return error;
-    }
     console.error(`❌ Applendium: Network or parsing error for ${url}:`, error);
+    if (timedOut || error?.name === 'AbortError') {
+      const timeoutOrAbortError = new Error(
+        timedOut
+          ? `Request timed out after ${timeoutMs}ms`
+          : 'Request was cancelled before completion.'
+      );
+      timeoutOrAbortError.timeout = timedOut;
+      timeoutOrAbortError.aborted = !timedOut;
+      timeoutOrAbortError.statusCode = timedOut ? 408 : null;
+      throw timeoutOrAbortError;
+    }
     if (error.backendResponse) {
       throw error;
     }
@@ -2090,6 +2244,13 @@ async function apiFetch(endpoint, options = {}) {
       throw new Error(localBackendMessage);
     }
     throw new Error(`Network or server error: ${error.message}`);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+    if (removeAbortRelay) {
+      removeAbortRelay();
+    }
   }
 }
 
@@ -2547,7 +2708,8 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
 
     const response = await apiFetch(CONFIG_ENDPOINTS.SYNC_EMAILS, {
       method: 'POST',
-    body: { userEmail, userId, fullRefresh, email: userEmail }
+      timeoutMs: LONG_RUNNING_API_TIMEOUT_MS,
+      body: { userEmail, userId, fullRefresh, email: userEmail }
     });
 
     // Fetch application stats without blocking initial email visibility.
@@ -2887,6 +3049,54 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
     msg = validation.message;
 
+    if (msg.type === 'GET_BUILD_INFO') {
+      const manifest = chrome.runtime.getManifest?.() || {};
+      sendResponse({
+        success: true,
+        build: {
+          id: chrome.runtime.id,
+          name: manifest.name,
+          version: manifest.version,
+          version_name: manifest.version_name,
+        },
+        runtime: {
+          backendBaseUrl,
+          backendBaseUrlDefault: DEFAULT_BACKEND_BASE_URL,
+          backendBaseUrlOverridden: backendBaseUrl !== DEFAULT_BACKEND_BASE_URL,
+          premiumDashboardUrl,
+          premiumDashboardUrlDefault: DEFAULT_PREMIUM_DASHBOARD_URL,
+          premiumDashboardUrlOverridden: premiumDashboardUrl !== DEFAULT_PREMIUM_DASHBOARD_URL,
+        },
+        testing: buildExtensionTestingStatus(null),
+      });
+      return;
+    }
+
+    if (msg.type === 'GET_EXTENSION_TEST_STATE' || msg.type === 'LIST_EXTENSION_TEST_SCENARIOS') {
+      const testingState = await getExtensionTestingLabState();
+      sendResponse({
+        success: true,
+        scenarios: EXTENSION_TESTING_ENABLED ? listExtensionTestScenarios() : [],
+        testing: buildExtensionTestingStatus(testingState.state),
+        snapshot: testingState.snapshot || null,
+      });
+      return;
+    }
+
+    if (msg.type === 'ACTIVATE_EXTENSION_TEST_SCENARIO') {
+      sendResponse(
+        EXTENSION_TESTING_ENABLED
+          ? await installExtensionTestScenario(msg.scenarioId)
+          : { success: false, error: 'Extension test mode is only available in the development build.' }
+      );
+      return;
+    }
+
+    if (msg.type === 'DEACTIVATE_EXTENSION_TEST_MODE') {
+      sendResponse(await deactivateExtensionTestMode());
+      return;
+    }
+
     // Get current user info from local storage for API calls if available
     // This is important because auth.currentUser might not be immediately available
     // when a message comes in, but local storage should hold the last known state.
@@ -3032,6 +3242,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'LOGIN_GOOGLE_OAUTH':
         try {
+          if (!FIREBASE_AUTH_AVAILABLE) {
+            sendResponse(getFirebaseAuthUnavailableResponse());
+            break;
+          }
+
           const redirectUriForBackend = chrome.identity.getRedirectURL();
           let finalAuthUrl = null;
 
@@ -3105,6 +3320,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'LOGOUT':
         try {
+          if (!FIREBASE_AUTH_AVAILABLE) {
+            await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions', EMAILS_CACHE_META_KEY]);
+            sendResponse({ success: true, authUnavailable: true });
+            break;
+          }
+
           await signOut(auth);
           bgLogger.info("User signed out from Firebase.");
           // onAuthStateChanged listener will handle clearing storage.
@@ -3907,6 +4128,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'GET_EXTENSION_WEB_AUTH':
         try {
+          if (!FIREBASE_AUTH_AVAILABLE) {
+            sendResponse(getFirebaseAuthUnavailableResponse());
+            break;
+          }
+
           const senderUrl = sender?.url || '';
           const allowedSender = isTrustedWebBridgeSenderUrl(senderUrl);
 
@@ -3943,6 +4169,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'GET_ID_TOKEN':
         try {
+          if (!FIREBASE_AUTH_AVAILABLE) {
+            sendResponse(getFirebaseAuthUnavailableResponse());
+            break;
+          }
+
           const senderUrl = sender?.url || '';
           const allowedSender = isExtensionPageSenderUrl(senderUrl);
 
@@ -4278,7 +4509,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         console.warn('Applendium: Unhandled message type:', msg.type);
         sendResponse({ success: false, error: 'Unhandled message type.' });
     }
-  })(); // End of async IIFE
+  })().catch((error) => {
+    bgLogger.error('Unhandled background message error:', error?.message || error);
+    try {
+      sendResponse({ success: false, error: error?.message || 'Unexpected background error.' });
+    } catch (_) {
+      // ignore sendResponse failures after channel close
+    }
+  }); // End of async IIFE
 
   // Return true to indicate that sendResponse will be called asynchronously.
   return true;
@@ -4286,6 +4524,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 
 // --- Configure Firebase Auth Persistence ---
+if (FIREBASE_AUTH_AVAILABLE) {
 setPersistence(auth, indexedDBLocalPersistence)
   .then(() => {
     console.log("✅ Applendium Background: Firebase Auth persistence set to IndexedDB.");
@@ -4391,6 +4630,7 @@ setPersistence(auth, indexedDBLocalPersistence)
 	      }
 	    });
 	  });
+}
 
 
 // --- Chrome Alarms (for scheduled sync) ---

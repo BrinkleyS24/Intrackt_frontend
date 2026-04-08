@@ -1,0 +1,177 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: extension-harness.spec.js >> allows a mocked login transition from logged-out into the free inbox
+- Location: e2e\extension-harness.spec.js:62:1
+
+# Error details
+
+```
+Error: expect(locator).toContainText(expected) failed
+
+Locator: getByTestId('testing-mode')
+Expected substring: "Scenario active"
+Received string:    "Live mode"
+Timeout: 10000ms
+
+Call log:
+  - Expect "toContainText" with timeout 10000ms
+  - waiting for getByTestId('testing-mode')
+    13 × locator resolved to <span class="lab-meta-value" data-testid="testing-mode">Unavailable in production build</span>
+       - unexpected value "Unavailable in production build"
+    - locator resolved to <span class="lab-meta-value" data-testid="testing-mode">Live mode</span>
+    - unexpected value "Live mode"
+
+```
+
+# Test source
+
+```ts
+  1   | const path = require('node:path');
+  2   | const { chromium, expect, test } = require('@playwright/test');
+  3   | 
+  4   | const extensionPath = path.resolve(__dirname, '..', 'popup', 'dist');
+  5   | 
+  6   | let context;
+  7   | let extensionId;
+  8   | 
+  9   | function getLaunchOptions() {
+  10  |   const args = [
+  11  |     `--disable-extensions-except=${extensionPath}`,
+  12  |     `--load-extension=${extensionPath}`,
+  13  |   ];
+  14  | 
+  15  |   if (process.env.PW_EXTENSION_EXECUTABLE_PATH) {
+  16  |     return {
+  17  |       executablePath: process.env.PW_EXTENSION_EXECUTABLE_PATH,
+  18  |       headless: process.env.PW_HEADLESS !== 'false',
+  19  |       args,
+  20  |       viewport: { width: 1480, height: 1120 },
+  21  |     };
+  22  |   }
+  23  | 
+  24  |   return {
+  25  |     channel: process.env.PW_EXTENSION_CHANNEL || 'chromium',
+  26  |     headless: process.env.PW_HEADLESS !== 'false',
+  27  |     args,
+  28  |     viewport: { width: 1480, height: 1120 },
+  29  |   };
+  30  | }
+  31  | 
+  32  | async function openLabPage() {
+  33  |   const page = await context.newPage();
+  34  |   await page.goto(`chrome-extension://${extensionId}/testing/public/index.html`);
+  35  |   await expect(page.getByTestId('test-harness-title')).toBeVisible();
+  36  |   return page;
+  37  | }
+  38  | 
+  39  | async function activateScenario(page, scenarioId) {
+  40  |   await page.getByTestId(`scenario-${scenarioId}`).click();
+> 41  |   await expect(page.getByTestId('testing-mode')).toContainText('Scenario active');
+      |                                                  ^ Error: expect(locator).toContainText(expected) failed
+  42  |   const frame = page.frameLocator('[data-testid="popup-preview-frame"]');
+  43  |   await expect(frame.getByTestId('extension-popup-root')).toBeVisible();
+  44  |   return frame;
+  45  | }
+  46  | 
+  47  | test.describe.configure({ mode: 'serial' });
+  48  | 
+  49  | test.beforeAll(async () => {
+  50  |   context = await chromium.launchPersistentContext('', getLaunchOptions());
+  51  |   let serviceWorker = context.serviceWorkers()[0];
+  52  |   if (!serviceWorker) {
+  53  |     serviceWorker = await context.waitForEvent('serviceworker');
+  54  |   }
+  55  |   extensionId = new URL(serviceWorker.url()).host;
+  56  | });
+  57  | 
+  58  | test.afterAll(async () => {
+  59  |   await context?.close();
+  60  | });
+  61  | 
+  62  | test('allows a mocked login transition from logged-out into the free inbox', async ({}, testInfo) => {
+  63  |   const page = await openLabPage();
+  64  |   const frame = await activateScenario(page, 'logged-out');
+  65  | 
+  66  |   await expect(page.getByTestId('state-auth')).toContainText('Signed out');
+  67  |   await expect(frame.getByTestId('login-google-button')).toBeVisible();
+  68  |   await expect(frame.getByText('Welcome back')).toBeVisible();
+  69  |   await frame.getByTestId('login-google-button').click();
+  70  |   await expect(frame.getByTestId('plan-badge')).toContainText('Free');
+  71  |   await expect(frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Northstar Labs' }).first()).toBeVisible();
+  72  |   await expect(page.getByTestId('state-auth')).toContainText('Signed in');
+  73  |   await expect(page.getByTestId('state-plan')).toContainText('Free');
+  74  | 
+  75  |   await page.screenshot({
+  76  |     path: testInfo.outputPath('lab-login-transition.png'),
+  77  |     fullPage: true,
+  78  |   });
+  79  | 
+  80  |   await page.close();
+  81  | });
+  82  | 
+  83  | test('renders the free-plan inbox and opens a thread preview', async ({}, testInfo) => {
+  84  |   const page = await openLabPage();
+  85  |   const frame = await activateScenario(page, 'free-rich');
+  86  |   const northstarThread = frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Northstar Labs' }).first();
+  87  | 
+  88  |   await expect(frame.getByTestId('quota-status-notice')).toContainText('approaching your tracking limit');
+  89  |   await expect(northstarThread).toBeVisible();
+  90  |   await northstarThread.click();
+  91  |   await expect(frame.getByTestId('email-preview')).toBeVisible();
+  92  |   await expect(frame.getByText('Application Journey')).toBeVisible();
+  93  |   await expect(frame.getByRole('heading', { name: /Senior Product Manager/i })).toBeVisible();
+  94  |   await expect(frame.getByRole('button', { name: 'Reply' })).toHaveCount(0);
+  95  | 
+  96  |   await frame.getByTestId('popup-header-back').click();
+  97  |   await expect(frame.getByTestId('refresh-button')).toBeVisible();
+  98  | 
+  99  |   await page.screenshot({
+  100 |     path: testInfo.outputPath('lab-free-rich.png'),
+  101 |     fullPage: true,
+  102 |   });
+  103 | 
+  104 |   await page.close();
+  105 | });
+  106 | 
+  107 | test('renders the free-plan limit reached state with premium-status guidance', async ({}, testInfo) => {
+  108 |   const page = await openLabPage();
+  109 |   const frame = await activateScenario(page, 'free-limit-reached');
+  110 | 
+  111 |   await expect(page.getByTestId('state-plan')).toContainText('Free');
+  112 |   await expect(page.getByTestId('state-quota')).toContainText('Limit reached');
+  113 |   await expect(frame.getByTestId('quota-status-notice')).toContainText('Tracking limit reached');
+  114 |   await expect(frame.getByTestId('quota-premium-status-button')).toBeVisible();
+  115 |   await expect(frame.getByTestId('dashboard-link')).toContainText('Premium coming soon');
+  116 | 
+  117 |   await page.screenshot({
+  118 |     path: testInfo.outputPath('lab-free-limit-reached.png'),
+  119 |     fullPage: true,
+  120 |   });
+  121 | 
+  122 |   await page.close();
+  123 | });
+  124 | 
+  125 | test('renders the stuck sync warning state', async ({}, testInfo) => {
+  126 |   const page = await openLabPage();
+  127 |   const frame = await activateScenario(page, 'sync-stuck');
+  128 | 
+  129 |   await expect(page.getByTestId('state-sync')).toContainText('In progress');
+  130 |   await expect(frame.getByTestId('sync-status-label')).toContainText('Sync may be stuck');
+  131 |   await expect(frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Acme AI' }).first()).toBeVisible();
+  132 | 
+  133 |   await page.screenshot({
+  134 |     path: testInfo.outputPath('lab-sync-stuck.png'),
+  135 |     fullPage: true,
+  136 |   });
+  137 | 
+  138 |   await page.close();
+  139 | });
+  140 | 
+  141 | test('renders premium footer behavior without a live dashboard promise', async ({}, testInfo) => {
+```

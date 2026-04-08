@@ -78,6 +78,8 @@ export function useEmails(userEmail, userId, CONFIG) {
   const isMountedRef = useRef(true);
   const storedRequestIdRef = useRef(0);
   const syncRequestIdRef = useRef(0);
+  const syncPollFailureCountRef = useRef(0);
+  const syncPollWarningShownRef = useRef(false);
 
   // Generic loading flag replacing prior undefined setLoadingEmails usage
   const [loadingEmails, setLoadingEmails] = useState(false);
@@ -319,13 +321,30 @@ export function useEmails(userEmail, userId, CONFIG) {
         const response = await sendMessageToBackground({ type: 'FETCH_QUOTA_DATA' });
         if (cancelled) return;
 
+        if (!response?.success) {
+          throw new Error(response?.error || 'Unable to refresh sync status.');
+        }
+
+        syncPollFailureCountRef.current = 0;
+        syncPollWarningShownRef.current = false;
+
         if (response?.success && response?.sync?.inProgress === false) {
           setIsSyncing(false);
           setSyncStuck(false);
           fetchStoredEmails().catch(() => {});
         }
-      } catch (_) {
-        // Best-effort self-heal only.
+      } catch (error) {
+        if (cancelled) return;
+        syncPollFailureCountRef.current += 1;
+        if (syncPollFailureCountRef.current >= 2 && !syncPollWarningShownRef.current) {
+          syncPollWarningShownRef.current = true;
+          showNotification(
+            `Unable to refresh sync status: ${error?.message || 'Background sync is temporarily unavailable.'}`,
+            'warning',
+            null,
+            10000
+          );
+        }
       }
     };
 
@@ -349,6 +368,8 @@ export function useEmails(userEmail, userId, CONFIG) {
       setIsSyncing(true);
       setSyncStuck(false);
     }
+    syncPollFailureCountRef.current = 0;
+    syncPollWarningShownRef.current = false;
     try {
       const response = await fetchNewEmailsService(userEmail, userId, fullRefresh);
       if (!isMountedRef.current || requestId !== syncRequestIdRef.current) return;
@@ -477,6 +498,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       correctedCategory: transformCategoryForBackend(correctedCategory),
       emailSubject: emailData.subject || 'No Subject',
       emailBody: emailData.body || 'No Body',
+      fromHeader: emailData.from || emailData.sender || '',
     };
 
     if (!reportPayload.emailId || !reportPayload.threadId || !reportPayload.originalCategory || !reportPayload.correctedCategory) {

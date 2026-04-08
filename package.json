@@ -20,8 +20,8 @@
     "verify:prod": "node scripts/verify_extension_release.mjs",
     "release:prod": "powershell -Command \"Remove-Item Env:DIST_DIR -ErrorAction SilentlyContinue; Remove-Item Env:PARCEL_CACHE_DIR -ErrorAction SilentlyContinue; $env:MANIFEST_FILE = 'manifest.prod.json'; $env:EXTENSION_BUILD_TARGET = 'production'; $env:EXTENSION_FORCE_BACKEND_TARGET = 'production'; $env:BACKEND_BASE_URL_PROD = if ($env:BACKEND_BASE_URL_PROD) { $env:BACKEND_BASE_URL_PROD } else { 'https://gmail-tracker-backend-674309673051.us-central1.run.app' }; $env:BACKEND_BASE_URL = $env:BACKEND_BASE_URL_PROD; $env:PREMIUM_DASHBOARD_URL_PROD = if ($env:PREMIUM_DASHBOARD_URL_PROD) { $env:PREMIUM_DASHBOARD_URL_PROD } else { 'https://applendium.com' }; $env:PREMIUM_DASHBOARD_URL = $env:PREMIUM_DASHBOARD_URL_PROD; if (-not $env:EXT_VERSION) { $manifest = Get-Content 'manifest.prod.json' | ConvertFrom-Json; $env:EXT_VERSION = $manifest.version }; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm run verify:prod; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; Compress-Archive -Path (Join-Path 'popup/dist' '*') -DestinationPath applendium-extension-v$env:EXT_VERSION.zip -Force\"",
     "assets:store": "powershell -Command \"npm run build:storelab; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; node scripts/generate_chrome_store_assets.mjs\"",
-    "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e": "powershell -Command \"Remove-Item Env:MANIFEST_FILE -ErrorAction SilentlyContinue; Remove-Item Env:EXTENSION_BUILD_TARGET -ErrorAction SilentlyContinue; Remove-Item Env:EXTENSION_FORCE_BACKEND_TARGET -ErrorAction SilentlyContinue; Remove-Item Env:BACKEND_BASE_URL_PROD -ErrorAction SilentlyContinue; Remove-Item Env:PREMIUM_DASHBOARD_URL_PROD -ErrorAction SilentlyContinue; Remove-Item Env:BACKEND_BASE_URL -ErrorAction SilentlyContinue; Remove-Item Env:PREMIUM_DASHBOARD_URL -ErrorAction SilentlyContinue; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; playwright test\"",
+    "test:e2e:headed": "powershell -Command \"Remove-Item Env:MANIFEST_FILE -ErrorAction SilentlyContinue; Remove-Item Env:EXTENSION_BUILD_TARGET -ErrorAction SilentlyContinue; Remove-Item Env:EXTENSION_FORCE_BACKEND_TARGET -ErrorAction SilentlyContinue; Remove-Item Env:BACKEND_BASE_URL_PROD -ErrorAction SilentlyContinue; Remove-Item Env:PREMIUM_DASHBOARD_URL_PROD -ErrorAction SilentlyContinue; Remove-Item Env:BACKEND_BASE_URL -ErrorAction SilentlyContinue; Remove-Item Env:PREMIUM_DASHBOARD_URL -ErrorAction SilentlyContinue; npm run build; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; playwright test --headed\""
   },
   "keywords": [],
   "author": "",
@@ -36,6 +36,7 @@
     "@playwright/test": "^1.59.1",
     "parcel": "^2.12.0",
     "postcss": "^8.4.38",
+    "process": "^0.11.10",
     "tailwindcss": "^3.4.4"
   }
 }

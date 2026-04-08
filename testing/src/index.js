@@ -1,20 +1,39 @@
 import './index.css';
+import { listExtensionTestScenarios } from '../mockScenarios';
 
 const root = document.getElementById('root');
 const popupBaseUrl = chrome.runtime.getURL('popup/public/index.html');
+const DEFAULT_SCENARIOS = listExtensionTestScenarios();
 
 const state = {
   build: null,
   testing: null,
   snapshot: null,
-  scenarios: [],
+  scenarios: DEFAULT_SCENARIOS,
   busyAction: null,
   frameKey: Date.now(),
   renderSignature: null,
+  lastError: null,
 };
 
-async function sendMessage(message) {
-  return chrome.runtime.sendMessage(message);
+const MESSAGE_TIMEOUT_MS = 10_000;
+
+async function sendMessage(message, { timeoutMs = MESSAGE_TIMEOUT_MS } = {}) {
+  let timeoutHandle = null;
+  try {
+    return await Promise.race([
+      chrome.runtime.sendMessage(message),
+      new Promise((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new Error(`Extension test message timed out after ${timeoutMs}ms: ${message?.type || 'unknown'}`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
 }
 
 function getPopupUrl() {
@@ -131,6 +150,7 @@ function render() {
       backendBaseUrl: runtime.backendBaseUrl || null,
       premiumDashboardUrl: runtime.premiumDashboardUrl || null,
     },
+    lastError: state.lastError,
   });
 
   if (state.renderSignature === renderSignature) {
@@ -168,6 +188,8 @@ function render() {
             This page drives the real extension popup in a fixture-backed mode so UI work can be validated before shipping.
             Live mode is restorable with one click.
           </p>
+
+          ${state.lastError ? `<div class="lab-copy" data-testid="lab-error">${escapeHtml(state.lastError)}</div>` : ''}
 
           <section class="lab-section">
             <h2 class="lab-section-title">Current State</h2>
@@ -301,6 +323,89 @@ function render() {
   bindEvents();
 }
 
+function syncRenderedState() {
+  if (!root) return;
+
+  const testing = state.testing || { supported: false, active: false };
+  const build = state.build || {};
+  const runtime = build.runtime || {};
+  const snapshot = state.snapshot || null;
+  const activeScenarioId = testing.scenarioId || null;
+  const currentScenario = state.scenarios.find((scenario) => scenario.id === activeScenarioId) || null;
+  const categoryTotals = snapshot?.categoryTotals || {};
+  const categoryBreakdownMarkup = ['applied', 'interviewed', 'offers', 'rejected', 'irrelevant']
+    .map((key) => `
+      <span class="lab-chip" data-testid="state-count-${escapeHtml(key)}">
+        ${escapeHtml(key)}: ${escapeHtml(categoryTotals[key] ?? 0)}
+      </span>
+    `)
+    .join('');
+  const scenarioDescription = currentScenario?.description || 'Live extension popup rendered inside the test harness.';
+
+  const updateText = (selector, value) => {
+    const element = root.querySelector(selector);
+    if (element) {
+      element.textContent = value;
+    }
+  };
+
+  updateText('[data-testid="testing-mode"]', formatTestingStatus(testing));
+  updateText('[data-testid="state-auth"]', snapshot?.auth?.isLoggedIn ? 'Signed in' : 'Signed out');
+  updateText('[data-testid="state-account"]', snapshot?.auth?.email || 'Unavailable');
+  updateText('[data-testid="state-plan"]', snapshot?.auth?.isLoggedIn ? formatPlanLabel(snapshot?.userPlan) : 'N/A');
+  updateText('[data-testid="state-quota"]', formatQuotaSummary(snapshot));
+  updateText('[data-testid="state-sync"]', formatSyncSummary(snapshot));
+  updateText('[data-testid="state-relevant"]', String(Number(categoryTotals.relevant || 0)));
+  updateText('.lab-preview-copy', scenarioDescription);
+  updateText('.lab-status-pill span:last-child', testing.active ? 'Fixture active' : 'Live mode');
+
+  const chipRow = root.querySelector('.lab-chip-row');
+  if (chipRow) {
+    chipRow.innerHTML = categoryBreakdownMarkup;
+  }
+
+  const errorEl = root.querySelector('[data-testid="lab-error"]');
+  if (state.lastError) {
+    if (errorEl) {
+      errorEl.textContent = state.lastError;
+    }
+  } else if (errorEl) {
+    errorEl.remove();
+  }
+
+  root.querySelectorAll('[data-action="activate-scenario"]').forEach((button) => {
+    const scenarioId = button.getAttribute('data-scenario-id');
+    const isActive = scenarioId === activeScenarioId;
+    button.classList.toggle('is-active', isActive);
+    button.disabled = Boolean(state.busyAction);
+
+    const header = button.querySelector('.lab-scenario-header');
+    const existingBadge = button.querySelector('.lab-scenario-badge');
+    if (isActive && !existingBadge && header) {
+      const badge = document.createElement('span');
+      badge.className = 'lab-scenario-badge';
+      badge.textContent = 'Active';
+      header.appendChild(badge);
+    } else if (!isActive && existingBadge) {
+      existingBadge.remove();
+    }
+  });
+
+  root.querySelectorAll('[data-action]').forEach((button) => {
+    button.disabled = Boolean(state.busyAction);
+  });
+
+  const backendValue = root.querySelectorAll('.lab-meta-value')[1];
+  if (backendValue) {
+    backendValue.textContent = runtime.backendBaseUrl || 'Unknown';
+  }
+
+  const premiumValue = root.querySelectorAll('.lab-meta-value')[2];
+  if (premiumValue) {
+    premiumValue.textContent = runtime.premiumDashboardUrl || 'Not configured';
+  }
+}
+
 function bindEvents() {
   root.querySelectorAll('[data-action="activate-scenario"]').forEach((button) => {
     button.addEventListener('click', async () => {
@@ -312,15 +417,27 @@ function bindEvents() {
         const response = await sendMessage({
           type: 'ACTIVATE_EXTENSION_TEST_SCENARIO',
           scenarioId,
-        });
+        }, { timeoutMs: 30_000 });
         if (!response?.success) {
           throw new Error(response?.error || 'Failed to activate the scenario.');
         }
+        state.lastError = null;
+        const activatedScenario = DEFAULT_SCENARIOS.find((scenario) => scenario.id === scenarioId);
+        state.testing = response.testing || {
+          supported: true,
+          active: true,
+          scenarioId,
+          label: activatedScenario?.label || scenarioId,
+          description: activatedScenario?.description || null,
+        };
         state.frameKey = Date.now();
-        await refreshState();
+        await refreshState().catch((error) => {
+          console.warn('[extension-lab] refresh after activation failed', error);
+        });
+        state.testing = response.testing || state.testing;
       } catch (error) {
         console.error('[extension-lab] activate failed', error);
-        alert(error.message || 'Failed to activate the selected scenario.');
+        state.lastError = error.message || 'Failed to activate the selected scenario.';
       } finally {
         state.busyAction = null;
         render();
@@ -341,15 +458,19 @@ function bindEvents() {
     state.busyAction = 'live-mode';
     render();
     try {
-      const response = await sendMessage({ type: 'DEACTIVATE_EXTENSION_TEST_MODE' });
+      const response = await sendMessage({ type: 'DEACTIVATE_EXTENSION_TEST_MODE' }, { timeoutMs: 30_000 });
       if (!response?.success) {
         throw new Error(response?.error || 'Failed to restore live mode.');
       }
+      state.lastError = null;
+      state.testing = response.testing || state.testing;
       state.frameKey = Date.now();
-      await refreshState();
+      await refreshState().catch((error) => {
+        console.warn('[extension-lab] refresh after live mode restore failed', error);
+      });
     } catch (error) {
       console.error('[extension-lab] live mode restore failed', error);
-      alert(error.message || 'Failed to restore live mode.');
+      state.lastError = error.message || 'Failed to restore live mode.';
     } finally {
       state.busyAction = null;
       render();
@@ -369,20 +490,50 @@ function bindEvents() {
 }
 
 async function refreshState() {
-  const [buildInfo, testingInfo] = await Promise.all([
+  const [buildInfoResult, testingInfoResult] = await Promise.allSettled([
     sendMessage({ type: 'GET_BUILD_INFO' }),
     sendMessage({ type: 'GET_EXTENSION_TEST_STATE' }),
   ]);
 
-  state.build = buildInfo || null;
-  state.testing = testingInfo?.testing || buildInfo?.testing || null;
-  state.snapshot = testingInfo?.snapshot || null;
-  state.scenarios = testingInfo?.scenarios || [];
+  const buildInfo = buildInfoResult.status === 'fulfilled' ? buildInfoResult.value : null;
+  const testingInfo = testingInfoResult.status === 'fulfilled' ? testingInfoResult.value : null;
+
+  if (buildInfoResult.status === 'rejected') {
+    console.warn('[extension-lab] GET_BUILD_INFO failed', buildInfoResult.reason);
+  }
+  if (testingInfoResult.status === 'rejected') {
+    console.warn('[extension-lab] GET_EXTENSION_TEST_STATE failed', testingInfoResult.reason);
+  }
+
+  const refreshErrors = [];
+  if (buildInfoResult.status === 'rejected') {
+    refreshErrors.push(buildInfoResult.reason?.message || 'GET_BUILD_INFO failed');
+  } else if (buildInfo && buildInfo.success === false) {
+    refreshErrors.push(buildInfo.error || 'GET_BUILD_INFO failed');
+  }
+
+  if (testingInfoResult.status === 'rejected') {
+    refreshErrors.push(testingInfoResult.reason?.message || 'GET_EXTENSION_TEST_STATE failed');
+  } else if (testingInfo && testingInfo.success === false) {
+    refreshErrors.push(testingInfo.error || 'GET_EXTENSION_TEST_STATE failed');
+  }
+
+  state.build = buildInfo || state.build || {
+    success: false,
+    runtime: {},
+    testing: { supported: true, active: false },
+  };
+  state.testing = testingInfo?.testing || state.testing || buildInfo?.testing || { supported: true, active: false };
+  state.snapshot = testingInfo?.snapshot || state.snapshot || null;
+  state.scenarios = testingInfo?.scenarios?.length ? testingInfo.scenarios : state.scenarios || DEFAULT_SCENARIOS;
+  state.lastError = refreshErrors.length > 0 ? refreshErrors[0] : null;
 }
 
 async function init() {
   try {
+    render();
     await refreshState();
+    state.lastError = null;
     render();
   } catch (error) {
     console.error('[extension-lab] failed to initialize', error);
@@ -394,16 +545,16 @@ async function init() {
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type !== 'EXTENSION_TEST_STATE_CHANGED') return;
-  refreshState().then(() => render()).catch(() => {});
+  refreshState().then(() => syncRenderedState()).catch(() => {});
 });
 
 chrome.storage.onChanged.addListener((_, areaName) => {
   if (areaName !== 'local') return;
-  refreshState().then(() => render()).catch(() => {});
+  refreshState().then(() => syncRenderedState()).catch(() => {});
 });
 
 init();
 
 setInterval(() => {
-  refreshState().then(() => render()).catch(() => {});
+  refreshState().then(() => syncRenderedState()).catch(() => {});
 }, 1500);

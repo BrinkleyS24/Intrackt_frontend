@@ -64,14 +64,12 @@ export const useAuth = (onPaymentStatusChange) => {
 
       // Fallback: if sync status fetch fails, at least keep quota populated from storage.
       const stored = await chrome.storage.local.get(['quotaData']);
-      setQuotaData(stored.quotaData || null);
-      setSyncStatus(null);
+      setQuotaData((prev) => stored.quotaData || prev || null);
       return { success: false, quota: stored.quotaData || null, sync: null, error: response?.error || null };
     } catch (error) {
       console.error("❌ Applendium: Error fetching quota data:", error);
       const stored = await chrome.storage.local.get(['quotaData']).catch(() => ({}));
-      setQuotaData(stored.quotaData || null);
-      setSyncStatus(null);
+      setQuotaData((prev) => stored.quotaData || prev || null);
       return { success: false, quota: stored.quotaData || null, sync: null, error: error.message };
     }
   }, [userEmail, userId]); // Depend on userEmail and userId
