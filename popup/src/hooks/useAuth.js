@@ -10,9 +10,19 @@ import { useState, useEffect, useCallback } from 'react';
 import { sendMessageToBackground } from '../utils/chromeMessaging'; // Centralized messaging
 import { fetchUserPlanFromService } from '../services/authService';
 import { showNotification } from '../components/Notification';
+import { IS_PRODUCTION_EXTENSION_BUILD } from '../utils/constants';
 // REMOVED: import { onAuthStateChanged } from 'firebase/auth'; // No longer needed here
 
 // The 'auth' instance is no longer passed as a parameter.
+
+const authLogger = {
+  info: (...args) => {
+    if (IS_PRODUCTION_EXTENSION_BUILD) return;
+    try {
+      console.log(...args);
+    } catch (_) {}
+  },
+};
 
 export const useAuth = (onPaymentStatusChange) => {
   const [userEmail, setUserEmail] = useState(null);
@@ -120,7 +130,7 @@ export const useAuth = (onPaymentStatusChange) => {
     const handleRuntimeMessage = (message) => {
       if (message?.type !== 'AUTH_FLOW_STAGE') return;
       const suffix = message?.error ? ` - ${message.error}` : '';
-      console.log(`[popup][auth-stage] ${message.stage}${suffix}`, message);
+      authLogger.info(`[popup][auth-stage] ${message.stage}${suffix}`, message);
     };
 
     chrome.runtime.onMessage.addListener(handleRuntimeMessage);
@@ -132,12 +142,12 @@ export const useAuth = (onPaymentStatusChange) => {
   const loginGoogleOAuth = useCallback(async () => {
     setLoadingAuth(true); // Start loading when login initiated
     try {
-      console.log('[popup][auth] Starting Google OAuth login...');
+      authLogger.info('[popup][auth] Starting Google OAuth login...');
       const response = await sendMessageToBackground({ type: 'LOGIN_GOOGLE_OAUTH' });
       if (response.success) {
         // Prefer immediate UI update instead of waiting for storage change events.
         await loadCurrentUserStateFromStorage();
-        console.log('[popup][auth] Google OAuth login completed successfully.');
+        authLogger.info('[popup][auth] Google OAuth login completed successfully.');
         setLoadingAuth(false);
       } else {
         console.error("❌ Applendium: Error during Google OAuth login process:", response.error);

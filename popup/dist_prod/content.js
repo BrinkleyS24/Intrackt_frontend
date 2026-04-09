@@ -1,17 +1,28 @@
 /**
  * @file content.js
  * @description Bridge between the Applendium web app and the extension.
- * Injected on localhost pages so the web app can authenticate via the extension.
+ * Injected on Applendium app routes so the web app can authenticate via the extension.
  */
 
-console.log("Applendium Content Script loaded.");
+const IS_PRODUCTION_EXTENSION_BUILD = process.env.EXTENSION_BUILD_TARGET === "production";
+const contentLogger = {
+	info: (...args) => {
+		if (IS_PRODUCTION_EXTENSION_BUILD) return;
+		try { console.log(...args); } catch (_) {}
+	},
+	warn: (...args) => {
+		try { console.warn(...args); } catch (_) {}
+	},
+};
+
+contentLogger.info("Applendium Content Script loaded.");
 
 function isAllowedBridgePath(pathname) {
 	return pathname === "/app" || pathname.startsWith("/app/");
 }
 
 if (!isAllowedBridgePath(window.location.pathname || "")) {
-	console.log("[Applendium Content] Bridge disabled on non-app route.");
+	contentLogger.info("[Applendium Content] Bridge disabled on non-app route.");
 }
 
 try {
@@ -59,10 +70,10 @@ window.addEventListener("message", (event) => {
 	const data = event.data || {};
 	if (data.type !== BRIDGE_REQUEST || !data.nonce) return;
 
-	console.log("[Applendium Content] Received bridge auth request, forwarding to background...");
+	contentLogger.info("[Applendium Content] Received bridge auth request, forwarding to background...");
 
 	if (!chrome?.runtime?.sendMessage) {
-		console.warn("[Applendium Content] chrome.runtime.sendMessage unavailable (extension context invalidated?)");
+		contentLogger.warn("[Applendium Content] chrome.runtime.sendMessage unavailable (extension context invalidated?)");
 		window.postMessage(
 			{ type: BRIDGE_RESPONSE, nonce: data.nonce, success: false, error: "Extension bridge unavailable." },
 			window.location.origin
@@ -72,14 +83,14 @@ window.addEventListener("message", (event) => {
 
 	chrome.runtime.sendMessage({ type: "GET_EXTENSION_WEB_AUTH" }, (response) => {
 		if (chrome.runtime.lastError) {
-			console.warn("[Applendium Content] Runtime error:", chrome.runtime.lastError.message);
+			contentLogger.warn("[Applendium Content] Runtime error:", chrome.runtime.lastError.message);
 			window.postMessage(
 				{ type: BRIDGE_RESPONSE, nonce: data.nonce, success: false, error: chrome.runtime.lastError.message },
 				window.location.origin
 			);
 			return;
 		}
-		console.log("[Applendium Content] Background responded:", response?.success ? "success" : response?.error);
+		contentLogger.info("[Applendium Content] Background responded:", response?.success ? "success" : response?.error);
 		const payload = {
 			type: BRIDGE_RESPONSE,
 			nonce: data.nonce,

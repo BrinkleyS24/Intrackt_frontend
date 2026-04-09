@@ -44,6 +44,7 @@ const APP_LINK_BACKFILL_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const BACKGROUND_DIAGNOSTICS_STORAGE_KEY = 'applendiumBackgroundDiagnosticsV1';
 const MAX_BACKGROUND_DIAGNOSTICS = 20;
 const IS_PRODUCTION_EXTENSION_BUILD = process.env.EXTENSION_BUILD_TARGET === 'production';
+const ENABLE_VERBOSE_EXTENSION_LOGS = !IS_PRODUCTION_EXTENSION_BUILD || process.env.EXTENSION_VERBOSE_LOGS === 'true';
 const FORCED_BACKEND_TARGET = (process.env.EXTENSION_FORCE_BACKEND_TARGET || '').toString().trim().toLowerCase();
 const ENABLE_APPLICATION_LINK_BACKFILL = process.env.EXTENSION_ENABLE_APP_LINK_BACKFILL === 'true';
 const FALLBACK_BACKEND_BASE_URL = 'https://gmail-tracker-backend-674309673051.us-central1.run.app';
@@ -83,6 +84,16 @@ const EXTENSION_TEST_MUTABLE_STORAGE_KEYS = [
   'categoryTotals',
   EMAILS_CACHE_META_KEY,
 ];
+
+if (!ENABLE_VERBOSE_EXTENSION_LOGS && globalThis?.console) {
+  try {
+    globalThis.console.log = () => {};
+    globalThis.console.info = () => {};
+    globalThis.console.debug = () => {};
+  } catch (_) {
+    // Ignore if the runtime prevents console mutation.
+  }
+}
 
 // In MV3, `chrome.runtime.sendMessage()` returns a Promise if no callback is provided.
 // If the popup is closed there may be no listeners, which can otherwise cause
@@ -1139,6 +1150,7 @@ function capitalizeFirst(s) {
 // Minimal background logger to centralize and tag messages; easy to disable later
 const bgLogger = {
   info: (...args) => {
+    if (!ENABLE_VERBOSE_EXTENSION_LOGS) return;
     try { console.log('[bg][info]', ...args); } catch (_) {}
   },
   warn: (...args) => {
