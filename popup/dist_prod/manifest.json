@@ -60,5 +60,6 @@
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://gmail-tracker-backend-674309673051.us-central1.run.app https://*.googleapis.com https://www.googleapis.com https://accounts.google.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com;"
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1csQnsnz6aRFTc9EE8893Ymvt4XnXFucsFLdB1SfVTTgqDQwUtngreWGcCFe+Vww45h8zum0yzpvX84DKvqKl8lRSCOBfdD3xu6UrQg2O2mcnfsBy3HG9QipF+ht7raGE1YVqcII1egenk+FI77WY9GgI5IwxYSJEMFYhwm00Yb1cRO+SkZX0JJ71jCLuYPsotWHLil1imUbD44Ut6RNsGBihwo21Wk6+GensUvihCDFTPuF6g6lBf8uIfRJT4dxP7YlWgffo1AIFH3DYui7VLUE9W7ZWNY+FYFgu3jujK+cqS0lb057qOOop62DckX5jKexkZ2gtUiVTqWZaM2f5QIDAQAB"
 }
