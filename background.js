@@ -1551,6 +1551,7 @@ async function installExtensionTestScenario(scenarioId) {
     description: scenario.description,
     activatedAt: new Date().toISOString(),
     quotaLocked: scenario.lockQuota !== false,
+    simulatedFailures: scenario.simulatedFailures || null,
     sync: {
       inProgress: Boolean(scenario.sync?.inProgress),
       startedAt: scenario.sync?.startedAt || null,
@@ -1862,6 +1863,16 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
 
     case 'REFRESH_STORED_EMAILS_CACHE':
     case 'FETCH_NEW_EMAILS': {
+      const refreshFailure = testingState.state?.simulatedFailures?.refresh || null;
+      if (refreshFailure) {
+        sendResponse({
+          success: false,
+          error: refreshFailure.error || 'Mock refresh failure.',
+          testing: buildExtensionTestingStatus(testingState.state),
+        });
+        return true;
+      }
+
       const nextTestingState = await touchExtensionTestingSyncState();
       const stored = await chrome.storage.local.get([
         'quotaData',
@@ -2339,13 +2350,17 @@ function startPostLoginBackgroundWork(user) {
     let shouldFull = true;
     try {
       const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
-      const meta = await chrome.storage.local.get([EMAILS_CACHE_META_KEY]).catch(() => ({}));
+      const meta = await chrome.storage.local.get([EMAILS_CACHE_META_KEY]).catch((error) => {
+        bgLogger.warn('Failed to read cache metadata after auth state change; defaulting sync decision to backend status only:', error?.message || error);
+        return {};
+      });
       const lastRaw = meta?.[EMAILS_CACHE_META_KEY]?.lastCompletedAt || status?.sync?.lastSyncAt;
       const last = lastRaw ? new Date(lastRaw) : null;
       if (last && (Date.now() - last.getTime()) < 24 * 60 * 60 * 1000) {
         shouldFull = false;
       }
-    } catch (_) {
+    } catch (error) {
+      bgLogger.warn('Failed to inspect prior sync state after auth state change; forcing a full sync:', error?.message || error);
       shouldFull = true;
     }
 
@@ -2383,7 +2398,8 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
         irrelevant: prev.irrelevantEmails || [],
       };
       previousCacheMeta = prev[EMAILS_CACHE_META_KEY] || null;
-    } catch (_) {
+    } catch (error) {
+      bgLogger.warn('Failed to snapshot stored email cache before refresh; continuing without cache diff context:', error?.message || error);
       previousCache = null;
       previousCacheMeta = null;
     }
@@ -2777,7 +2793,8 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         rejected: prev.rejectedEmails || [],
       };
       previousCache.meta = prev[EMAILS_CACHE_META_KEY] || null;
-    } catch (_) {
+    } catch (error) {
+      bgLogger.warn('Failed to snapshot stored email cache before sync; continuing without pre-sync cache context:', error?.message || error);
       previousCache = null;
     }
 
@@ -4695,13 +4712,17 @@ setPersistence(auth, indexedDBLocalPersistence)
 	            let shouldFull = true;
 	            try {
 	              const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
-	              const meta = await chrome.storage.local.get([EMAILS_CACHE_META_KEY]).catch(() => ({}));
+	              const meta = await chrome.storage.local.get([EMAILS_CACHE_META_KEY]).catch((error) => {
+	                bgLogger.warn('Failed to read cache metadata after auth state change; defaulting sync decision to backend status only:', error?.message || error);
+	                return {};
+	              });
 	              const lastRaw = meta?.[EMAILS_CACHE_META_KEY]?.lastCompletedAt || status?.sync?.lastSyncAt;
 	              const last = lastRaw ? new Date(lastRaw) : null;
 	              if (last && (Date.now() - last.getTime()) < 24 * 60 * 60 * 1000) {
 	                shouldFull = false;
 	              }
-	            } catch (_) {
+	            } catch (error) {
+	              bgLogger.warn('Failed to inspect prior sync state after auth state change; forcing a full sync:', error?.message || error);
 	              shouldFull = true;
 	            }
 

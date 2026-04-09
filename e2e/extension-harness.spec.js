@@ -138,6 +138,30 @@ test('renders the stuck sync warning state', async ({}, testInfo) => {
   await page.close();
 });
 
+test('shows a visible refresh error and keeps the inbox usable when refresh fails', async ({}, testInfo) => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'refresh-failure');
+  const northstarThread = frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Northstar Labs' }).first();
+
+  await expect(page.getByTestId('state-auth')).toContainText('Signed in');
+  await expect(frame.getByTestId('refresh-button')).toBeVisible();
+  await expect(northstarThread).toBeVisible();
+
+  await frame.getByTestId('refresh-button').click();
+
+  const failureToast = frame.getByRole('status');
+  await expect(failureToast).toContainText('Failed to sync emails: Mock network timeout while refreshing tracked emails.');
+  await expect(frame.getByTestId('refresh-button')).toBeVisible();
+  await expect(northstarThread).toBeVisible();
+
+  await page.screenshot({
+    path: testInfo.outputPath('lab-refresh-failure.png'),
+    fullPage: true,
+  });
+
+  await page.close();
+});
+
 test('renders premium footer behavior without a live dashboard promise', async ({}, testInfo) => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'premium-rich');

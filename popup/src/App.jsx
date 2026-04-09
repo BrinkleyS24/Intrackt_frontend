@@ -301,7 +301,10 @@ function App() {
   const headerQuotaLabel = showHeaderQuotaPill ? `${Math.min(quota.used, quota.total)}/${quota.total}` : null;
   const syncStatusLabel = useMemo(() => {
     if (isSyncStuck) return 'Sync may be stuck';
-    if (isSyncActive) return 'Syncing in background...';
+    if (isSyncActive) {
+      const activeSyncMessage = (syncStatus?.message || '').toString().trim();
+      return activeSyncMessage || 'Syncing in background...';
+    }
 
     const rawLastSyncAt = syncStatus?.lastSyncAt || syncStatus?.lastCompletedAt;
     if (!rawLastSyncAt) return 'No sync in progress';
@@ -323,7 +326,7 @@ function App() {
       minute: '2-digit',
     });
     return `Last synced ${formatter.format(lastSyncAt)}`;
-  }, [isSyncActive, isSyncStuck, syncStatus?.lastSyncAt, syncStatus?.lastCompletedAt]);
+  }, [isSyncActive, isSyncStuck, syncStatus?.message, syncStatus?.lastSyncAt, syncStatus?.lastCompletedAt]);
 
   useEffect(() => {
     if (!selectedEmail?.id) return;
@@ -418,8 +421,9 @@ function App() {
         appLogger.info('Auth ready, initiating authoritative data fetch.');
         try {
           await fetchStoredEmails();
-          fetchQuotaData();
-        } catch (_) {
+          await fetchQuotaData();
+        } catch (error) {
+          appLogger.error('Initial popup data fetch failed:', error?.message || error);
           showNotification('Failed to load initial data.', 'error');
         }
       } else {
@@ -488,7 +492,10 @@ function App() {
   const handleRefresh = useCallback(async () => {
     if (!userEmail || !userId) return;
     try {
-      await fetchNewEmails(true);
+      const syncResult = await fetchNewEmails(false);
+      if (!syncResult?.success) {
+        return;
+      }
       showNotification('Emails refreshed!', 'success');
       await fetchStoredEmails();
       await fetchQuotaData();

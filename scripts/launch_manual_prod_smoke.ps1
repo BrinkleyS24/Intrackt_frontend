@@ -105,7 +105,8 @@ Write-Host '  4. Confirm the popup opens signed out.' -ForegroundColor Yellow
 Write-Host '  5. Click Login with Google and complete Gmail readonly consent.' -ForegroundColor Yellow
 Write-Host '  6. Confirm the popup reaches the signed-in state.' -ForegroundColor Yellow
 Write-Host '  7. Click Refresh and verify no failure message appears.' -ForegroundColor Yellow
-Write-Host '  8. Sign out and reopen the popup from the toolbar.' -ForegroundColor Yellow
+Write-Host '  8. Simulate offline/degraded network, click Refresh, and confirm a visible failure appears while cached emails remain visible.' -ForegroundColor Yellow
+Write-Host '  9. Restore the network, confirm Refresh recovers, then sign out and reopen the popup from the toolbar.' -ForegroundColor Yellow
 Write-Host ''
 Write-Host 'Note: Chrome stable no longer honors --load-extension, so Load unpacked is the supported smoke path here.' -ForegroundColor Yellow
 Write-Host 'Note: the direct popup URL is printed above for debugging only. Do not use it as the startup page.' -ForegroundColor Yellow

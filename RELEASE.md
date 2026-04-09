@@ -42,6 +42,7 @@ npm run test:e2e
 4. Run both smoke passes:
 
 ```powershell
+npm run test:e2e
 npm run smoke:prod
 npm run smoke:prod:chrome
 ```
@@ -50,8 +51,18 @@ npm run smoke:prod:chrome
 - free users should see `Premium coming soon`, not `Upgrade to Premium`
 - quota-limit users should open the premium holding page, not a live checkout flow
 - reply is not exposed in the email preview
+- a manual refresh under degraded/offline network should show a visible error and preserve cached emails
 
-6. Upload the zip created in:
+6. Confirm backend monitoring is still ready:
+
+```powershell
+cd backend\gmail-job-tracker-be
+npm run monitoring:status
+```
+
+If the notification channel still reports an indeterminate verification state, confirm the verification email manually in `applendium@gmail.com` before launch.
+
+7. Upload the zip created in:
 
 ```text
 frontend/job_sort/applendium-extension-v<version>.zip

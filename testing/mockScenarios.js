@@ -473,6 +473,54 @@ const SCENARIOS = {
       },
     },
   },
+  'refresh-failure': {
+    id: 'refresh-failure',
+    label: 'Refresh Failure',
+    description: 'Signed-in state with cached tracked emails where a manual refresh fails and the popup must surface the error without losing state.',
+    auth: {
+      email: 'qa.refresh-failure@applendium.dev',
+      name: 'Refresh Failure QA',
+      userId: 'qa-refresh-failure-001',
+    },
+    userPlan: 'free',
+    quotaData: {
+      trackedApplications: 82,
+      totalProcessed: 82,
+      limit: 100,
+      relevantMessagesProcessed: 124,
+      limitReached: false,
+      limitBehavior: 'existing_continue_new_paused',
+      next_reset_date: '2026-04-30T00:00:00.000Z',
+    },
+    sync: {
+      inProgress: false,
+      lastSyncAt: '2026-04-05T12:45:00.000Z',
+      lastCompletedAt: '2026-04-05T12:45:00.000Z',
+      startedAt: null,
+    },
+    categorizedEmails: freeRichCategorizedEmails,
+    applications: {
+      9001: {
+        application: { id: 9001, current_status: 'applied', is_closed: false, user_closed_at: null },
+        lifecycle: [
+          { emailId: 102, category: 'applied', date: '2026-04-03T15:20:00.000Z', subject: 'Application received: Senior Product Manager' },
+          { emailId: 101, category: 'applied', date: '2026-04-05T12:40:00.000Z', subject: 'Application received: Senior Product Manager' },
+        ],
+      },
+      9003: {
+        application: { id: 9003, current_status: 'interviewed', is_closed: false, user_closed_at: null },
+        lifecycle: [
+          { emailId: 202, category: 'applied', date: '2026-04-02T12:00:00.000Z', subject: 'Acme AI interview logistics' },
+          { emailId: 201, category: 'interviewed', date: '2026-04-04T16:30:00.000Z', subject: 'Interview scheduled with Acme AI' },
+        ],
+      },
+    },
+    simulatedFailures: {
+      refresh: {
+        error: 'Mock network timeout while refreshing tracked emails.',
+      },
+    },
+  },
   'empty-inbox': {
     id: 'empty-inbox',
     label: 'Empty Inbox',

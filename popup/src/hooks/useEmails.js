@@ -382,7 +382,7 @@ export function useEmails(userEmail, userId, CONFIG) {
     syncPollWarningShownRef.current = false;
     try {
       const response = await fetchNewEmailsService(userEmail, userId, fullRefresh);
-      if (!isMountedRef.current || requestId !== syncRequestIdRef.current) return;
+      if (!isMountedRef.current || requestId !== syncRequestIdRef.current) return response;
       if (!response.success) {
         // Check for auth errors that require re-authentication
         if (response.errorCode === 'INVALID_GRANT' || response.requiresReauth) {
@@ -404,11 +404,15 @@ export function useEmails(userEmail, userId, CONFIG) {
         }
         setIsSyncing(false);
       }
+      return response;
     } catch (error) {
-      if (!isMountedRef.current || requestId !== syncRequestIdRef.current) return;
+      if (!isMountedRef.current || requestId !== syncRequestIdRef.current) {
+        return { success: false, error: error?.message || 'Unknown sync error' };
+      }
       console.error("❌ Applendium: Error requesting new email sync:", error);
       showNotification(`Failed to request email sync: ${error.message}`, "error");
       setIsSyncing(false);
+      return { success: false, error: error.message };
     }
   }, [userEmail, userId]);
 

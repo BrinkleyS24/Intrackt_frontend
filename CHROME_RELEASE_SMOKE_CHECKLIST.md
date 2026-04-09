@@ -6,6 +6,7 @@ Run this before every Chrome Store submission or resubmission.
 
 ```powershell
 npm run smoke:prod
+npm run test:e2e
 ```
 
 This command:
@@ -49,6 +50,37 @@ The smoke run is only a pass if all of these happen in one run:
 8. Sign out returns the popup to the logged-out state.
 9. Reopening the popup after logout still shows the logged-out state.
 10. The popup does not emit console errors or page errors during the run.
+
+## Required degraded-network pass
+
+Before submission, also prove the popup handles a refresh failure without feeling broken:
+
+1. Sign in successfully in the Chrome stable smoke profile.
+2. Open DevTools for the popup and simulate `Offline`, or temporarily disconnect the machine from the network.
+3. Click `Refresh`.
+4. Confirm the popup shows a visible failure toast instead of a false success state.
+5. Confirm the existing tracked-email list stays visible and usable.
+6. Restore the network.
+7. Click `Refresh` again and confirm the popup recovers cleanly.
+
+The lab suite now covers this path in development:
+
+```powershell
+npm run test:e2e
+```
+
+But the release gate still requires one real Chrome-stable degraded-network pass before store submission.
+
+## Monitoring preflight
+
+Before submission, confirm monitoring is still intact:
+
+```powershell
+cd backend\gmail-job-tracker-be
+npm run monitoring:status
+```
+
+If the email notification channel is present but still shows an indeterminate or unverified state, confirm the Google Cloud notification-channel verification email manually in `applendium@gmail.com` before launch.
 
 ## Failure handling
 
