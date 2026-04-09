@@ -54,7 +54,9 @@
         "http://localhost/*",
         "http://127.0.0.1/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
     }
   ],
@@ -62,4 +64,3 @@
     "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://gmail-tracker-backend-674309673051.us-central1.run.app http://localhost:3000 http://127.0.0.1:3000 https://www.googleapis.com https://accounts.google.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com;"
   }
 }
-

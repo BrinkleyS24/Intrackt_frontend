@@ -260,6 +260,15 @@ async function activateScenario(page, scenarioId) {
   return frame;
 }
 
+async function resetCaptureViewport(page) {
+  await page.evaluate(async () => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+}
+
 async function applyStoreCaptureLayout(page, slide) {
   const slideData = {
     kicker: slide.kicker,
@@ -509,6 +518,7 @@ async function generateAssets() {
       }
 
       await applyStoreCaptureLayout(page, slide);
+      await resetCaptureViewport(page);
       await page.screenshot({
         path: path.join(screenshotsDir, `${slide.id}.png`),
         type: 'png',
