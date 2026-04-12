@@ -306,18 +306,21 @@ function App() {
       return activeSyncMessage || 'Syncing in background...';
     }
 
-    const rawLastSyncAt = syncStatus?.lastSyncAt || syncStatus?.lastCompletedAt;
-    if (!rawLastSyncAt) return 'No sync in progress';
+    const rawLastRefreshAt = syncStatus?.lastCompletedAt || syncStatus?.lastSyncAt;
+    if (!rawLastRefreshAt) return 'No sync in progress';
 
-    const lastSyncAt = new Date(rawLastSyncAt);
-    if (Number.isNaN(lastSyncAt.getTime())) return 'No sync in progress';
+    const lastRefreshAt = new Date(rawLastRefreshAt);
+    if (Number.isNaN(lastRefreshAt.getTime())) return 'No sync in progress';
+
+    const usedLocalRefreshTimestamp = Boolean(syncStatus?.lastCompletedAt);
+    const labelPrefix = usedLocalRefreshTimestamp ? 'Last refreshed' : 'Last synced';
 
     const now = Date.now();
-    const diffMs = now - lastSyncAt.getTime();
+    const diffMs = now - lastRefreshAt.getTime();
     const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
 
-    if (diffMinutes < 1) return 'Last synced just now';
-    if (diffMinutes < 60) return `Last synced ${diffMinutes}m ago`;
+    if (diffMinutes < 1) return `${labelPrefix} just now`;
+    if (diffMinutes < 60) return `${labelPrefix} ${diffMinutes}m ago`;
 
     const formatter = new Intl.DateTimeFormat(undefined, {
       month: 'short',
@@ -325,7 +328,7 @@ function App() {
       hour: 'numeric',
       minute: '2-digit',
     });
-    return `Last synced ${formatter.format(lastSyncAt)}`;
+    return `${labelPrefix} ${formatter.format(lastRefreshAt)}`;
   }, [isSyncActive, isSyncStuck, syncStatus?.message, syncStatus?.lastSyncAt, syncStatus?.lastCompletedAt]);
 
   useEffect(() => {
