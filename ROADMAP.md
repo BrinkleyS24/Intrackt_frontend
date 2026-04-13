@@ -6,6 +6,11 @@
 - Launch the extension as a free-core product with premium clearly marked closed or coming soon.
 - Use the extension lab and Playwright suite as the release confidence layer for auth, free, premium-state messaging, quota, and sync states.
 
+## Premium Strategy Capture
+- Premium product direction is saved in `docs/PREMIUM_PRODUCT_STRATEGY.md`.
+- Use that document as the source of truth before beginning the first premium build pass.
+- First build should center on the premium command center: today's top actions, Apply Gate decisions, outcome memory, strategy alerts, and browser-based career coach flow.
+
 ## Reply Feature Status
 Reply is deferred for the Chrome Store launch:
 - The extension no longer requests the `gmail.send` OAuth scope.

@@ -7,8 +7,9 @@
 
 // Import necessary Firebase modules.
 import { initializeApp } from 'firebase/app';
-// CORRECTED: Added setPersistence, indexedDBLocalPersistence for auth state persistence
-import { getAuth, signInWithCustomToken, signOut, onAuthStateChanged, setPersistence, indexedDBLocalPersistence } from 'firebase/auth';
+// Use Firebase's MV3-safe Chrome extension entry point so the service worker
+// bundle does not include remote-hosted auth loaders such as reCAPTCHA.
+import { getAuth, signInWithCustomToken, signOut, onAuthStateChanged, setPersistence, indexedDBLocalPersistence } from 'firebase/auth/web-extension';
 
 import { firebaseConfig, firebaseConfigIsComplete } from './firebaseConfig';
 import {

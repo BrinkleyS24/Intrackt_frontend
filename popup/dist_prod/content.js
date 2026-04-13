@@ -18,7 +18,28 @@ const contentLogger = {
 contentLogger.info("Applendium Content Script loaded.");
 
 function isAllowedBridgePath(pathname) {
-	return pathname === "/app" || pathname.startsWith("/app/");
+	return (
+		pathname === "/app"
+		|| pathname.startsWith("/app/")
+		|| pathname === "/dashboard"
+		|| pathname.startsWith("/dashboard/")
+		|| pathname === "/upgrade"
+		|| pathname.startsWith("/upgrade/")
+		|| pathname === "/apply-gate"
+		|| pathname.startsWith("/apply-gate/")
+		|| pathname === "/fix-suggestions"
+		|| pathname.startsWith("/fix-suggestions/")
+		|| pathname === "/outcome-memory"
+		|| pathname.startsWith("/outcome-memory/")
+		|| pathname === "/strategy-alerts"
+		|| pathname.startsWith("/strategy-alerts/")
+		|| pathname === "/weekly-summary"
+		|| pathname.startsWith("/weekly-summary/")
+		|| pathname === "/settings"
+		|| pathname.startsWith("/settings/")
+		|| pathname === "/admin"
+		|| pathname.startsWith("/admin/")
+	);
 }
 
 if (!isAllowedBridgePath(window.location.pathname || "")) {
@@ -59,6 +80,8 @@ try {
 
 const BRIDGE_REQUEST = "APPLENDIUM_EXTENSION_TOKEN_REQUEST";
 const BRIDGE_RESPONSE = "APPLENDIUM_EXTENSION_TOKEN_RESPONSE";
+const LOGOUT_REQUEST = "APPLENDIUM_EXTENSION_LOGOUT_REQUEST";
+const LOGOUT_RESPONSE = "APPLENDIUM_EXTENSION_LOGOUT_RESPONSE";
 const AUTH_STATE_PUSH = "APPLENDIUM_AUTH_STATE_PUSH";
 
 // --- Respond to token requests from the web page ---
@@ -68,36 +91,46 @@ window.addEventListener("message", (event) => {
 	if (event.origin !== window.location.origin) return;
 
 	const data = event.data || {};
-	if (data.type !== BRIDGE_REQUEST || !data.nonce) return;
+	if ((data.type !== BRIDGE_REQUEST && data.type !== LOGOUT_REQUEST) || !data.nonce) return;
 
-	contentLogger.info("[Applendium Content] Received bridge auth request, forwarding to background...");
+	const responseType = data.type === LOGOUT_REQUEST ? LOGOUT_RESPONSE : BRIDGE_RESPONSE;
+	const backgroundMessage = data.type === LOGOUT_REQUEST ? { type: "LOGOUT" } : { type: "GET_EXTENSION_WEB_AUTH" };
+
+	contentLogger.info("[Applendium Content] Received bridge request, forwarding to background...");
 
 	if (!chrome?.runtime?.sendMessage) {
 		contentLogger.warn("[Applendium Content] chrome.runtime.sendMessage unavailable (extension context invalidated?)");
 		window.postMessage(
-			{ type: BRIDGE_RESPONSE, nonce: data.nonce, success: false, error: "Extension bridge unavailable." },
+			{ type: responseType, nonce: data.nonce, success: false, error: "Extension bridge unavailable." },
 			window.location.origin
 		);
 		return;
 	}
 
-	chrome.runtime.sendMessage({ type: "GET_EXTENSION_WEB_AUTH" }, (response) => {
+	chrome.runtime.sendMessage(backgroundMessage, (response) => {
 		if (chrome.runtime.lastError) {
 			contentLogger.warn("[Applendium Content] Runtime error:", chrome.runtime.lastError.message);
 			window.postMessage(
-				{ type: BRIDGE_RESPONSE, nonce: data.nonce, success: false, error: chrome.runtime.lastError.message },
+				{ type: responseType, nonce: data.nonce, success: false, error: chrome.runtime.lastError.message },
 				window.location.origin
 			);
 			return;
 		}
 		contentLogger.info("[Applendium Content] Background responded:", response?.success ? "success" : response?.error);
-		const payload = {
-			type: BRIDGE_RESPONSE,
-			nonce: data.nonce,
-			success: Boolean(response?.success),
-			firebaseToken: response?.firebaseToken || null,
-			error: response?.error || (response?.success ? null : "Failed to get token"),
-		};
+		const payload = data.type === LOGOUT_REQUEST
+			? {
+				type: responseType,
+				nonce: data.nonce,
+				success: Boolean(response?.success),
+				error: response?.error || (response?.success ? null : "Failed to log out."),
+			}
+			: {
+				type: responseType,
+				nonce: data.nonce,
+				success: Boolean(response?.success),
+				firebaseToken: response?.firebaseToken || null,
+				error: response?.error || (response?.success ? null : "Failed to get token"),
+			};
 		window.postMessage(payload, window.location.origin);
 	});
 });

@@ -38,6 +38,40 @@ function assertFileExists(filePath, label) {
   assert(fs.existsSync(filePath), `${label} is missing.`);
 }
 
+function collectFiles(dirPath, extensions, files = []) {
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    const entryPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      collectFiles(entryPath, extensions, files);
+    } else if (extensions.has(path.extname(entry.name).toLowerCase())) {
+      files.push(entryPath);
+    }
+  }
+  return files;
+}
+
+const remoteHostedCodePatterns = [
+  /https:\/\/apis\.google\.com\/js\//i,
+  /https:\/\/www\.google\.com\/recaptcha\//i,
+  /https:\/\/www\.gstatic\.com\/recaptcha\//i,
+  /https:\/\/www\.gstatic\.com\/firebasejs\//i,
+  /<script\b[^>]*\bsrc=["']https?:\/\//i,
+  /\bimportScripts\s*\(\s*["']https?:\/\//i,
+  /\bimport\s*\(\s*["']https?:\/\//i,
+];
+
+function assertNoRemoteHostedCodeReferences(bundleDir) {
+  for (const filePath of collectFiles(bundleDir, new Set(['.js', '.html']))) {
+    const contents = fs.readFileSync(filePath, 'utf8');
+    for (const pattern of remoteHostedCodePatterns) {
+      assert(
+        !pattern.test(contents),
+        `Potential remote-hosted code reference found in ${path.relative(projectRoot, filePath)} matching ${pattern}.`
+      );
+    }
+  }
+}
+
 const packageJson = readJson('package.json');
 const devManifest = readJson('manifest.json');
 const prodManifest = readJson('manifest.prod.json');
@@ -60,6 +94,7 @@ assert(builtManifest.version === prodManifest.version, `Built manifest version (
 assertNoLocalhostEntries(builtManifest.host_permissions, 'built manifest host_permissions');
 assertNoLocalhostEntries((builtManifest.content_scripts || []).flatMap((item) => item.matches || []), 'built manifest content_scripts');
 assertNoLocalhostInCsp(builtManifest.content_security_policy?.extension_pages || '', 'built manifest CSP');
+assertNoRemoteHostedCodeReferences(distDir);
 
 console.log('Production extension bundle verified successfully.');
 console.log(`Version: ${builtManifest.version}`);
