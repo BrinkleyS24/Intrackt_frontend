@@ -12,7 +12,7 @@ import { getPremiumDashboardUrl } from '../utils/runtimeConfig';
  */
 function getCategoryColor(category) {
   const colors = {
-    applied: 'border-l-4 border-blue-500',
+    applied: 'border-l-4 border-gray-400',
     interviewed: 'border-l-4 border-yellow-500',
     offers: 'border-l-4 border-green-500',
     rejected: 'border-l-4 border-red-500',
@@ -23,7 +23,7 @@ function getCategoryColor(category) {
 
 function getCategoryBadgeColor(category) {
   const colors = {
-    applied: 'bg-blue-100 text-blue-800',
+    applied: 'bg-gray-100 text-slate-700',
     interviewed: 'bg-yellow-100 text-yellow-800',
     offers: 'bg-green-100 text-green-800',
     rejected: 'bg-red-100 text-red-800',

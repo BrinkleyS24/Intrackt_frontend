@@ -2,18 +2,18 @@
 
 ## Verified Locally
 
-- Production manifest version is `1.0.0`.
+- Production manifest version is `1.0.2`.
 - Production OAuth scope is read-only Gmail only.
 - `gmail.send` is absent from the production manifest and backend auth route.
 - `npm run build` passes for the extension.
 - `npm run test:e2e` passes for the extension harness.
-- `npm run release:prod` passes and produces `applendium-extension-v1.0.0.zip`.
+- `npm run release:prod` passes and produces `applendium-extension-v1.0.2.zip`.
 - Store asset generator is wired through `npm run assets:store`.
 
 ## Submission Assets To Upload
 
 - Zip package:
-  - `applendium-extension-v1.0.0.zip`
+  - `applendium-extension-v1.0.2.zip`
 - Screenshots:
   - `chrome-store/assets/screenshots/01-login.png`
   - `chrome-store/assets/screenshots/02-overview.png`
@@ -27,6 +27,9 @@
   - `chrome-store/LISTING_COPY.md`
 - Reviewer notes:
   - `chrome-store/REVIEWER_NOTES.md`
+- Reviewer account setup:
+  - `chrome-store/REVIEWER_ACCOUNT_SETUP.md`
+  - `chrome-store/reviewer-seed-emails.json`
 - Privacy declaration reference:
   - `chrome-store/PRIVACY_DECLARATIONS.md`
 
@@ -47,6 +50,8 @@
   - public privacy policy
 - Google OAuth / Gmail scope verification status is clear for this app.
 - Reviewer-facing contact email is monitored during review.
+- Reviewer Gmail account is seeded with current job-application emails.
+- Chrome Web Store review notes include the reviewer Gmail credentials and exact refresh/wait instructions.
 
 ## Do Not Claim In The Listing
 

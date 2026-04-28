@@ -30,7 +30,7 @@ const stripHtml = (html) => {
 const STATUS_STYLES = {
   applied: {
     badgeClassName: 'status-badge status-applied',
-    pillClassName: 'bg-success/10 text-success border border-success/20',
+    pillClassName: 'bg-secondary text-primary border border-border',
   },
   interviewed: {
     badgeClassName: 'status-badge status-interviewed',
@@ -43,6 +43,10 @@ const STATUS_STYLES = {
   rejected: {
     badgeClassName: 'status-badge status-rejected',
     pillClassName: 'bg-destructive/10 text-destructive border border-destructive/20',
+  },
+  processing: {
+    badgeClassName: 'status-badge bg-muted text-muted-foreground border border-border',
+    pillClassName: 'bg-muted text-muted-foreground border border-border',
   },
   closed: {
     badgeClassName: 'status-badge status-closed',
@@ -58,9 +62,9 @@ const LIFECYCLE_STAGES = [
   {
     key: 'applied',
     label: 'Applied',
-    dotClassName: 'border-success bg-success',
-    textClassName: 'text-success',
-    lineClassName: 'bg-success',
+    dotClassName: 'border-muted-foreground/60 bg-muted-foreground/60',
+    textClassName: 'text-muted-foreground',
+    lineClassName: 'bg-muted-foreground/25',
   },
   {
     key: 'interviewed',
@@ -72,9 +76,9 @@ const LIFECYCLE_STAGES = [
   {
     key: 'offers',
     label: 'Offer',
-    dotClassName: 'border-primary bg-primary',
-    textClassName: 'text-primary',
-    lineClassName: 'bg-primary',
+    dotClassName: 'border-success bg-success',
+    textClassName: 'text-success',
+    lineClassName: 'bg-success',
   },
 ];
 
@@ -91,6 +95,17 @@ const TERMINAL_STAGE_META = {
     textClassName: 'text-muted-foreground',
     lineClassName: 'bg-muted-foreground/25',
   },
+};
+
+const isPreviewCandidateEmail = (email) => {
+  const resolutionState = (email?.resolution_state || '').toString().toLowerCase();
+  const syncSource = (email?.sync_source || '').toString().toLowerCase();
+  return (
+    resolutionState === 'provisional' ||
+    resolutionState === 'processing' ||
+    syncSource === 'interactive_preview' ||
+    email?.classification_meta?.provisional === true
+  );
 };
 
 function buildObservedLifecycle(group) {
@@ -401,8 +416,10 @@ function EmailList({
                 shouldDisplayClosed,
                 isEffectivelyClosed,
               } = presentationState;
-              const isVisuallyClosed = Boolean(shouldDisplayClosed || (displayStatusKey === 'closed' && isEffectivelyClosed));
-              const statusStyle = STATUS_STYLES[displayStatusKey] || STATUS_STYLES.applied;
+              const isPreviewCandidate = isPreviewCandidateEmail(email);
+              const effectiveDisplayStatusKey = isPreviewCandidate ? 'processing' : displayStatusKey;
+              const isVisuallyClosed = !isPreviewCandidate && Boolean(shouldDisplayClosed || (displayStatusKey === 'closed' && isEffectivelyClosed));
+              const statusStyle = STATUS_STYLES[effectiveDisplayStatusKey] || STATUS_STYLES.applied;
               const rawPreview = group.preview || email.preview || email.html_body || email.body || '';
               const cleanPreview = stripHtml(rawPreview);
               const truncatedPreview = cleanPreview.length > 180 ? `${cleanPreview.slice(0, 180)}...` : cleanPreview;
@@ -469,7 +486,9 @@ function EmailList({
                   </div>
 
                   <div className="mt-2 flex items-center gap-2 overflow-hidden">
-                    <span className={statusStyle.badgeClassName}>{getCategoryTitle(displayStatusKey)}</span>
+                    <span className={statusStyle.badgeClassName}>
+                      {isPreviewCandidate ? 'Scanning' : getCategoryTitle(displayStatusKey)}
+                    </span>
                     {email.company_name && (
                       <span className="max-w-[96px] truncate text-[10px] text-muted-foreground">{email.company_name}</span>
                     )}
@@ -487,7 +506,7 @@ function EmailList({
                     )}
                   </div>
 
-                  {compact && category === 'all' && (
+                  {compact && category === 'all' && !isPreviewCandidate && (
                     <LifecycleStepper group={group} currentStatus={displayStatusKey} />
                   )}
 

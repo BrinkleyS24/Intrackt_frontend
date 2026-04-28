@@ -2380,7 +2380,7 @@ function startPostLoginBackgroundWork(user) {
   })();
 
   (async () => {
-    let shouldFull = true;
+    let shouldFull = false;
     try {
       const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
       const meta = await chrome.storage.local.get([EMAILS_CACHE_META_KEY]).catch((error) => {
@@ -2393,8 +2393,8 @@ function startPostLoginBackgroundWork(user) {
         shouldFull = false;
       }
     } catch (error) {
-      bgLogger.warn('Failed to inspect prior sync state after auth state change; forcing a full sync:', error?.message || error);
-      shouldFull = true;
+      bgLogger.warn('Failed to inspect prior sync state after auth state change; using preview/incremental sync:', error?.message || error);
+      shouldFull = false;
     }
 
     try {
@@ -2842,6 +2842,10 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
     let applicationStats = null;
     const applicationStatsPromise = (async () => {
       try {
+        const planSnapshot = await chrome.storage.local.get(['userPlan']);
+        if (planSnapshot?.userPlan !== 'premium') {
+          return null;
+        }
         const statsResponse = await apiFetch(CONFIG_ENDPOINTS.APPLICATION_STATS, { method: 'GET' });
         if (statsResponse.success && statsResponse.stats) {
           return statsResponse.stats;
@@ -4740,9 +4744,9 @@ setPersistence(auth, indexedDBLocalPersistence)
 
 	          // Start syncing in the background (do not await).
 	          (async () => {
-	            // After a user logs in (or re-authenticates), decide whether to do a full refresh.
-	            // If last sync is stale (> 24h) or unknown, force full refresh to catch up.
-	            let shouldFull = true;
+	            // Auth/login should not force full refresh. The backend now handles first-run
+	            // onboarding with a bounded preview, then continues deeper work in background.
+	            let shouldFull = false;
 	            try {
 	              const status = await apiFetch(CONFIG_ENDPOINTS.SYNC_STATUS, { method: 'GET' });
 	              const meta = await chrome.storage.local.get([EMAILS_CACHE_META_KEY]).catch((error) => {
@@ -4755,8 +4759,8 @@ setPersistence(auth, indexedDBLocalPersistence)
 	                shouldFull = false;
 	              }
 	            } catch (error) {
-	              bgLogger.warn('Failed to inspect prior sync state after auth state change; forcing a full sync:', error?.message || error);
-	              shouldFull = true;
+	              bgLogger.warn('Failed to inspect prior sync state after auth state change; using preview/incremental sync:', error?.message || error);
+	              shouldFull = false;
 	            }
 
 	            try {

@@ -1,0 +1,58 @@
+[
+  {
+    "category": "applied",
+    "company": "Northstar Labs",
+    "position": "Senior Product Manager",
+    "subject": "Application received: Senior Product Manager at Northstar Labs",
+    "body": "Hi there,\n\nThank you for applying to the Senior Product Manager role at Northstar Labs. We received your application and our recruiting team will review it this week.\n\nIf your background is a match, we will follow up with next steps.\n\nBest,\nNorthstar Labs Recruiting"
+  },
+  {
+    "category": "applied",
+    "company": "Atlas Analytics",
+    "position": "Staff Data Analyst",
+    "subject": "Your application to Atlas Analytics is confirmed",
+    "body": "Hello,\n\nYour application for the Staff Data Analyst position at Atlas Analytics has been submitted successfully.\n\nWe appreciate your interest and will contact you if the hiring team would like to move forward.\n\nRegards,\nAtlas Analytics Talent Team"
+  },
+  {
+    "category": "interviewed",
+    "company": "Acme AI",
+    "position": "Platform Engineer",
+    "subject": "Interview invitation: Platform Engineer at Acme AI",
+    "body": "Hi,\n\nThank you for applying for the Platform Engineer role at Acme AI. We reviewed your application and would like to schedule a first-round interview.\n\nPlease reply with your availability for a 30-minute recruiter screen this week.\n\nBest,\nAcme AI Recruiting"
+  },
+  {
+    "category": "interviewed",
+    "company": "Signal Labs",
+    "position": "Machine Learning Engineer",
+    "subject": "Next round interview scheduled with Signal Labs",
+    "body": "Hello,\n\nYour next round interview for the Machine Learning Engineer role at Signal Labs is confirmed.\n\nThe hiring team will discuss your recent projects and walk through a technical exercise.\n\nThanks,\nSignal Labs Talent"
+  },
+  {
+    "category": "offers",
+    "company": "Orbit Systems",
+    "position": "Revenue Operations Director",
+    "subject": "Offer letter: Revenue Operations Director at Orbit Systems",
+    "body": "Hi,\n\nWe are excited to extend an offer for the Revenue Operations Director position at Orbit Systems.\n\nAttached to the official message would be your compensation package, start date, and benefits summary. Please review the offer letter and let us know if you have questions.\n\nCongratulations,\nOrbit Systems People Team"
+  },
+  {
+    "category": "offers",
+    "company": "Brightwave Studio",
+    "position": "Senior Product Designer",
+    "subject": "Congratulations - offer for Senior Product Designer",
+    "body": "Hello,\n\nAfter completing the interview process, we are pleased to offer you the Senior Product Designer role at Brightwave Studio.\n\nWe enjoyed learning about your work and are excited about the possibility of having you join the team.\n\nBest,\nBrightwave Studio Recruiting"
+  },
+  {
+    "category": "rejected",
+    "company": "River Finance",
+    "position": "Data Analyst",
+    "subject": "Update on your Data Analyst application at River Finance",
+    "body": "Hi,\n\nThank you for taking the time to apply for the Data Analyst role at River Finance.\n\nAfter reviewing your application, we have decided not to move forward at this time. We appreciate your interest and wish you success in your search.\n\nRegards,\nRiver Finance Recruiting"
+  },
+  {
+    "category": "rejected",
+    "company": "Lattice Works",
+    "position": "UX Researcher",
+    "subject": "We have decided to move forward with other candidates",
+    "body": "Hello,\n\nThank you for interviewing with Lattice Works for the UX Researcher role.\n\nAfter careful consideration, we have decided to move forward with other candidates for this position. We appreciate the time you invested in the process.\n\nBest,\nLattice Works Talent"
+  }
+]

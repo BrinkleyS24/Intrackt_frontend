@@ -21,6 +21,13 @@ import { CONFIG } from './utils/constants';
 import { AlertTriangle, ArrowLeft, Briefcase, CalendarDays, LogOut, Mail, RefreshCw, Search, X } from 'lucide-react';
 
 const LONG_SYNC_WARNING_MS = 10 * 60 * 1000;
+const IDLE_SYNC_MESSAGES = new Set(['no sync in progress']);
+
+function normalizeActiveSyncMessage(message) {
+  const normalized = (message || '').toString().trim();
+  if (!normalized) return '';
+  return IDLE_SYNC_MESSAGES.has(normalized.toLowerCase()) ? '' : normalized;
+}
 
 const flattenCategorized = (categorized) => [
   ...(categorized?.applied || []),
@@ -45,9 +52,20 @@ const normalizeStoredCategory = (category) => {
   return normalized;
 };
 
+const isPreviewCandidateEmail = (email) => {
+  const resolutionState = (email?.resolution_state || '').toString().toLowerCase();
+  const syncSource = (email?.sync_source || '').toString().toLowerCase();
+  return (
+    resolutionState === 'provisional' ||
+    resolutionState === 'processing' ||
+    syncSource === 'interactive_preview' ||
+    email?.classification_meta?.provisional === true
+  );
+};
+
 const MAIN_TABS = [
   { id: 'all', label: 'All', activeClassName: 'bg-accent text-accent-foreground border-transparent' },
-  { id: 'applied', label: 'Applied', activeClassName: 'bg-success text-success-foreground border-transparent' },
+  { id: 'applied', label: 'Applied', activeClassName: 'bg-secondary text-primary border-transparent' },
   { id: 'interviewed', label: 'Interviews', activeClassName: 'bg-warning text-warning-foreground border-transparent' },
   { id: 'offers', label: 'Offers', activeClassName: 'bg-success text-success-foreground border-transparent' },
   { id: 'rejected', label: 'Rejected', activeClassName: 'bg-destructive text-destructive-foreground border-transparent' },
@@ -302,15 +320,15 @@ function App() {
   const syncStatusLabel = useMemo(() => {
     if (isSyncStuck) return 'Sync may be stuck';
     if (isSyncActive) {
-      const activeSyncMessage = (syncStatus?.message || '').toString().trim();
+      const activeSyncMessage = normalizeActiveSyncMessage(syncStatus?.message);
       return activeSyncMessage || 'Syncing in background...';
     }
 
     const rawLastRefreshAt = syncStatus?.lastCompletedAt || syncStatus?.lastSyncAt;
-    if (!rawLastRefreshAt) return 'No sync in progress';
+    if (!rawLastRefreshAt) return 'Ready to sync';
 
     const lastRefreshAt = new Date(rawLastRefreshAt);
-    if (Number.isNaN(lastRefreshAt.getTime())) return 'No sync in progress';
+    if (Number.isNaN(lastRefreshAt.getTime())) return 'Ready to sync';
 
     const usedLocalRefreshTimestamp = Boolean(syncStatus?.lastCompletedAt);
     const labelPrefix = usedLocalRefreshTimestamp ? 'Last refreshed' : 'Last synced';
@@ -570,9 +588,19 @@ function App() {
     ...(categorizedEmails.rejected || []),
   ], [categorizedEmails]);
 
-  const allViewConversationGroups = useMemo(
-    () => groupEmailsByThread(allRelevantEmails),
+  const finalRelevantEmails = useMemo(
+    () => allRelevantEmails.filter((email) => !isPreviewCandidateEmail(email)),
     [allRelevantEmails]
+  );
+
+  const previewCandidateEmails = useMemo(
+    () => allRelevantEmails.filter((email) => isPreviewCandidateEmail(email)),
+    [allRelevantEmails]
+  );
+
+  const allViewConversationGroups = useMemo(
+    () => groupEmailsByThread([...finalRelevantEmails, ...previewCandidateEmails]),
+    [finalRelevantEmails, previewCandidateEmails]
   );
 
   const allViewFilteredGroups = useMemo(
@@ -581,10 +609,10 @@ function App() {
   );
 
   const allViewCategoryGroups = useMemo(() => ({
-    applied: filterConversationGroups(groupEmailsByThread(categorizedEmails.applied || []), normalizedListSearchQuery, dateRange),
-    interviewed: filterConversationGroups(groupEmailsByThread(categorizedEmails.interviewed || []), normalizedListSearchQuery, dateRange),
-    offers: filterConversationGroups(groupEmailsByThread(categorizedEmails.offers || []), normalizedListSearchQuery, dateRange),
-    rejected: filterConversationGroups(groupEmailsByThread(categorizedEmails.rejected || []), normalizedListSearchQuery, dateRange),
+    applied: filterConversationGroups(groupEmailsByThread((categorizedEmails.applied || []).filter((email) => !isPreviewCandidateEmail(email))), normalizedListSearchQuery, dateRange),
+    interviewed: filterConversationGroups(groupEmailsByThread((categorizedEmails.interviewed || []).filter((email) => !isPreviewCandidateEmail(email))), normalizedListSearchQuery, dateRange),
+    offers: filterConversationGroups(groupEmailsByThread((categorizedEmails.offers || []).filter((email) => !isPreviewCandidateEmail(email))), normalizedListSearchQuery, dateRange),
+    rejected: filterConversationGroups(groupEmailsByThread((categorizedEmails.rejected || []).filter((email) => !isPreviewCandidateEmail(email))), normalizedListSearchQuery, dateRange),
   }), [categorizedEmails, dateRange, filterConversationGroups, normalizedListSearchQuery]);
 
   const allViewLiveSummary = useMemo(
@@ -834,7 +862,7 @@ function App() {
           <div className="space-y-3 px-3 py-3">
             <div className="grid grid-cols-4 gap-2">
               {[
-                { key: 'applied', label: 'Applied', value: stats.applied, cardClass: 'bg-primary/10', textClass: 'text-primary' },
+                { key: 'applied', label: 'Applied', value: stats.applied, cardClass: 'bg-secondary', textClass: 'text-primary' },
                 { key: 'interviewed', label: 'Interviews', value: stats.interviewed, cardClass: 'bg-warning/15', textClass: 'text-warning' },
                 { key: 'offers', label: 'Offers', value: stats.offers, cardClass: 'bg-success/10', textClass: 'text-success' },
                 { key: 'rejected', label: 'Rejected', value: stats.rejected, cardClass: 'bg-destructive/10', textClass: 'text-destructive' },

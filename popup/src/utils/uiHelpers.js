@@ -65,7 +65,7 @@ export function getCategoryBadgeColor(category) {
 
   switch (lowerCategory) {
     case 'applied':
-      return 'bg-success/10 text-success';
+      return 'bg-secondary text-primary';
     case 'interviewed':
       return 'bg-warning/15 text-warning-foreground';
     case 'offers':
@@ -90,7 +90,7 @@ export function getCategoryColor(category) {
 
   switch (lowerCategory) {
     case 'applied':
-      return 'text-success';
+      return 'text-primary';
     case 'interviewed':
       return 'text-warning';
     case 'offers':
