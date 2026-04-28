@@ -1,6 +1,6 @@
 {
   "name": "applendium-extension",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Tracks job application statuses directly from your inbox using React.",
   "scripts": {
     "postinstall": "node scripts/patch_parcel_fs.mjs",
