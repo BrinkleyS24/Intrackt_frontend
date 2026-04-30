@@ -1107,7 +1107,7 @@ function App() {
         <div className="flex items-center justify-between border-t border-border bg-muted/40 px-3 py-2 text-[10px]">
           <span className="text-muted-foreground">{footerSummary}</span>
           <button onClick={openPremiumStatusPage} className="font-medium text-accent transition hover:text-accent/80" data-testid="dashboard-link" type="button">
-            {userPlan === 'premium' ? 'Premium dashboard ->' : 'Premium Beta ->'}
+            {userPlan === 'premium' ? 'Premium dashboard ->' : 'Upgrade to Premium ->'}
           </button>
         </div>
       )}

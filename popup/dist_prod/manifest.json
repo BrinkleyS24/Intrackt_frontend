@@ -47,10 +47,8 @@
   "content_scripts": [
     {
       "matches": [
-        "https://applendium.com/app",
-        "https://applendium.com/app/*",
-        "https://www.applendium.com/app",
-        "https://www.applendium.com/app/*"
+        "https://applendium.com/*",
+        "https://www.applendium.com/*"
       ],
       "js": [
         "content.js"
