@@ -1049,6 +1049,7 @@ function isAllowedPremiumDashboardUrlOverride(url) {
   }
   if (parsed.protocol === 'https:') return true;
   if (parsed.protocol !== 'http:') return false;
+  if (IS_PRODUCTION_EXTENSION_BUILD) return false;
   const host = parsed.hostname;
   const isLocal =
     host === 'localhost' ||

@@ -112,7 +112,7 @@ test('renders the free-plan limit reached state with premium-status guidance', a
   await expect(page.getByTestId('state-quota')).toContainText('Limit reached');
   await expect(frame.getByTestId('quota-status-notice')).toContainText('Tracking limit reached');
   await expect(frame.getByTestId('quota-premium-status-button')).toBeVisible();
-  await expect(frame.getByTestId('dashboard-link')).toContainText('Premium coming soon');
+  await expect(frame.getByTestId('dashboard-link')).toContainText('Premium Beta');
 
   await page.screenshot({
     path: testInfo.outputPath('lab-free-limit-reached.png'),

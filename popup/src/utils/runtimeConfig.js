@@ -1,5 +1,6 @@
 import {
   CONFIG,
+  IS_PRODUCTION_EXTENSION_BUILD,
   LOCAL_BACKEND_BASE_URL,
   PRODUCTION_BACKEND_BASE_URL,
 } from './constants';
@@ -70,6 +71,7 @@ function isAllowedPremiumDashboardUrlOverride(url) {
   }
   if (parsed.protocol === 'https:') return true;
   if (parsed.protocol !== 'http:') return false;
+  if (IS_PRODUCTION_EXTENSION_BUILD) return false;
   return LOCAL_HOSTS.has(parsed.hostname);
 }
 
