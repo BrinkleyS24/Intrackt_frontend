@@ -4,10 +4,8 @@
  * Injected on Applendium app routes so the web app can authenticate via the extension.
  */
 
-const IS_PRODUCTION_EXTENSION_BUILD = process.env.EXTENSION_BUILD_TARGET === "production";
 const contentLogger = {
 	info: (...args) => {
-		if (IS_PRODUCTION_EXTENSION_BUILD) return;
 		try { console.log(...args); } catch (_) {}
 	},
 	warn: (...args) => {
