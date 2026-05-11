@@ -1,4 +1,5 @@
 // Utility functions to group emails into conversation threads and count threads
+import { safeTextValue } from './sensitiveContent';
 
 /**
  * Enhanced email grouping that considers both thread_id and sender-subject similarity
@@ -342,8 +343,8 @@ export function groupEmailsByThread(emails) {
     const messageCount = g.emails.length;
     const latest = g.latest || g.emails[0];
     const earliest = g.earliest || g.emails[0];
-    const subject = latest?.subject || earliest?.subject || '(No subject)';
-    const preview = latest?.html_body || latest?.body || '';
+    const subject = safeTextValue(latest?.subject || earliest?.subject || '', '(No subject)');
+    const preview = safeTextValue(latest?.html_body || latest?.body || '', '');
     groups.push({
       id: `thread-${g.threadId}`,
       threadId: g.threadId,

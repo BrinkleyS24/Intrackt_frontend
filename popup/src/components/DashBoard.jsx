@@ -6,6 +6,7 @@ import { groupEmailsByThread, countUniqueThreads, countUniqueApplications } from
 import { showNotification } from './Notification';
 import { CONFIG } from '../utils/constants';
 import { getPremiumDashboardUrl } from '../utils/runtimeConfig';
+import { safeTextValue } from '../utils/sensitiveContent';
 
 /**
  * Helper functions for category styling
@@ -191,7 +192,7 @@ function ApplicationJourneyCard({ journeys, onEmailSelect }) {
                   {journey.company || 'Unknown Company'}
                 </p>
                 <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
-                  {journey.position || journey.subject}
+                  {journey.position || safeTextValue(journey.subject, '')}
                 </p>
               </div>
               <div className="text-[10px] text-indigo-600 dark:text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -478,8 +479,8 @@ function DashboardEmailCard({ email, onEmailSelect, onOpenMisclassificationModal
           {formatDate(email.date)}
         </span>
       </div>
-      <h3 className="text-base font-semibold truncate text-gray-900 dark:text-white">{email.subject}</h3>
-      <p className="text-xs text-gray-500 dark:text-zinc-400 mt-1">{email.from}</p>
+      <h3 className="text-base font-semibold truncate text-gray-900 dark:text-white">{safeTextValue(email.subject, '(No subject)')}</h3>
+      <p className="text-xs text-gray-500 dark:text-zinc-400 mt-1">{safeTextValue(email.from, '')}</p>
 
       <button
         onClick={handleMisclassifyClick}
@@ -1019,7 +1020,7 @@ function Dashboard({
           emails: [],
           company: email.company_name || email.company,
           position: email.position,
-          subject: email.subject
+          subject: safeTextValue(email.subject, '')
         });
       }
       threadMap.get(threadId).emails.push(email);
@@ -1055,7 +1056,7 @@ function Dashboard({
           toStage: stageArr[stageArr.length - 1],
           company: thread.company,
           position: thread.position,
-          subject: thread.subject,
+          subject: safeTextValue(thread.subject, ''),
           email: latestEmail,
           date: latestDate
         });
@@ -1256,7 +1257,7 @@ function Dashboard({
       const position = getPositionDisplay(e);
       if (company && position) return `fallback:${company}::${position}`;
 
-      return `fallback:${e?.id || e?.email_id || e?.thread_id || e?.threadId || e?.subject || e?.date || 'unknown'}`;
+      return `fallback:${e?.id || e?.email_id || e?.thread_id || e?.threadId || safeTextValue(e?.subject, '') || e?.date || 'unknown'}`;
     };
 
     const groups = new Map();

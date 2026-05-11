@@ -5,6 +5,7 @@ import { parseEmailDate, getCategoryTitle } from '../utils/uiHelpers';
 import { showNotification } from './Notification';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
 import { collapseJourneyStages } from '../utils/applicationPresentation';
+import { isEncryptedPayload, safeTextValue } from '../utils/sensitiveContent';
 import CompanyField from './CompanyField';
 import { deriveEmailPresentationState, normalizeApplicationStatusKey } from '../../../shared/applicationDisplayState.js';
 
@@ -364,7 +365,7 @@ export default function EmailPreview({
       .filter((item) => isRelevant(item?.category))
       .map((item) => ({
         emailId: item.id || item.emailId || `${item.thread_id || item.threadId || 'msg'}-${item.date || ''}`,
-        subject: item.subject || '',
+        subject: safeTextValue(item.subject, ''),
         category: normalizeApplicationStatusKey(item.category),
         date: item.date,
       }));
@@ -373,7 +374,7 @@ export default function EmailPreview({
     if (localStages.length === 0 && isRelevant(emailCategory)) {
       localStages.push({
         emailId: email.id || `${email.thread_id || email.threadId || 'email'}-${email.date || ''}`,
-        subject: email.subject || '',
+        subject: safeTextValue(email.subject, ''),
         category: emailCategory,
         date: email.date,
       });
@@ -503,7 +504,7 @@ export default function EmailPreview({
   };
 
   const renderSingleMessage = (message) => {
-    if (message?.html_body) {
+    if (message?.html_body && !isEncryptedPayload(message.html_body)) {
       const styledHtml = sanitizeAndStyleEmailHTML(decodeEmailContentSafe(message.html_body));
       if (styledHtml.trim()) {
         return (
@@ -515,7 +516,7 @@ export default function EmailPreview({
       }
     }
 
-    if (message?.body) {
+    if (message?.body && !isEncryptedPayload(message.body)) {
       let decoded = decodeEmailContentSafe(message.body);
       if (looksLikeHtml(decoded)) {
         decoded = stripHtmlToText(decoded);
@@ -686,6 +687,8 @@ export default function EmailPreview({
   };
 
   const statusClassName = STATUS_CLASSES[displayStatusKey] || STATUS_CLASSES.applied;
+  const displaySubject = safeTextValue(email.subject, '(No subject)');
+  const displayFrom = safeTextValue(email.from, '');
 
   return (
     <>
@@ -721,9 +724,9 @@ export default function EmailPreview({
               shouldDisplayClosed ? 'text-muted-foreground line-through' : 'text-foreground'
             )}
           >
-            {email.subject}
+            {displaySubject}
           </h2>
-          <p className="mt-2 text-sm text-muted-foreground">{email.from}</p>
+          {displayFrom ? <p className="mt-2 text-sm text-muted-foreground">{displayFrom}</p> : null}
           <div className="mt-3 flex items-center gap-2">
             <span className={statusClassName}>
               {displayStatusKey === 'interviewed' ? 'Interview' : getCategoryTitle(displayStatusKey)}
@@ -814,9 +817,9 @@ export default function EmailPreview({
                         </div>
                         <span className="shrink-0 text-[10px] text-muted-foreground">{formatShortDate(stage.lastDate || stage.date)}</span>
                       </div>
-                      {stage.subject ? (
+                      {safeTextValue(stage.subject, '') ? (
                         <p className="mt-1 break-words text-[11px] text-foreground/80">
-                          {stage.eventCount > 1 ? `Latest: ${stage.subject}` : stage.subject}
+                          {stage.eventCount > 1 ? `Latest: ${safeTextValue(stage.subject, '')}` : safeTextValue(stage.subject, '')}
                         </p>
                       ) : null}
                     </div>

@@ -16,6 +16,7 @@ import { useEmailQuota } from './hooks/useEmailQuota';
 import { getApplicationKey, groupEmailsByThread } from './utils/grouping';
 import { getCategoryTitle } from './utils/uiHelpers';
 import { getPremiumDashboardUrl } from './utils/runtimeConfig';
+import { compactSafeTextValues } from './utils/sensitiveContent';
 
 import { CONFIG } from './utils/constants';
 import { AlertTriangle, ArrowLeft, Briefcase, CalendarDays, LogOut, Mail, RefreshCw, Search, X } from 'lucide-react';
@@ -551,7 +552,7 @@ function App() {
   const filterConversationGroups = useCallback((groups, query, selectedDateRange = 'all') => {
     return (groups || []).filter((group) => {
       const latest = group?.latestEmail || {};
-      const haystack = [
+      const haystack = compactSafeTextValues([
         group?.subject,
         group?.from,
         latest?.from,
@@ -561,8 +562,7 @@ function App() {
         latest?.body,
         latest?.html_body,
         group?.preview,
-      ]
-        .filter(Boolean)
+      ])
         .map((value) => value.toString().toLowerCase())
         .join(' ');
 

@@ -18,6 +18,7 @@ import {
 import { showNotification } from '../components/Notification';
 import { getCategoryTitle } from '../utils/uiHelpers';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
+import { compactSafeTextValues, safeTextValue } from '../utils/sensitiveContent';
 
 const STORED_EMAILS_CACHE_META_KEY = 'emailsCacheMetaV1';
 const STORED_EMAILS_CACHE_MAX_AGE_MS = 15 * 1000;
@@ -437,7 +438,7 @@ export function useEmails(userEmail, userId, CONFIG) {
 
     filtered = allEmails.filter(email => {
       const searchLower = searchQuery.toLowerCase();
-      const haystack = [
+      const haystack = compactSafeTextValues([
         email.subject,
         email.body,
         email.html_body,
@@ -446,8 +447,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         email.company_name_corrected,
         email.position,
         email.position_corrected,
-      ]
-        .filter(Boolean)
+      ])
         .map((value) => value.toString().toLowerCase())
         .join(' ');
       const matchesSearch = searchQuery ? haystack.includes(searchLower) : true;
@@ -510,9 +510,9 @@ export function useEmails(userEmail, userId, CONFIG) {
       threadId: emailData.thread_id,
       originalCategory: transformCategoryForBackend(emailData.category),
       correctedCategory: transformCategoryForBackend(correctedCategory),
-      emailSubject: emailData.subject || 'No Subject',
-      emailBody: emailData.body || 'No Body',
-      fromHeader: emailData.from || emailData.sender || '',
+      emailSubject: safeTextValue(emailData.subject, 'No Subject') || 'No Subject',
+      emailBody: safeTextValue(emailData.body, 'No Body') || 'No Body',
+      fromHeader: safeTextValue(emailData.from || emailData.sender, ''),
     };
 
     if (!reportPayload.emailId || !reportPayload.threadId || !reportPayload.originalCategory || !reportPayload.correctedCategory) {

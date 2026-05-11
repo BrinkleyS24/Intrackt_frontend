@@ -16,6 +16,7 @@ import {
   deriveConversationCurrentStatus,
   deriveConversationPresentationState,
 } from '../utils/applicationPresentation';
+import { safeTextValue } from '../utils/sensitiveContent';
 
 const stripHtml = (html) => {
   if (!html || typeof html !== 'string') return '';
@@ -111,7 +112,7 @@ const isPreviewCandidateEmail = (email) => {
 function buildObservedLifecycle(group) {
   const rawStages = (group?.emails || []).map((email) => ({
     emailId: email?.id,
-    subject: email?.subject,
+    subject: safeTextValue(email?.subject, ''),
     category: normalizeApplicationStatusKey(email?.category),
     current_status: email?.applicationStatus,
     date: email?.date,
@@ -420,7 +421,7 @@ function EmailList({
               const effectiveDisplayStatusKey = isPreviewCandidate ? 'processing' : displayStatusKey;
               const isVisuallyClosed = !isPreviewCandidate && Boolean(shouldDisplayClosed || (displayStatusKey === 'closed' && isEffectivelyClosed));
               const statusStyle = STATUS_STYLES[effectiveDisplayStatusKey] || STATUS_STYLES.applied;
-              const rawPreview = group.preview || email.preview || email.html_body || email.body || '';
+              const rawPreview = safeTextValue(group.preview || email.preview || email.html_body || email.body || '', '');
               const cleanPreview = stripHtml(rawPreview);
               const truncatedPreview = cleanPreview.length > 180 ? `${cleanPreview.slice(0, 180)}...` : cleanPreview;
               const selectedApplicationKey = selectedEmail ? getApplicationKey(selectedEmail) : null;
@@ -431,8 +432,8 @@ function EmailList({
               );
               const isUnread = group.unreadCount > 0;
               const displayDate = group.date || email.date;
-              const displaySubject = email.subject || group.subject;
-              const displaySender = email.sender || email.from || group.from;
+              const displaySubject = safeTextValue(email.subject || group.subject, '(No subject)');
+              const displaySender = safeTextValue(email.sender || email.from || group.from, '');
 
               const rawPosition = (email.position || '').trim();
               const safePosition = (
