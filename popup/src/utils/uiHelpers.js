@@ -44,12 +44,13 @@ export function formatDate(dateStr) {
   }
 
   const now = new Date();
-  const diffTime = Math.abs(now.getTime() - date.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const emailDayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((todayStart.getTime() - emailDayStart.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (diffDays === 1) return "Today";
-  if (diffDays === 2) return "Yesterday";
-  if (diffDays > 2 && diffDays <= 7) return `${diffDays - 1} days ago`;
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays > 1 && diffDays <= 7) return `${diffDays} days ago`;
 
   return date.toLocaleDateString();
 }

@@ -1194,6 +1194,18 @@ function formatBackgroundError(error) {
   }
 }
 
+function createAuthRequiredError(endpoint) {
+  const error = new Error('Sign in required before calling protected API.');
+  error.errorCode = 'AUTH_REQUIRED';
+  error.authRequired = true;
+  error.endpoint = endpoint;
+  return error;
+}
+
+function isAuthRequiredError(error) {
+  return Boolean(error?.authRequired || error?.errorCode === 'AUTH_REQUIRED');
+}
+
 function persistBackgroundDiagnostic(entry) {
   return chrome.storage.local
     .get([BACKGROUND_DIAGNOSTICS_STORAGE_KEY])
@@ -2182,6 +2194,7 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
 async function apiFetch(endpoint, options = {}) {
   const {
     skipAuthReady = false,
+    allowUnauthenticated = false,
     query,
     timeoutMs = DEFAULT_API_TIMEOUT_MS,
     signal,
@@ -2200,7 +2213,16 @@ async function apiFetch(endpoint, options = {}) {
     ...fetchOptions.headers,
   };
 
-    if (user && !user.isAnonymous) { // Only attempt to get ID token for non-anonymous users
+  const isPublicAuthEndpoint =
+    endpoint === CONFIG_ENDPOINTS.AUTH_URL || endpoint === CONFIG_ENDPOINTS.AUTH_TOKEN;
+  const requiresFirebaseUser =
+    !allowUnauthenticated && !isPublicAuthEndpoint && !isLocalBaseUrl(backendBaseUrl);
+
+  if (requiresFirebaseUser && (!user || user.isAnonymous)) {
+    throw createAuthRequiredError(endpoint);
+  }
+
+  if (user && !user.isAnonymous) { // Only attempt to get ID token for non-anonymous users
     try {
       const idToken = await getFreshToken(user); // Use deduplicated token refresh
       headers['Authorization'] = `Bearer ${idToken}`;
@@ -2659,6 +2681,7 @@ async function pollSyncStatusAndRefresh(maxSeconds = 15 * 60, intervalMs = 10000
         }
       }
     } catch (e) {
+      if (isAuthRequiredError(e)) return;
       console.warn('Applendium Background: sync-status polling error:', e?.message);
     }
     await new Promise(r => setTimeout(r, intervalMs));
@@ -2696,6 +2719,7 @@ async function checkSyncWatchdog() {
       });
     }
   } catch (e) {
+    if (isAuthRequiredError(e)) return;
     console.warn('Applendium Background: watchdog check failed:', e?.message);
   }
 }
@@ -3414,7 +3438,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               method: 'GET',
               headers: { 'Content-Type': 'application/json' },
               query: { redirect_uri: redirectUriForBackend },
-              skipAuthReady: true
+              skipAuthReady: true,
+              allowUnauthenticated: true
             });
             if (!authUrlResponse.success || !authUrlResponse.url) {
               throw new Error(authUrlResponse.error || 'Failed to get auth URL from backend.');
@@ -3444,7 +3469,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const tokenResponse = await apiFetch(CONFIG_ENDPOINTS.AUTH_TOKEN, {
             method: 'POST',
             body: { code, redirect_uri: redirectUriForBackend },
-            skipAuthReady: true
+            skipAuthReady: true,
+            allowUnauthenticated: true
           });
           if (!tokenResponse.success || !tokenResponse.firebaseToken) {
             throw new Error(tokenResponse.error || 'Failed to exchange code for Firebase token.');
