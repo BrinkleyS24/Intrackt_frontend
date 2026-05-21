@@ -7,13 +7,17 @@ import { sendMessageToBackground } from '../utils/chromeMessaging';
 import { collapseJourneyStages } from '../utils/applicationPresentation';
 import { isEncryptedPayload, safeTextValue } from '../utils/sensitiveContent';
 import CompanyField from './CompanyField';
-import { deriveEmailPresentationState, normalizeApplicationStatusKey } from '../../../shared/applicationDisplayState.js';
+import {
+  deriveEmailPresentationState,
+  normalizeApplicationPresentationStatusKey,
+  normalizeApplicationStatusKey,
+} from '../../../shared/applicationDisplayState.js';
 
 const STATUS_CLASSES = {
   applied: 'status-badge status-applied',
   interviewed: 'status-badge status-interviewed',
   offers: 'status-badge status-offers',
-  rejected: 'status-badge status-rejected',
+  rejected: 'status-badge status-closed',
   closed: 'status-badge status-closed',
   irrelevant: 'status-badge bg-muted text-muted-foreground',
 };
@@ -290,7 +294,7 @@ const getJourneyDescription = (category) => {
   if (normalized === 'applied') return 'Application email received';
   if (normalized === 'interviewed') return 'Interview email received';
   if (normalized === 'offers') return 'Offer email received';
-  if (normalized === 'rejected') return 'Rejection email received';
+  if (normalized === 'rejected') return 'Application closed';
   return 'Status update email received';
 };
 
@@ -686,7 +690,8 @@ export default function EmailPreview({
     }
   };
 
-  const statusClassName = STATUS_CLASSES[displayStatusKey] || STATUS_CLASSES.applied;
+  const presentationStatusKey = normalizeApplicationPresentationStatusKey(displayStatusKey);
+  const statusClassName = STATUS_CLASSES[presentationStatusKey] || STATUS_CLASSES.applied;
   const displaySubject = safeTextValue(email.subject, '(No subject)');
   const displayFrom = safeTextValue(email.from, '');
 
@@ -729,7 +734,7 @@ export default function EmailPreview({
           {displayFrom ? <p className="mt-2 text-sm text-muted-foreground">{displayFrom}</p> : null}
           <div className="mt-3 flex items-center gap-2">
             <span className={statusClassName}>
-              {displayStatusKey === 'interviewed' ? 'Interview' : getCategoryTitle(displayStatusKey)}
+              {presentationStatusKey === 'interviewed' ? 'Interview' : getCategoryTitle(presentationStatusKey)}
             </span>
             <span className="text-[11px] text-muted-foreground">
               {[email.company_name, email.position].filter(Boolean).join(' · ') || 'Application details pending'}
@@ -798,8 +803,9 @@ export default function EmailPreview({
           ) : (
             <div className="mt-3 space-y-3">
               {journeyStages.map((stage, idx) => {
-                const stageKey = (stage.category || '').toString().toLowerCase();
-                const stageClassName = STATUS_CLASSES[stageKey] || STATUS_CLASSES.applied;
+                const stageKey = normalizeApplicationStatusKey(stage.category);
+                const stagePresentationKey = normalizeApplicationPresentationStatusKey(stageKey);
+                const stageClassName = STATUS_CLASSES[stagePresentationKey] || STATUS_CLASSES.applied;
 
                 return (
                   <div key={stage.emailId || `${stage.category}-${idx}`} className="flex items-start gap-3">
@@ -807,7 +813,7 @@ export default function EmailPreview({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <span className={stageClassName}>{getCategoryTitle(stageKey)}</span>
+                          <span className={stageClassName}>{getCategoryTitle(stagePresentationKey)}</span>
                           <p className="mt-1 text-[11px] text-muted-foreground">{getJourneyDescription(stage.category)}</p>
                           {stage.eventCount > 1 ? (
                             <p className="mt-1 text-[11px] text-muted-foreground">

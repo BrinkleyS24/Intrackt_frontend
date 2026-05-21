@@ -17,13 +17,19 @@ export function isTerminalApplicationStatus(value) {
   return normalized === 'offers' || normalized === 'rejected';
 }
 
+export function normalizeApplicationPresentationStatusKey(value) {
+  const normalized = normalizeApplicationStatusKey(value);
+  return normalized === 'rejected' ? 'closed' : normalized;
+}
+
 export function deriveDisplayCategory(category, applicationStatus, isClosed) {
   const rawCategory = normalizeApplicationStatusKey(category);
   const normalizedApplicationStatus = normalizeApplicationStatusKey(applicationStatus);
   const isTerminalOutcome = isTerminalApplicationStatus(normalizedApplicationStatus);
 
   if (!isClosed) return rawCategory;
-  if (rawCategory === 'offers' || rawCategory === 'rejected') return rawCategory;
+  if (rawCategory === 'offers') return rawCategory;
+  if (rawCategory === 'rejected') return 'closed';
   if (isTerminalOutcome || rawCategory === 'applied' || rawCategory === 'interviewed') return 'closed';
   return rawCategory || 'closed';
 }
@@ -64,12 +70,15 @@ export function deriveEmailPresentationState(email = {}, options = {}) {
     options.applicationStatus ?? email?.applicationStatus,
     lifecycle
   );
-  const hasTerminalOutcome = hasTerminalLifecycleOutcome(resolvedApplicationStatus, lifecycle);
+  const rawStatusKey = normalizeApplicationStatusKey(fallbackCategory ?? email?.category) || 'applied';
+  const hasTerminalOutcome =
+    hasTerminalLifecycleOutcome(resolvedApplicationStatus, lifecycle) ||
+    isTerminalApplicationStatus(rawStatusKey);
   const isEffectivelyUserClosed = Boolean(email?.applicationId && email?.isUserClosed && !hasTerminalOutcome);
   const isEffectivelyClosed = Boolean(
-    email?.applicationId && (email?.isClosed || isEffectivelyUserClosed || hasTerminalOutcome)
+    hasTerminalOutcome ||
+    (email?.applicationId && (email?.isClosed || isEffectivelyUserClosed))
   );
-  const rawStatusKey = normalizeApplicationStatusKey(fallbackCategory ?? email?.category) || 'applied';
   const cachedDisplayCategory = normalizeApplicationStatusKey(email?.displayCategory);
   const derivedDisplayCategory =
     deriveDisplayCategory(rawStatusKey, resolvedApplicationStatus, isEffectivelyClosed) ||
@@ -79,7 +88,8 @@ export function deriveEmailPresentationState(email = {}, options = {}) {
     derivedDisplayCategory;
   const shouldDisplayClosed =
     baseStatusKey === 'closed' ||
-    Boolean(isEffectivelyClosed && !isTerminalApplicationStatus(baseStatusKey));
+    baseStatusKey === 'rejected' ||
+    Boolean(isEffectivelyClosed && baseStatusKey !== 'offers');
 
   return {
     rawStatusKey,

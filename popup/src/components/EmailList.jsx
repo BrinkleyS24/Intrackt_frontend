@@ -10,7 +10,11 @@ import { formatDate, getCategoryTitle } from '../utils/uiHelpers';
 import { countUniqueThreads, getApplicationKey, groupEmailsByThread } from '../utils/grouping';
 import Pagination from './Pagination';
 import { CONFIG } from '../utils/constants';
-import { deriveEmailPresentationState, normalizeApplicationStatusKey } from '../../../shared/applicationDisplayState.js';
+import {
+  deriveEmailPresentationState,
+  normalizeApplicationPresentationStatusKey,
+  normalizeApplicationStatusKey,
+} from '../../../shared/applicationDisplayState.js';
 import {
   collapseJourneyStages,
   deriveConversationCurrentStatus,
@@ -42,8 +46,8 @@ const STATUS_STYLES = {
     pillClassName: 'bg-success/10 text-success border border-success/20',
   },
   rejected: {
-    badgeClassName: 'status-badge status-rejected',
-    pillClassName: 'bg-destructive/10 text-destructive border border-destructive/20',
+    badgeClassName: 'status-badge status-closed',
+    pillClassName: 'bg-muted text-muted-foreground border border-border',
   },
   processing: {
     badgeClassName: 'status-badge bg-muted text-muted-foreground border border-border',
@@ -85,10 +89,10 @@ const LIFECYCLE_STAGES = [
 
 const TERMINAL_STAGE_META = {
   rejected: {
-    label: 'Rejected',
-    dotClassName: 'border-destructive bg-destructive',
-    textClassName: 'text-destructive',
-    lineClassName: 'bg-destructive/50',
+    label: 'Closed',
+    dotClassName: 'border-muted-foreground/60 bg-muted-foreground/60',
+    textClassName: 'text-muted-foreground',
+    lineClassName: 'bg-muted-foreground/25',
   },
   closed: {
     label: 'Closed',
@@ -128,7 +132,8 @@ function buildObservedLifecycle(group) {
 
 function LifecycleStepper({ group, currentStatus }) {
   const observedStages = useMemo(() => buildObservedLifecycle(group), [group]);
-  const terminalStatus = currentStatus === 'rejected' || currentStatus === 'closed' ? currentStatus : null;
+  const presentationStatus = normalizeApplicationPresentationStatusKey(currentStatus);
+  const terminalStatus = presentationStatus === 'closed' ? 'closed' : null;
   const terminalMeta = terminalStatus ? TERMINAL_STAGE_META[terminalStatus] : null;
   const lastReachedBaseIndex = useMemo(() => {
     let lastIndex = -1;
@@ -418,8 +423,13 @@ function EmailList({
                 isEffectivelyClosed,
               } = presentationState;
               const isPreviewCandidate = isPreviewCandidateEmail(email);
-              const effectiveDisplayStatusKey = isPreviewCandidate ? 'processing' : displayStatusKey;
-              const isVisuallyClosed = !isPreviewCandidate && Boolean(shouldDisplayClosed || (displayStatusKey === 'closed' && isEffectivelyClosed));
+              const presentationStatusKey = normalizeApplicationPresentationStatusKey(displayStatusKey);
+              const effectiveDisplayStatusKey = isPreviewCandidate ? 'processing' : presentationStatusKey;
+              const isVisuallyClosed = !isPreviewCandidate && Boolean(
+                shouldDisplayClosed ||
+                presentationStatusKey === 'closed' ||
+                (displayStatusKey === 'closed' && isEffectivelyClosed)
+              );
               const statusStyle = STATUS_STYLES[effectiveDisplayStatusKey] || STATUS_STYLES.applied;
               const rawPreview = safeTextValue(group.preview || email.preview || email.html_body || email.body || '', '');
               const cleanPreview = stripHtml(rawPreview);
@@ -488,7 +498,7 @@ function EmailList({
 
                   <div className="mt-2 flex items-center gap-2 overflow-hidden">
                     <span className={statusStyle.badgeClassName}>
-                      {isPreviewCandidate ? 'Scanning' : getCategoryTitle(displayStatusKey)}
+                      {isPreviewCandidate ? 'Scanning' : getCategoryTitle(effectiveDisplayStatusKey)}
                     </span>
                     {email.company_name && (
                       <span className="max-w-[96px] truncate text-[10px] text-muted-foreground">{email.company_name}</span>
@@ -508,7 +518,7 @@ function EmailList({
                   </div>
 
                   {compact && category === 'all' && !isPreviewCandidate && (
-                    <LifecycleStepper group={group} currentStatus={displayStatusKey} />
+                    <LifecycleStepper group={group} currentStatus={effectiveDisplayStatusKey} />
                   )}
 
                   {isUnread && !compact && (
