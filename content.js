@@ -15,6 +15,10 @@ const contentLogger = {
 
 contentLogger.info("Applendium Content Script loaded.");
 
+// NOTE: This list is the inline twin of BRIDGE_PATHS in shared/bridgePaths.js.
+// content.js is a classic content script copied verbatim into the build and cannot
+// import the shared module, so the two must be kept in sync by hand. Parity is
+// enforced by scripts/check_bridge_paths_parity.mjs (`npm run check:bridge-paths`).
 function isAllowedBridgePath(pathname) {
 	return (
 		pathname === "/app"

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Briefcase, Building2, Clock, ExternalLink, Flag, TrendingUp, X } from 'lucide-react';
+import { Briefcase, Building2, Clock, ExternalLink, Flag, Lock, ShieldCheck, TrendingUp, X } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { parseEmailDate, getCategoryTitle } from '../utils/uiHelpers';
 import { showNotification } from './Notification';
@@ -303,6 +303,8 @@ export default function EmailPreview({
   onOpenMisclassificationModal,
   onUpdateCompanyName,
   onUpdatePosition,
+  onOpenPremiumPage,
+  userPlan,
   userEmail,
 }) {
   if (!email) return null;
@@ -941,6 +943,34 @@ export default function EmailPreview({
                 {closingApplication ? 'Closing...' : 'Confirm close'}
               </InlineButton>
             </div>
+          </div>
+        )}
+
+        {userPlan !== 'premium' && (presentationStatusKey === 'applied' || presentationStatusKey === 'interviewed') && onOpenPremiumPage && (
+          <div className="rounded-2xl border border-accent/20 bg-accent/5 p-3 shadow-sm">
+            <div className="flex items-center gap-2 text-[11px] font-semibold text-accent">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Your next move on this {presentationStatusKey === 'interviewed' ? 'interview' : 'application'}
+            </div>
+            <div className="mt-2 flex items-center gap-2 rounded-xl border border-border bg-card/80 px-3 py-2">
+              <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="h-2.5 w-3/4 rounded bg-muted-foreground/20" />
+                <div className="mt-1.5 h-2 w-1/2 rounded bg-muted-foreground/15" />
+              </div>
+            </div>
+            <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
+              {presentationStatusKey === 'interviewed'
+                ? 'When to follow up, what to send, and how similar interviews have played out — Premium maps your next step.'
+                : 'When to follow up, whether to keep chasing, and how similar applications have played out — Premium maps your next step.'}
+            </p>
+            <button
+              onClick={onOpenPremiumPage}
+              className="mt-2.5 w-full rounded-xl bg-accent px-3 py-2 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
+              type="button"
+            >
+              Unlock with Premium →
+            </button>
           </div>
         )}
 

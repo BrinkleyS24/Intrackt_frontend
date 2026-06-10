@@ -19,6 +19,7 @@ import { getPremiumDashboardUrl } from './utils/runtimeConfig';
 import { compactSafeTextValues } from './utils/sensitiveContent';
 
 import { CONFIG } from './utils/constants';
+import PremiumTeaserCard from './components/PremiumTeaserCard';
 import { AlertTriangle, ArrowLeft, Briefcase, CalendarDays, LogOut, Mail, RefreshCw, Search, X } from 'lucide-react';
 
 const LONG_SYNC_WARNING_MS = 10 * 60 * 1000;
@@ -841,6 +842,7 @@ function App() {
           onArchive={handleArchive}
           onOpenMisclassificationModal={openMisclassificationModal}
           userPlan={userPlan}
+          onOpenPremiumPage={openPremiumStatusPage}
           onUpdateCompanyName={handleUpdateCompanyName}
           onUpdatePosition={handleUpdatePosition}
           userEmail={userEmail}
@@ -925,6 +927,12 @@ function App() {
             </div>
 
             {renderQuotaStatusNotice()}
+
+            <PremiumTeaserCard
+              userPlan={userPlan}
+              stats={allViewHeadlineSummary.counts}
+              onOpenPremiumPage={openPremiumStatusPage}
+            />
 
             <div className="flex gap-1.5 overflow-x-auto pb-1 popup-scrollbar">
               {MAIN_TABS.map((tab) => (
