@@ -3,9 +3,23 @@
 !.env.example
 node_modules
 .parcel-cache
+
+# Build output (never commit built artifacts)
+dist/
 popup/dist
 popup/popup/dist
 popup/dist_dev
 popup/dist_smoke
+popup/dist_prod
+popup/dist_storelab
+.tmp-ext-build/
+
+# Packaged extension zips (publish via GitHub Releases, not git)
+*.zip
+
+# Test / debug artifacts (can contain real backend traffic + screenshots)
 playwright-report
 test-results
+.playwright-trace-debug*
+.premium-dashboard/
+.premium-teaser-shots/

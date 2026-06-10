@@ -23,6 +23,7 @@ import {
   getExtensionTestScenario,
   listExtensionTestScenarios,
 } from './testing/mockScenarios.js';
+import { BRIDGE_TRUSTED_ORIGINS, isAllowedBridgePath } from './shared/bridgePaths.js';
 
 const FIREBASE_AUTH_AVAILABLE = firebaseConfigIsComplete;
 
@@ -180,29 +181,9 @@ function isTrustedWebBridgeSenderUrl(senderUrl) {
 
   try {
     const url = new URL(senderUrl);
-    const isTrustedOrigin = url.origin === 'https://applendium.com' || url.origin === 'https://www.applendium.com';
-    const isTrustedPath =
-      url.pathname === '/app'
-      || url.pathname.startsWith('/app/')
-      || url.pathname === '/dashboard'
-      || url.pathname.startsWith('/dashboard/')
-      || url.pathname === '/upgrade'
-      || url.pathname.startsWith('/upgrade/')
-      || url.pathname === '/apply-gate'
-      || url.pathname.startsWith('/apply-gate/')
-      || url.pathname === '/fix-suggestions'
-      || url.pathname.startsWith('/fix-suggestions/')
-      || url.pathname === '/outcome-memory'
-      || url.pathname.startsWith('/outcome-memory/')
-      || url.pathname === '/strategy-alerts'
-      || url.pathname.startsWith('/strategy-alerts/')
-      || url.pathname === '/weekly-summary'
-      || url.pathname.startsWith('/weekly-summary/')
-      || url.pathname === '/settings'
-      || url.pathname.startsWith('/settings/')
-      || url.pathname === '/admin'
-      || url.pathname.startsWith('/admin/');
-    return isTrustedOrigin && isTrustedPath;
+    // Origin + path allowlist live in shared/bridgePaths.js (single source of truth);
+    // content.js keeps an inline copy guarded by scripts/check_bridge_paths_parity.mjs.
+    return BRIDGE_TRUSTED_ORIGINS.includes(url.origin) && isAllowedBridgePath(url.pathname);
   } catch (_) {
     return false;
   }
