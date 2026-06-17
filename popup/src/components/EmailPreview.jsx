@@ -17,7 +17,7 @@ const STATUS_CLASSES = {
   applied: 'status-badge status-applied',
   interviewed: 'status-badge status-interviewed',
   offers: 'status-badge status-offers',
-  rejected: 'status-badge status-closed',
+  rejected: 'status-badge status-rejected',
   closed: 'status-badge status-closed',
   irrelevant: 'status-badge bg-muted text-muted-foreground',
 };
@@ -294,7 +294,7 @@ const getJourneyDescription = (category) => {
   if (normalized === 'applied') return 'Application email received';
   if (normalized === 'interviewed') return 'Interview email received';
   if (normalized === 'offers') return 'Offer email received';
-  if (normalized === 'rejected') return 'Application closed';
+  if (normalized === 'rejected') return 'Application rejected';
   return 'Status update email received';
 };
 
@@ -322,20 +322,32 @@ export default function EmailPreview({
   const [showClosePanel, setShowClosePanel] = useState(false);
   const [closePreset, setClosePreset] = useState('no_response');
   const [closeNote, setCloseNote] = useState('');
+  const latestLifecycleRequestRef = React.useRef(0);
 
-  const loadLifecycle = React.useCallback(async (applicationId) => {
+  const loadLifecycle = React.useCallback(async (applicationId, emailId) => {
+    // Latest-wins guard: rapidly switching emails can resolve lifecycle responses
+    // out of order. Only the most recent request is allowed to write component state.
+    const requestId = latestLifecycleRequestRef.current + 1;
+    latestLifecycleRequestRef.current = requestId;
+    const isCurrent = () => requestId === latestLifecycleRequestRef.current;
+
     if (!applicationId) {
-      setLifecycle(null);
-      setApplicationSummary(null);
+      if (isCurrent()) {
+        setLifecycle(null);
+        setApplicationSummary(null);
+      }
       return { success: false, skipped: true };
     }
 
-    setLoadingLifecycle(true);
+    if (isCurrent()) setLoadingLifecycle(true);
     try {
       const response = await sendMessageToBackground({
         type: 'FETCH_APPLICATION_LIFECYCLE',
         applicationId,
+        emailId,
       });
+
+      if (!isCurrent()) return response;
 
       if (response?.success && response?.lifecycle) {
         setLifecycle(response.lifecycle);
@@ -346,8 +358,21 @@ export default function EmailPreview({
       }
 
       return response;
+    } catch (error) {
+      // A stale/orphaned applicationId returns 404 "Application not found" once an
+      // application re-resolution/repair deletes the old row and re-keys its emails.
+      // Degrade to local thread stages instead of surfacing an uncaught rejection.
+      if (isCurrent()) {
+        setLifecycle(null);
+        setApplicationSummary(null);
+      }
+      console.warn(
+        `[EmailPreview] Lifecycle fetch failed for application ${applicationId}; showing local stages.`,
+        error?.message || error
+      );
+      return { success: false, error: error?.message || 'Failed to fetch application lifecycle' };
     } finally {
-      setLoadingLifecycle(false);
+      if (isCurrent()) setLoadingLifecycle(false);
     }
   }, []);
 
@@ -356,8 +381,8 @@ export default function EmailPreview({
   }, [email, threadArr]);
 
   useEffect(() => {
-    loadLifecycle(email?.applicationId);
-  }, [email?.applicationId, loadLifecycle]);
+    loadLifecycle(email?.applicationId, email?.id);
+  }, [email?.applicationId, email?.id, loadLifecycle]);
 
   const rawJourneyData = useMemo(() => {
     const isRelevant = (value) => ['applied', 'interviewed', 'offers', 'rejected'].includes(normalizeApplicationStatusKey(value));
@@ -569,7 +594,7 @@ export default function EmailPreview({
       if (resp?.success) {
         const linkedApplicationId = email?.applicationId || resp?.applicationId || resp?.linkedApplicationId;
         if (linkedApplicationId) {
-          await loadLifecycle(linkedApplicationId);
+          await loadLifecycle(linkedApplicationId, email?.id);
         }
         showNotification('Linking complete. Refreshing...', 'success');
       } else {
@@ -600,9 +625,9 @@ export default function EmailPreview({
           : null;
         const nextApplicationId = updatedEmail?.applicationId || email.applicationId;
         if (nextApplicationId) {
-          await loadLifecycle(nextApplicationId);
+          await loadLifecycle(nextApplicationId, email?.id);
         } else {
-          await loadLifecycle(null);
+          await loadLifecycle(null, email?.id);
         }
         showNotification('Repair complete. Refreshing...', 'success');
       } else {
@@ -806,8 +831,7 @@ export default function EmailPreview({
             <div className="mt-3 space-y-3">
               {journeyStages.map((stage, idx) => {
                 const stageKey = normalizeApplicationStatusKey(stage.category);
-                const stagePresentationKey = normalizeApplicationPresentationStatusKey(stageKey);
-                const stageClassName = STATUS_CLASSES[stagePresentationKey] || STATUS_CLASSES.applied;
+                const stageClassName = STATUS_CLASSES[stageKey] || STATUS_CLASSES.applied;
 
                 return (
                   <div key={stage.emailId || `${stage.category}-${idx}`} className="flex items-start gap-3">
@@ -815,7 +839,7 @@ export default function EmailPreview({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <span className={stageClassName}>{getCategoryTitle(stagePresentationKey)}</span>
+                          <span className={stageClassName}>{getCategoryTitle(stageKey)}</span>
                           <p className="mt-1 text-[11px] text-muted-foreground">{getJourneyDescription(stage.category)}</p>
                           {stage.eventCount > 1 ? (
                             <p className="mt-1 text-[11px] text-muted-foreground">

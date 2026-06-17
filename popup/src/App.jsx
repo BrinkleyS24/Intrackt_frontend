@@ -20,7 +20,15 @@ import { compactSafeTextValues } from './utils/sensitiveContent';
 
 import { CONFIG } from './utils/constants';
 import PremiumTeaserCard from './components/PremiumTeaserCard';
-import { AlertTriangle, ArrowLeft, Briefcase, CalendarDays, LogOut, Mail, RefreshCw, Search, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CalendarDays, LogOut, RefreshCw, Search, X } from 'lucide-react';
+
+// Brand mark shared with the web app (frontend/web/public/logo-transparent.png),
+// copied into the extension's icons/ (bundled to dist). chrome.runtime.getURL
+// yields an absolute extension URL that resolves from the popup and the lab iframe.
+const LOGO_URL =
+  typeof chrome !== 'undefined' && chrome.runtime?.getURL
+    ? chrome.runtime.getURL('icons/logo-transparent.png')
+    : '';
 
 const LONG_SYNC_WARNING_MS = 10 * 60 * 1000;
 const IDLE_SYNC_MESSAGES = new Set(['no sync in progress']);
@@ -68,7 +76,7 @@ const isPreviewCandidateEmail = (email) => {
 const MAIN_TABS = [
   { id: 'all', label: 'All', activeClassName: 'bg-accent text-accent-foreground border-transparent' },
   { id: 'applied', label: 'Applied', activeClassName: 'bg-secondary text-primary border-transparent' },
-  { id: 'interviewed', label: 'Interviews', activeClassName: 'bg-warning text-warning-foreground border-transparent' },
+  { id: 'interviewed', label: 'Interviews', activeClassName: 'bg-warning text-white border-transparent' },
   { id: 'offers', label: 'Offers', activeClassName: 'bg-success text-success-foreground border-transparent' },
   { id: 'rejected', label: 'Rejected', activeClassName: 'bg-destructive text-destructive-foreground border-transparent' },
 ];
@@ -870,8 +878,8 @@ function App() {
                 { key: 'rejected', label: 'Rejected', value: stats.rejected, cardClass: 'bg-destructive/10', textClass: 'text-destructive' },
               ].map((stat) => (
                 <div key={stat.key} className={`${stat.cardClass} rounded-xl px-2 py-2 text-center`}>
-                  <div className={`text-xl font-bold leading-none ${stat.textClass}`}>{stat.value}</div>
-                  <div className="mt-1 text-[10px] text-muted-foreground">{stat.label}</div>
+                  <div className={`text-xl font-bold leading-none tracking-[-0.02em] ${stat.textClass}`}>{stat.value}</div>
+                  <div className="mt-1 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground">{stat.label}</div>
                 </div>
               ))}
             </div>
@@ -928,12 +936,6 @@ function App() {
 
             {renderQuotaStatusNotice()}
 
-            <PremiumTeaserCard
-              userPlan={userPlan}
-              stats={allViewHeadlineSummary.counts}
-              onOpenPremiumPage={openPremiumStatusPage}
-            />
-
             <div className="flex gap-1.5 overflow-x-auto pb-1 popup-scrollbar">
               {MAIN_TABS.map((tab) => (
               <button
@@ -981,6 +983,15 @@ function App() {
             onMarkAllAsRead={allApplicationsFilter === 'all' ? undefined : markEmailsAsReadForCategory}
             isMarkingAllAsRead={markingAllAsRead}
             compact
+            footerSlot={
+              <div className="px-3 pb-3 pt-2">
+                <PremiumTeaserCard
+                  userPlan={userPlan}
+                  stats={allViewHeadlineSummary.counts}
+                  onOpenPremiumPage={openPremiumStatusPage}
+                />
+              </div>
+            }
           />
         </div>
       );
@@ -1023,9 +1034,9 @@ function App() {
         <div className="w-full">
           <div className="mb-6 text-center">
             <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/15">
-              <Briefcase className="h-7 w-7 text-primary-foreground" />
+              <img src={LOGO_URL} alt="" className="h-10 w-10" />
             </div>
-            <h1 className="text-2xl font-bold text-foreground">Applendium</h1>
+            <h1 className="text-2xl font-bold lowercase text-foreground">applendium</h1>
             <p className="mt-2 text-sm text-muted-foreground">Track your job search from your inbox.</p>
           </div>
 
@@ -1089,8 +1100,8 @@ function App() {
               <ArrowLeft className="h-4 w-4" />
             </button>
           )}
-          <Mail className="h-4 w-4 shrink-0 text-accent" />
-          <span className="truncate text-sm font-semibold text-primary-foreground">Applendium</span>
+          <img src={LOGO_URL} alt="" className="h-5 w-5 shrink-0" />
+          <span className="truncate text-sm font-semibold lowercase text-primary-foreground">applendium</span>
           <span data-testid="plan-badge" className="rounded bg-primary-foreground/10 px-1.5 py-0.5 text-[10px] text-primary-foreground/75">
             {userPlan === 'premium' ? 'Premium' : 'Free'}
           </span>

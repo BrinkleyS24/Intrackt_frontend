@@ -169,7 +169,7 @@ test('renders premium footer behavior without a live dashboard promise', async (
 
   await expect(page.getByTestId('state-plan')).toContainText('Premium');
   await expect(frame.getByTestId('plan-badge')).toContainText('Premium');
-  await expect(frame.getByTestId('dashboard-link')).toContainText('Premium status');
+  await expect(frame.getByTestId('dashboard-link')).toContainText('Premium dashboard');
   await expect(premiumThread).toBeVisible();
 
   await page.screenshot({

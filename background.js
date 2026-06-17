@@ -4128,19 +4128,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       case 'FETCH_APPLICATION_LIFECYCLE':
         try {
-          const { applicationId } = msg;
+          const { applicationId, emailId } = msg;
           if (!applicationId) {
             sendResponse({ success: false, error: 'Application ID is required' });
             break;
           }
 
+          // Pass emailId so the backend can self-heal a stale/orphaned applicationId
+          // by resolving the email's current linked application.
+          const lifecycleQuery = {};
+          if (emailId !== undefined && emailId !== null && emailId !== '') {
+            lifecycleQuery.emailId = emailId;
+          }
+
           const response = await apiFetch(`/api/emails/applications/${applicationId}/lifecycle`, {
-            method: 'GET'
+            method: 'GET',
+            ...(Object.keys(lifecycleQuery).length > 0 ? { query: lifecycleQuery } : {}),
           });
 
           if (response.success) {
             try {
-              await patchCachedEmailsFromLifecycle(applicationId, response.application, response.lifecycle);
+              // Patch with the resolved application id: when the backend self-heals a
+              // stale id via emailId, this converges the cache onto the current one.
+              const resolvedApplicationId = response.application?.id ?? applicationId;
+              await patchCachedEmailsFromLifecycle(resolvedApplicationId, response.application, response.lifecycle);
             } catch (e) {
               bgLogger.warn?.('Failed to patch cached emails from lifecycle:', e?.message);
             }

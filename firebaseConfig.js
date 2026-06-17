@@ -1,3 +1,4 @@
+
 const REQUIRED_FIREBASE_CONFIG_KEYS = ['apiKey', 'authDomain', 'projectId', 'appId'];
 
 const RAW_FIREBASE_ENV = {

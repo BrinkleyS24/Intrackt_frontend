@@ -77,7 +77,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage }
   ];
 
   return (
-    <div className="rounded-2xl border border-accent/25 bg-accent/5 p-3 shadow-sm">
+    <div data-testid="premium-teaser" className="rounded-2xl border border-accent/25 bg-accent/5 p-3 shadow-sm">
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1.5 text-[11px] font-semibold text-accent">
           <Sparkles className="h-3.5 w-3.5" />

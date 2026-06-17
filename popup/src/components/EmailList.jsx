@@ -89,10 +89,10 @@ const LIFECYCLE_STAGES = [
 
 const TERMINAL_STAGE_META = {
   rejected: {
-    label: 'Closed',
-    dotClassName: 'border-muted-foreground/60 bg-muted-foreground/60',
-    textClassName: 'text-muted-foreground',
-    lineClassName: 'bg-muted-foreground/25',
+    label: 'Rejected',
+    dotClassName: 'border-destructive bg-destructive',
+    textClassName: 'text-destructive',
+    lineClassName: 'bg-destructive',
   },
   closed: {
     label: 'Closed',
@@ -114,7 +114,8 @@ const isPreviewCandidateEmail = (email) => {
 };
 
 function buildObservedLifecycle(group) {
-  const rawStages = (group?.emails || []).map((email) => ({
+  const emails = group?.emails || [];
+  const rawStages = emails.map((email) => ({
     emailId: email?.id,
     subject: safeTextValue(email?.subject, ''),
     category: normalizeApplicationStatusKey(email?.category),
@@ -123,17 +124,32 @@ function buildObservedLifecycle(group) {
   }));
 
   const collapsed = collapseJourneyStages(rawStages);
-  return new Set(
+  const observed = new Set(
     collapsed
       .map((stage) => normalizeApplicationStatusKey(stage?.category || stage?.current_status))
       .filter(Boolean)
   );
+
+  // Manual rejections carry no 'rejected' email category, but the backend resolves
+  // them to a rejected display state. Surface that as a terminal rejection so the
+  // stepper shows the red "Rejected" bubble (and not the neutral "Closed").
+  const hasManualRejection = emails.some((email) => (
+    Boolean(email?.isUserRejected) ||
+    normalizeApplicationStatusKey(email?.displayCategory) === 'rejected'
+  ));
+  if (hasManualRejection) observed.add('rejected');
+
+  return observed;
 }
 
 function LifecycleStepper({ group, currentStatus }) {
   const observedStages = useMemo(() => buildObservedLifecycle(group), [group]);
   const presentationStatus = normalizeApplicationPresentationStatusKey(currentStatus);
-  const terminalStatus = presentationStatus === 'closed' ? 'closed' : null;
+  // The presentation key collapses `rejected` into `closed`. Re-derive the genuine
+  // rejection from observed (non-collapsed) stages so non-rejection closes
+  // (withdrew / no-response / accepted-elsewhere) keep the neutral "Closed" label.
+  const hasGenuineRejection = observedStages.has('rejected');
+  const terminalStatus = presentationStatus === 'closed' ? (hasGenuineRejection ? 'rejected' : 'closed') : null;
   const terminalMeta = terminalStatus ? TERMINAL_STAGE_META[terminalStatus] : null;
   const lastReachedBaseIndex = useMemo(() => {
     let lastIndex = -1;
@@ -213,6 +229,7 @@ function EmailList({
   onMarkAllAsRead,
   isMarkingAllAsRead,
   compact = false,
+  footerSlot = null,
 }) {
   const [activeFilter, setActiveFilter] = useState('all');
   const [showMarkAllConfirm, setShowMarkAllConfirm] = useState(false);
@@ -538,6 +555,7 @@ function EmailList({
               );
             })}
           </div>
+          {footerSlot}
         </div>
       )}
 

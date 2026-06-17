@@ -4,39 +4,40 @@
 
 :root {
   color-scheme: light;
-  --background: 210 20% 98%;
-  --foreground: 215 25% 12%;
+  /* Applendium redesign — warm paper + ink + green */
+  --background: 60 17% 98%;            /* #FAFAF8 */
+  --foreground: 220 49% 8%;            /* #0B1220 */
 
   --card: 0 0% 100%;
-  --card-foreground: 215 25% 12%;
+  --card-foreground: 220 49% 8%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 215 25% 12%;
+  --popover-foreground: 220 49% 8%;
 
-  --primary: 215 50% 23%;
-  --primary-foreground: 210 40% 98%;
+  --primary: 220 49% 8%;               /* #0B1220 ink */
+  --primary-foreground: 0 0% 100%;
 
-  --secondary: 210 25% 93%;
-  --secondary-foreground: 215 25% 20%;
+  --secondary: 90 10% 93%;             /* #EEF0EC */
+  --secondary-foreground: 218 13% 28%; /* #3D4450 */
 
-  --muted: 210 20% 95%;
-  --muted-foreground: 215 15% 50%;
+  --muted: 75 17% 95%;                 /* #F4F5F1 */
+  --muted-foreground: 216 10% 40%;     /* #5C6470 — AA-passing on paper/card; kept over web #79808B */
 
-  --accent: 170 55% 40%;
+  --accent: 160 82% 30%;               /* #0E8C63 */
   --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 72% 55%;
+  --destructive: 3 71% 41%;            /* #B3261E */
   --destructive-foreground: 0 0% 100%;
-  --success: 160 60% 42%;
+  --success: 160 82% 30%;              /* #0E8C63 */
   --success-foreground: 0 0% 100%;
-  --warning: 38 92% 50%;
-  --warning-foreground: 38 92% 14%;
+  --warning: 26 90% 37%;               /* #B45309 */
+  --warning-foreground: 26 91% 25%;    /* #7C3A06 */
 
-  --border: 214 20% 90%;
-  --input: 214 20% 90%;
-  --ring: 215 50% 23%;
+  --border: 72 11% 91%;                /* #E9EAE5 */
+  --input: 72 11% 91%;
+  --ring: 160 82% 30%;
 
-  --radius: 0.625rem;
+  --radius: 0.875rem;                  /* 14px */
 }
 
 .dark {
@@ -83,15 +84,17 @@ html, body, #root {
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, sans-serif;
-  background:
-    radial-gradient(circle at top, rgba(46, 158, 143, 0.08), transparent 30%),
-    linear-gradient(180deg, rgba(29, 53, 87, 0.04), transparent 18%),
-    hsl(var(--background));
+  font-family: 'Space Grotesk', 'Inter', system-ui, sans-serif;
+  background: hsl(var(--background));
   color: hsl(var(--foreground));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overflow: hidden;
+}
+
+::selection {
+  background: hsl(var(--accent));
+  color: #fff;
 }
 
 * {
@@ -145,19 +148,18 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1.2;
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.3;
 }
 
 .status-badge::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: currentColor;
+  content: none;
 }
 
 .status-applied {
