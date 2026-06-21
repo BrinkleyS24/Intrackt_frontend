@@ -20,13 +20,13 @@ The extension launches from the Chrome toolbar and keeps the core workflow insid
 - Open a thread to review the full application journey and message history
 - Refresh from the popup when the user wants a fresh view
 
-Applendium is launching as a free-core Chrome extension. Premium billing is intentionally closed right now while the premium workspace is still being completed. The extension surfaces the premium status page instead of sending users into an unfinished checkout flow.
+Applendium is free to install and use — the core job-tracking workflow above is entirely free. An optional Premium plan with AI-assisted application analysis is available separately on the Applendium web app; it is not required to use the extension, and the extension itself never processes payments.
 
 Support: https://applendium.com/support
 
 Privacy policy: https://applendium.com/privacy
 
-Premium status page: https://applendium.com/upgrade
+Premium plan (optional, web): https://applendium.com/upgrade
 
 ## Short Reviewer-Safe Summary
 
@@ -35,7 +35,7 @@ Read-only Gmail extension for tracking job-application threads by stage inside a
 ## Copy Constraints
 
 - Do not mention reply-from-extension.
-- Do not claim premium billing is open.
+- Do not present in-extension checkout or payments (Premium is purchased separately on the web).
 - Do not claim cross-browser support.
 - Do not claim automated actions that are not visible in the shipped popup.
 - Do not include performance metrics or testimonials.

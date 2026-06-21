@@ -4,10 +4,10 @@
 
 Applendium is a Chrome extension that uses read-only Gmail access to group job-application emails by stage and present them inside the extension popup.
 
-This launch is intentionally scoped as a free-core extension release.
+The extension is free to install and use.
 
-- Premium billing is closed.
-- The public `/upgrade` page is a status page, not an active checkout flow.
+- The core tracking workflow (sync, group by stage, search, review threads) is entirely free.
+- An optional Premium plan is purchased separately on the Applendium web app. The extension itself does not process payments and contains no checkout flow.
 - The extension does not request `gmail.send`.
 
 ## Core Reviewer Flow
@@ -21,7 +21,7 @@ This launch is intentionally scoped as a free-core extension release.
 7. Wait up to 2 minutes for the initial Gmail sync to populate the popup.
 8. Confirm the popup shows grouped job-application conversations by stage.
 9. Open a thread to review the application history view.
-10. Use the footer link to confirm the public premium status page is a holding page rather than a live billing flow.
+10. Use the footer link to confirm it opens the Applendium web app; any premium purchase happens there, not inside the extension.
 
 ## Reviewer Test Account
 
@@ -79,10 +79,10 @@ Applendium does not request gmail.send and does not send email. It only reads Gm
 
 - Privacy policy: `https://applendium.com/privacy`
 - Support: `https://applendium.com/support`
-- Premium status page: `https://applendium.com/upgrade`
+- Premium plan (optional, web): `https://applendium.com/upgrade`
 
 ## Notes For Review
 
 - The extension requires the signed-in Gmail account to contain job-application emails. Use the seeded reviewer account above for deterministic review.
 - The content script is limited to Applendium app routes on `applendium.com` and is not injected across arbitrary sites.
-- If premium language appears in the popup, it should point to the public status page rather than a live checkout.
+- Any premium language in the popup links out to the Applendium web app; the extension itself contains no checkout flow.

@@ -2,18 +2,18 @@
 
 ## Verified Locally
 
-- Production manifest version is `1.0.2`.
+- Production manifest version is `2.0.0`.
 - Production OAuth scope is read-only Gmail only.
 - `gmail.send` is absent from the production manifest and backend auth route.
 - `npm run build` passes for the extension.
 - `npm run test:e2e` passes for the extension harness.
-- `npm run release:prod` passes and produces `applendium-extension-v1.0.2.zip`.
+- `npm run release:prod` passes and produces `applendium-extension-v2.0.0.zip`.
 - Store asset generator is wired through `npm run assets:store`.
 
 ## Submission Assets To Upload
 
 - Zip package:
-  - `applendium-extension-v1.0.2.zip`
+  - `applendium-extension-v2.0.0.zip`
 - Screenshots:
   - `chrome-store/assets/screenshots/01-login.png`
   - `chrome-store/assets/screenshots/02-overview.png`
@@ -37,7 +37,7 @@
 
 - `https://applendium.com/privacy` is live and matches the extension behavior.
 - `https://applendium.com/support` is live and monitored.
-- `https://applendium.com/upgrade` is live and clearly states premium is closed.
+- `https://applendium.com/upgrade` is live (the optional Premium plan, purchased on the web — not inside the extension).
 - Real production-bundle smoke test passes:
   - fresh install
   - Google login
@@ -56,9 +56,8 @@
 ## Do Not Claim In The Listing
 
 - Reply-from-extension
-- Open premium checkout
+- In-extension premium checkout or payments (Premium is purchased on the web)
 - Cross-browser support
-- Capabilities that depend on an unfinished premium dashboard
 
 ## Official Requirement Notes
 

@@ -164,7 +164,7 @@ const slides = [
   {
     id: '02-overview',
     scenarioId: 'free-rich',
-    kicker: 'Free-core launch',
+    kicker: 'Free Chrome extension',
     title: 'See every application stage at a glance.',
     description: 'The default view groups job-application threads by stage so users can scan what is applied, interviewing, offered, or rejected in one pass.',
     previewTitle: 'Pipeline overview inside the popup',
@@ -209,9 +209,9 @@ const slides = [
     title: 'Free-plan limits are visible inside the product.',
     description: 'The launch build does not hide quota pressure or silently fail. The popup surfaces the limit state directly when tracking reaches the current free cap.',
     previewTitle: 'Quota guidance inside the popup',
-    previewDescription: 'This view shows the free-plan limit state and the current premium placeholder language exactly as it appears in the extension.',
-    footerNote: 'Premium billing is intentionally closed for this launch. The popup routes users to the public status page instead of an unfinished checkout.',
-    highlights: ['No silent quota failures', 'Premium status page only', 'Free-core store release'],
+    previewDescription: 'This view shows the free-plan limit state exactly as it appears in the extension, with clear guidance when tracking reaches the free cap.',
+    footerNote: 'The free plan tracks up to 100 applications. When the cap is reached, the popup surfaces the limit clearly instead of failing silently.',
+    highlights: ['No silent quota failures', 'Clear limit guidance', 'Free to install'],
   },
 ];
 
@@ -467,7 +467,7 @@ function renderPromoMarkup({ width, height, title, subtitle, eyebrow, popupDataU
             <div class="chips">
               <span class="chip">Read-only Gmail scope</span>
               <span class="chip">Popup-first workflow</span>
-              <span class="chip">Free-core launch</span>
+              <span class="chip">Free to install</span>
             </div>
           </div>
           <div class="visual">
@@ -557,7 +557,7 @@ async function generateAssets() {
       width: 1400,
       height: 560,
       fileName: 'marquee-promo-tile.png',
-      eyebrow: 'Free-core launch',
+      eyebrow: 'Free Chrome extension',
       title: 'Applendium',
       subtitle: 'A Gmail-connected popup that groups job applications by stage so users can review their search without maintaining a manual tracker.',
       popupDataUrl: popupPreviewDataUrl,

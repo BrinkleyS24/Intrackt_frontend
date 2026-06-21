@@ -67,7 +67,7 @@ Do not declare categories the extension does not use.
 
 - Privacy policy: `https://applendium.com/privacy`
 - Support: `https://applendium.com/support`
-- Premium status page: `https://applendium.com/upgrade`
+- Premium plan (optional, web): `https://applendium.com/upgrade`
 
 ## Official References
 
