@@ -5,7 +5,7 @@ module.exports = {
     "./popup/public/index.html", // Ensure it scans the entry HTML
     "./popup/src/**/*.{js,jsx,ts,tsx}", // Crucial: Scans all JS/JSX in popup/src
   ],
-  darkMode: "media", // or 'class' for manual dark mode toggle
+  darkMode: "class", // forced dark via the `dark` class on <html> (see index.html / index.js)
   theme: {
     extend: {
       fontFamily: {

@@ -47,42 +47,42 @@ export default function Modals({
           id="misclassification-modal"
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm transition-opacity duration-300 opacity-100 visible"
         >
-          <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl w-full max-w-md p-6 relative">
+          <div className="relative w-full max-w-md rounded-2xl border border-border bg-card p-6 text-foreground shadow-xl">
             <button
               onClick={onCloseMisclassificationModal}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:text-zinc-400 dark:hover:text-zinc-200 z-10 p-1"
+              className="absolute top-4 right-4 z-10 p-1 text-muted-foreground transition-colors hover:text-foreground"
               aria-label="Close"
             >
               <X className="h-5 w-5" />
             </button>
 
-            <div className="text-center mb-6">
-              <Flag className="mx-auto h-12 w-12 text-red-500 dark:text-red-400 mb-3" />
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+            <div className="mb-6 text-center">
+              <Flag className="mx-auto mb-3 h-12 w-12 text-destructive" />
+              <h3 className="mb-2 text-xl font-semibold text-foreground">
                 Misclassified Email?
               </h3>
-              <p className="text-gray-600 dark:text-zinc-300 text-sm">
+              <p className="text-sm text-muted-foreground">
                 This email was classified as:{' '}
-                <span className="font-bold text-blue-600 dark:text-blue-400">
+                <span className="font-bold text-accent">
                   {selectedEmailForMisclassification?.category || 'N/A'}
                 </span>
               </p>
-              <p className="text-gray-600 dark:text-zinc-300 text-sm mt-1">
+              <p className="mt-1 text-sm text-muted-foreground">
                 Subject:{' '}
-                <span className="font-semibold">{selectedEmailForMisclassification?.subject || 'N/A'}</span>
+                <span className="font-semibold text-foreground">{selectedEmailForMisclassification?.subject || 'N/A'}</span>
               </p>
             </div>
 
             <div className="mb-6">
               <label
                 htmlFor="correctCategory"
-                className="block text-sm font-medium text-gray-700 dark:text-zinc-200 mb-2"
+                className="mb-2 block text-sm font-medium text-secondary-foreground"
               >
                 Move to:
               </label>
               <select
                 id="correctCategory"
-                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md dark:bg-zinc-700 dark:border-zinc-600 dark:text-white"
+                className="mt-1 block w-full rounded-md border border-border bg-popover py-2 pl-3 pr-10 text-base text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 sm:text-sm"
                 value={selectedMisclassificationCategory}
                 onChange={(e) => setSelectedMisclassificationCategory(e.target.value)}
               >
@@ -97,7 +97,7 @@ export default function Modals({
             <div className="flex justify-end space-x-3">
               <button
                 onClick={onCloseMisclassificationModal}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-zinc-300 bg-gray-200 dark:bg-zinc-700 rounded-md hover:bg-gray-300 dark:hover:bg-zinc-600 transition-colors"
+                className="rounded-md bg-secondary px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
               >
                 Cancel
               </button>
@@ -105,7 +105,7 @@ export default function Modals({
                 onClick={() =>
                   onConfirmMisclassification(selectedEmailForMisclassification, selectedMisclassificationCategory)
                 }
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
+                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90"
               >
                 Confirm Move
               </button>
@@ -117,7 +117,7 @@ export default function Modals({
       {undoToastVisible && (
         <div
           id="undo-toast"
-          className="fixed bottom-4 right-4 p-4 rounded-lg shadow-lg text-white z-50 bg-blue-500 flex items-center space-x-4"
+          className="fixed bottom-4 right-4 z-50 flex items-center space-x-4 rounded-lg border border-border bg-card p-4 text-foreground shadow-lg"
           style={{ minWidth: '250px' }}
         >
           <span>Email reported as irrelevant.</span>
@@ -139,7 +139,7 @@ export default function Modals({
           <button
             id="undo-btn"
             onClick={undoMisclassification}
-            className="ml-auto px-3 py-1 rounded-md bg-blue-700 hover:bg-blue-800 text-white text-sm font-medium transition-colors"
+            className="ml-auto rounded-md bg-accent px-3 py-1 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90"
           >
             Undo
           </button>

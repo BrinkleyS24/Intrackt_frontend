@@ -8,10 +8,10 @@ import React from 'react';
 
 function LoadingOverlay({ message = "Loading..." }) {
   return (
-    <div className="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
       <div className="flex flex-col items-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mb-4"></div>
-        <p className="text-white text-lg font-semibold">{message}</p>
+        <div className="mb-4 h-12 w-12 animate-spin rounded-full border-4 border-accent border-t-transparent"></div>
+        <p className="text-lg font-semibold text-foreground">{message}</p>
       </div>
     </div>
   );

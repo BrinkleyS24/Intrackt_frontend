@@ -100,17 +100,17 @@ const CompanyField = ({ email, userEmail, onUpdate, fieldName = 'company' }) => 
             placeholder={`Enter ${placeholder.toLowerCase()}...`}
             className={cn(
               "flex-1 px-3 py-2 text-sm border rounded-md",
-              "focus:outline-none focus:ring-2 focus:ring-blue-500",
+              "focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent/40",
               "disabled:opacity-50 disabled:cursor-not-allowed",
-              error ? "border-red-500" : "border-gray-300 dark:border-zinc-600",
-              "bg-white dark:bg-zinc-800 text-gray-900 dark:text-white"
+              error ? "border-destructive" : "border-white/10",
+              "bg-white/[0.04] text-foreground placeholder:text-muted-foreground"
             )}
           />
           <button
             onClick={handleSave}
             disabled={isSaving}
             className={cn(
-              "p-2 rounded-md hover:bg-green-100 dark:hover:bg-green-900/20 text-green-600",
+              "p-2 rounded-md text-success hover:bg-success/15",
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}
             title="Save"
@@ -121,7 +121,7 @@ const CompanyField = ({ email, userEmail, onUpdate, fieldName = 'company' }) => 
             onClick={handleCancel}
             disabled={isSaving}
             className={cn(
-              "p-2 rounded-md hover:bg-red-100 dark:hover:bg-red-900/20 text-red-600",
+              "p-2 rounded-md text-destructive hover:bg-destructive/15",
               "disabled:opacity-50 disabled:cursor-not-allowed"
             )}
             title="Cancel"
@@ -131,18 +131,18 @@ const CompanyField = ({ email, userEmail, onUpdate, fieldName = 'company' }) => 
         </div>
       ) : (
         <div className="flex items-center justify-between flex-1 min-w-0">
-          <span className="text-sm text-gray-900 dark:text-white truncate">{fieldValue}</span>
+          <span className="text-sm text-foreground truncate">{fieldValue}</span>
           <div className="flex items-center space-x-2">
             <button
               onClick={handleEdit}
-              className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-700 text-gray-500 hover:text-blue-600 flex-shrink-0"
+              className="p-1.5 rounded-md text-muted-foreground hover:bg-white/[0.06] hover:text-foreground flex-shrink-0"
               title={`Edit ${placeholder.toLowerCase()}`}
             >
               <Pencil className="h-4 w-4" />
             </button>
             {isCorrected && (
               <span
-                className="inline-flex items-center px-2 py-1 rounded text-[10px] bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400 flex-shrink-0"
+                className="inline-flex items-center rounded-full border border-success/25 bg-success/15 px-2 py-0.5 text-[10px] font-medium text-success flex-shrink-0"
                 title={`Corrected by user (was auto-extracted by ${extractionMethod})`}
               >
                 User
@@ -150,7 +150,7 @@ const CompanyField = ({ email, userEmail, onUpdate, fieldName = 'company' }) => 
             )}
             {!isCorrected && extractionMethod && (
               <span
-                className="inline-flex items-center px-2 py-1 rounded text-[10px] bg-gray-100 text-gray-600 dark:bg-zinc-700 dark:text-zinc-400 flex-shrink-0"
+                className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-muted-foreground flex-shrink-0"
                 title={`Auto-extracted by ${extractionMethod}`}
               >
                 Auto
@@ -161,7 +161,7 @@ const CompanyField = ({ email, userEmail, onUpdate, fieldName = 'company' }) => 
       )}
 
       {error && (
-        <div className="text-xs text-red-600 dark:text-red-400 mt-1">
+        <div className="text-xs text-destructive mt-1">
           {error}
         </div>
       )}

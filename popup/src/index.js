@@ -4,6 +4,13 @@ import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css'; // Import the main CSS file (Tailwind output)
 
+// Force the dark theme (Applendium dark mirrors the landing-page hero). This is
+// belt-and-suspenders alongside the `class="dark"` on <html> so the theme holds
+// regardless of how the entry HTML is processed by the build.
+if (typeof document !== 'undefined' && document.documentElement) {
+  document.documentElement.classList.add('dark');
+}
+
 try {
   // Opening the popup is treated as acknowledging the toolbar badge.
   if (typeof chrome !== 'undefined' && chrome.action?.setBadgeText) {

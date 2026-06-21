@@ -75,8 +75,8 @@ const isPreviewCandidateEmail = (email) => {
 
 const MAIN_TABS = [
   { id: 'all', label: 'All', activeClassName: 'bg-accent text-accent-foreground border-transparent' },
-  { id: 'applied', label: 'Applied', activeClassName: 'bg-secondary text-primary border-transparent' },
-  { id: 'interviewed', label: 'Interviews', activeClassName: 'bg-warning text-white border-transparent' },
+  { id: 'applied', label: 'Applied', activeClassName: 'bg-secondary text-foreground border-transparent' },
+  { id: 'interviewed', label: 'Interviews', activeClassName: 'bg-warning text-warning-foreground border-transparent' },
   { id: 'offers', label: 'Offers', activeClassName: 'bg-success text-success-foreground border-transparent' },
   { id: 'rejected', label: 'Rejected', activeClassName: 'bg-destructive text-destructive-foreground border-transparent' },
 ];
@@ -92,7 +92,7 @@ const ListSearchBar = React.memo(function ListSearchBar({ value, onChange, place
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           data-testid="list-search-input"
-          className="w-full rounded-xl border border-border bg-card py-2.5 pl-10 pr-10 text-sm text-foreground shadow-sm outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20"
+          className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 pr-10 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20"
         />
         {value && (
           <button
@@ -134,58 +134,43 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
     return null;
   }
 
+  // Exceeded: still clear (it's the conversion moment) but slim — one line + a
+  // thin bar + the Premium CTA, instead of the old filled warning block.
   if (isExceeded) {
     return (
-      <div data-testid="quota-status-notice" className={`rounded-xl border px-3 py-2 shadow-sm ${toneClassName}`}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className={`flex items-center gap-1.5 text-[11px] font-semibold ${accentTextClassName}`}>
-              <AlertTriangle className="h-3.5 w-3.5" />
-              <span>Tracking limit reached</span>
-            </div>
-            {message && (
-              <p className="mt-1 text-[10px] leading-4 text-muted-foreground">{message}</p>
-            )}
-          </div>
-
+      <div data-testid="quota-status-notice" className="rounded-lg border border-destructive/25 bg-destructive/[0.08] px-3 py-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${accentTextClassName}`}>
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span className="tabular-nums">Limit reached · {Math.min(quota.used, quota.total)}/{quota.total}</span>
+          </span>
           <button
             onClick={onOpenPremiumPage}
             data-testid="quota-premium-status-button"
-            className="shrink-0 rounded-full border border-destructive/25 bg-card/80 px-2.5 py-1 text-[10px] font-semibold text-destructive transition hover:bg-card"
+            className="shrink-0 rounded-full border border-destructive/25 px-2.5 py-1 text-[10px] font-semibold text-destructive transition hover:bg-destructive/10"
             type="button"
           >
             Premium status
           </button>
         </div>
-
-        <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
-          <span className="tabular-nums">{Math.min(quota.used, quota.total)}/{quota.total} tracked</span>
-          <span className={`font-semibold ${accentTextClassName}`}>{clampedPercentage}%</span>
-        </div>
-
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-background/70">
-          <div
-            className={`h-full rounded-full transition-all ${progressClassName}`}
-            style={{ width: `${clampedPercentage}%` }}
-          />
+        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-background/70">
+          <div className={`h-full rounded-full transition-all ${progressClassName}`} style={{ width: `${clampedPercentage}%` }} />
         </div>
       </div>
     );
   }
 
+  // Approaching: a thin one-line indicator (no filled block) — keeps the nudge
+  // without breaking the calm of the rest of the popup.
   return (
-    <div data-testid="quota-status-notice" className={`rounded-xl border px-3 py-2 shadow-sm ${toneClassName}`}>
-      <div className="flex items-start justify-between gap-2">
-        <p className="min-w-0 text-[10px] leading-4 text-muted-foreground">
-          <span className={`mr-1 font-semibold ${accentTextClassName}`}>
-            {Math.min(quota.used, quota.total)}/{quota.total} tracked.
-          </span>
-          {message}
-        </p>
-        <span className={`shrink-0 text-[10px] font-semibold ${accentTextClassName}`}>{clampedPercentage}%</span>
+    <div data-testid="quota-status-notice" className="px-1">
+      <div className="flex items-center justify-between text-[10px] tabular-nums text-muted-foreground">
+        <span>
+          <span className={`font-semibold ${accentTextClassName}`}>{Math.min(quota.used, quota.total)}/{quota.total}</span> tracked
+        </span>
+        <span className={`font-semibold ${accentTextClassName}`}>{clampedPercentage}%</span>
       </div>
-
-      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-background/70">
+      <div className="mt-1 h-1 overflow-hidden rounded-full bg-white/[0.06]">
         <div
           className={`h-full rounded-full transition-all ${progressClassName}`}
           style={{ width: `${clampedPercentage}%` }}
@@ -872,14 +857,14 @@ function App() {
           <div className="space-y-3 px-3 py-3">
             <div className="grid grid-cols-4 gap-2">
               {[
-                { key: 'applied', label: 'Applied', value: stats.applied, cardClass: 'bg-secondary', textClass: 'text-primary' },
-                { key: 'interviewed', label: 'Interviews', value: stats.interviewed, cardClass: 'bg-warning/15', textClass: 'text-warning' },
-                { key: 'offers', label: 'Offers', value: stats.offers, cardClass: 'bg-success/10', textClass: 'text-success' },
-                { key: 'rejected', label: 'Rejected', value: stats.rejected, cardClass: 'bg-destructive/10', textClass: 'text-destructive' },
+                { key: 'applied', label: 'Applied', value: stats.applied, cardClass: 'bg-white/[0.05]', textClass: 'text-foreground', ringClass: 'ring-white/10' },
+                { key: 'interviewed', label: 'Interviews', value: stats.interviewed, cardClass: 'bg-warning/10', textClass: 'text-warning', ringClass: 'ring-warning/20' },
+                { key: 'offers', label: 'Offers', value: stats.offers, cardClass: 'bg-success/10', textClass: 'text-success', ringClass: 'ring-success/20' },
+                { key: 'rejected', label: 'Rejected', value: stats.rejected, cardClass: 'bg-destructive/[0.08]', textClass: 'text-destructive', ringClass: 'ring-destructive/20' },
               ].map((stat) => (
-                <div key={stat.key} className={`${stat.cardClass} rounded-xl px-2 py-2 text-center`}>
-                  <div className={`text-xl font-bold leading-none tracking-[-0.02em] ${stat.textClass}`}>{stat.value}</div>
-                  <div className="mt-1 font-mono text-[9px] font-bold uppercase tracking-[0.16em] text-muted-foreground">{stat.label}</div>
+                <div key={stat.key} className={`${stat.cardClass} rounded-xl px-2 py-2.5 text-center ring-1 ${stat.ringClass}`}>
+                  <div className={`text-[20px] font-bold leading-none tracking-[-0.02em] tabular-nums ${stat.textClass}`}>{stat.value}</div>
+                  <div className="mt-1 font-mono text-[8px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{stat.label}</div>
                 </div>
               ))}
             </div>
@@ -894,15 +879,17 @@ function App() {
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setShowDateFilter((current) => !current)}
+                  title="Filter by date"
+                  aria-label="Filter by date"
                   className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors ${
                     dateRange !== 'all'
                       ? 'border-accent/30 bg-accent/10 text-accent'
-                      : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
+                      : 'border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground'
                   }`}
                   type="button"
                 >
-                  <CalendarDays className="h-3 w-3" />
-                  {dateRange === 'all' ? 'Date' : dateRange === '7d' ? 'Past 7 days' : dateRange === '30d' ? 'Past 30 days' : 'Past 90 days'}
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  {dateRange !== 'all' && (dateRange === '7d' ? 'Past 7 days' : dateRange === '30d' ? 'Past 30 days' : 'Past 90 days')}
                 </button>
 
                 {showDateFilter && (
@@ -948,7 +935,7 @@ function App() {
                   className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
                     allApplicationsFilter === tab.id
                       ? tab.activeClassName
-                      : 'border-border bg-card text-muted-foreground hover:bg-muted'
+                      : 'border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground'
                   }`}
                   type="button"
                 >
@@ -957,19 +944,6 @@ function App() {
               ))}
             </div>
 
-            <div className="flex items-center justify-between gap-2 rounded-xl border border-border bg-card/80 px-3 py-2 text-[11px] text-muted-foreground shadow-sm">
-              <span data-testid="sync-status-label">{syncStatusLabel}</span>
-              <div className="flex items-center gap-3">
-                <button onClick={handleRefresh} className="inline-flex items-center gap-1 transition hover:text-foreground" data-testid="refresh-button" type="button">
-                  <RefreshCw className={`h-3.5 w-3.5 ${isSyncActive ? 'animate-spin' : ''}`} />
-                  Refresh
-                </button>
-                <button onClick={logout} className="inline-flex items-center gap-1 transition hover:text-foreground" type="button">
-                  <LogOut className="h-3.5 w-3.5" />
-                  Sign out
-                </button>
-              </div>
-            </div>
           </div>
 
           <EmailList
@@ -1088,21 +1062,23 @@ function App() {
       {isLoadingApp && <LoadingOverlay message="Signing in..." />}
       {showInitialEmailLoading && <LoadingOverlay message="Loading emails..." />}
       <Notification />
-      <div className="flex items-center justify-between bg-primary px-4 py-3">
+      <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           {showBackButton && (
             <button
               onClick={headerAction}
               data-testid="popup-header-back"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-primary-foreground/80 transition hover:bg-primary-foreground/10 hover:text-primary-foreground"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-foreground/70 transition hover:bg-white/10 hover:text-foreground"
               type="button"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
           )}
-          <img src={LOGO_URL} alt="" className="h-5 w-5 shrink-0" />
-          <span className="truncate text-sm font-semibold lowercase text-primary-foreground">applendium</span>
-          <span data-testid="plan-badge" className="rounded bg-primary-foreground/10 px-1.5 py-0.5 text-[10px] text-primary-foreground/75">
+          <span className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] bg-background ring-1 ring-white/10">
+            <img src={LOGO_URL} alt="" className="h-3.5 w-3.5" />
+          </span>
+          <span className="truncate text-sm font-semibold lowercase text-foreground">applendium</span>
+          <span data-testid="plan-badge" className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
             {userPlan === 'premium' ? 'Premium' : 'Free'}
           </span>
           {showHeaderQuotaPill && headerQuotaLabel && (
@@ -1113,8 +1089,37 @@ function App() {
             />
           )}
         </div>
-        <div className="text-[10px] text-primary-foreground/60">
-          {headerMetaLabel}
+        <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+          {selectedCategory === 'all' || selectedCategory === 'home' ? (
+            <>
+              <span data-testid="sync-status-label" className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full ${isSyncActive ? 'bg-warning' : 'bg-success shadow-[0_0_8px_2px_hsl(var(--success)/0.6)]'}`} />
+                {isSyncActive ? 'syncing' : 'synced'}
+              </span>
+              <span className="h-3.5 w-px bg-white/10" />
+              <button
+                onClick={handleRefresh}
+                data-testid="refresh-button"
+                title="Refresh"
+                aria-label="Refresh"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
+                type="button"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isSyncActive ? 'animate-spin' : ''}`} />
+              </button>
+              <button
+                onClick={logout}
+                title="Sign out"
+                aria-label="Sign out"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
+                type="button"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+            </>
+          ) : (
+            headerMetaLabel
+          )}
         </div>
       </div>
 
@@ -1123,7 +1128,7 @@ function App() {
       </div>
 
       {selectedCategory !== 'emailPreview' && (
-        <div className="flex items-center justify-between border-t border-border bg-muted/40 px-3 py-2 text-[10px]">
+        <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-3 py-2 text-[10px]">
           <span className="text-muted-foreground">{footerSummary}</span>
           <button onClick={openPremiumStatusPage} className="font-medium text-accent transition hover:text-accent/80" data-testid="dashboard-link" type="button">
             {userPlan === 'premium' ? 'Premium dashboard ->' : 'Upgrade to Premium ->'}

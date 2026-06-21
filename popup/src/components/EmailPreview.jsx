@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Briefcase, Building2, Clock, ExternalLink, Flag, Lock, ShieldCheck, TrendingUp, X } from 'lucide-react';
+import { Briefcase, Building2, ChevronDown, Clock, ExternalLink, Flag, Lock, ShieldCheck, TrendingUp, X } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { parseEmailDate, getCategoryTitle } from '../utils/uiHelpers';
 import { showNotification } from './Notification';
@@ -202,15 +202,44 @@ const formatPlainTextEmail = (text) => {
   return `<p>${formatted}</p>`.replace(/<p>\s*<\/p>/g, '');
 };
 
-const cleanPlainTextEmail = (text) => (
-  (text || '')
+const cleanPlainTextEmail = (text) => {
+  let out = (text || '')
     .replace(/On\s+.+?\s+at\s+.+?,\s+.+?\s+wrote:\s*/gi, '')
     .replace(/^-+\s*Forwarded message\s*-+$/gim, '')
-    .replace(/^-+\s*Original Message\s*-+$/gim, '')
-    .replace(/https?:\/\/tracking\..+$/gim, '')
-    .replace(/\n\s*\n\s*\n/g, '\n\n')
-    .trim()
-);
+    .replace(/^-+\s*Original Message\s*-+$/gim, '');
+
+  // Cut the terminal footer/boilerplate block — everything from the first footer
+  // marker to the end. (Line-based stripping fails because HTML→text collapses
+  // newlines into one line, so a whole-line match would delete the entire body.)
+  out = out.replace(
+    /(?:(?:you can )?manage your (?:email )?(?:communication )?preferences|communication[_ ]preferences|to unsubscribe|unsubscribe from|update (?:your )?(?:email )?preferences|view (?:this email )?in (?:your )?browser|©\s*\d{4}|all rights reserved|this (?:email|message) was sent to|you(?:'re| are) receiving this)[\s\S]*$/i,
+    '',
+  );
+
+  return out
+    // Strip any remaining urls and bare tracking-token paths.
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/\b\S*\/[A-Za-z0-9_-]{16,}\S*/g, '')
+    .replace(/\[image:[^\]]*\]/gi, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
+// Resolve a message's readable body to clean plain text — strip HTML, then
+// remove tracking links / unsubscribe footers / opaque tokens. Shared by the
+// renderer and the collapse "is this long?" heuristic so they always agree.
+const getCleanMessageText = (message) => {
+  let raw = '';
+  if (message?.html_body && !isEncryptedPayload(message.html_body)) {
+    raw = stripHtmlToText(decodeEmailContentSafe(message.html_body));
+  } else if (message?.body && !isEncryptedPayload(message.body)) {
+    const decoded = decodeEmailContentSafe(message.body);
+    raw = looksLikeHtml(decoded) ? stripHtmlToText(decoded) : decoded;
+  }
+  return cleanPlainTextEmail(raw);
+};
 
 const getEmailThreadId = (emailLike) => {
   const candidates = [emailLike?.thread_id, emailLike?.threadId, emailLike?.thread];
@@ -250,7 +279,7 @@ const openExternalTab = async (url) => {
 const InlineButton = ({ children, className, variant = 'primary', ...props }) => {
   const variantClasses = {
     primary: 'bg-accent text-accent-foreground hover:bg-accent/90',
-    outline: 'border border-border bg-card text-foreground hover:bg-muted',
+    outline: 'border border-white/10 bg-white/[0.03] text-foreground hover:border-white/20 hover:bg-white/[0.06]',
     subtle: 'text-muted-foreground hover:text-foreground',
     danger: 'border border-destructive/25 bg-destructive/10 text-destructive hover:bg-destructive/15',
   };
@@ -314,6 +343,9 @@ export default function EmailPreview({
     : [email];
 
   const [activeIdx, setActiveIdx] = useState(0);
+  const [expandedMessages, setExpandedMessages] = useState({});
+  const toggleMessageExpanded = (key) =>
+    setExpandedMessages((prev) => ({ ...prev, [key]: !prev[key] }));
   const [lifecycle, setLifecycle] = useState(null);
   const [applicationSummary, setApplicationSummary] = useState(null);
   const [loadingLifecycle, setLoadingLifecycle] = useState(false);
@@ -534,37 +566,31 @@ export default function EmailPreview({
     }
   };
 
-  const renderSingleMessage = (message) => {
-    if (message?.html_body && !isEncryptedPayload(message.html_body)) {
-      const styledHtml = sanitizeAndStyleEmailHTML(decodeEmailContentSafe(message.html_body));
-      if (styledHtml.trim()) {
-        return (
-          <div
-            className="email-content-html rounded-xl border border-border bg-card p-4 text-sm text-foreground shadow-sm"
-            dangerouslySetInnerHTML={{ __html: styledHtml }}
-          />
-        );
-      }
-    }
+  const renderSingleMessage = (message, collapsed = false) => {
+    const clampClass = collapsed ? 'max-h-[150px] overflow-hidden' : '';
+    const fade = collapsed ? (
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 rounded-b-xl bg-gradient-to-t from-background to-transparent" />
+    ) : null;
 
-    if (message?.body && !isEncryptedPayload(message.body)) {
-      let decoded = decodeEmailContentSafe(message.body);
-      if (looksLikeHtml(decoded)) {
-        decoded = stripHtmlToText(decoded);
-      }
-      const formatted = formatPlainTextEmail(cleanPlainTextEmail(decoded));
-      if (formatted.trim()) {
-        return (
+    // Always render a clean, readable plain-text version of the body. This strips
+    // HTML cruft, tracking pixels, and footer/unsubscribe junk uniformly (the old
+    // html_body branch bypassed cleanPlainTextEmail and leaked that noise). Full
+    // original formatting is one tap away via the "Gmail" button.
+    const formatted = formatPlainTextEmail(getCleanMessageText(message));
+    if (formatted.trim()) {
+      return (
+        <div className="relative overflow-hidden rounded-xl border border-white/[0.07] bg-background/50">
           <div
-            className="email-content-text rounded-xl border border-border bg-card p-4 text-sm text-foreground shadow-sm"
+            className={cn('email-content-text p-4 text-sm leading-relaxed text-foreground/80', clampClass)}
             dangerouslySetInnerHTML={{ __html: formatted }}
           />
-        );
-      }
+          {fade}
+        </div>
+      );
     }
 
     return (
-      <div className="rounded-xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+      <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4 text-sm text-muted-foreground">
         Email content could not be displayed properly.
       </div>
     );
@@ -722,14 +748,34 @@ export default function EmailPreview({
   const displaySubject = safeTextValue(email.subject, '(No subject)');
   const displayFrom = safeTextValue(email.from, '');
 
+  // What Applendium auto-detected for this thread — real signals from the
+  // classification, not decoration. Mirrors the landing hero's "detected" chips.
+  const detectedSignals = (() => {
+    const out = [];
+    const statusLabel = presentationStatusKey === 'interviewed' ? 'Interview' : getCategoryTitle(presentationStatusKey);
+    out.push(`${statusLabel} detected`);
+    if (safeTextValue(email.company_name, '')) out.push('Company identified');
+    if (safeTextValue(email.position, '')) out.push('Role identified');
+    if (threadArr.length > 1) out.push(`${threadArr.length} emails linked`);
+    else if (journeyStages.length > 0) out.push('Linked to your pipeline');
+    return out;
+  })();
+
   return (
     <>
       <style
         dangerouslySetInnerHTML={{
           __html: `
             .email-content-html, .email-content-text {
-              line-height: 1.6;
+              line-height: 1.65;
               word-break: break-word;
+              overflow-wrap: anywhere;
+            }
+            .email-content-html p, .email-content-text p {
+              margin: 0 0 0.7em;
+            }
+            .email-content-html p:last-child, .email-content-text p:last-child {
+              margin-bottom: 0;
             }
             .email-content-html img {
               max-width: 100% !important;
@@ -741,8 +787,12 @@ export default function EmailPreview({
               max-width: 100% !important;
             }
             .email-content-html a, .email-content-text a {
-              color: #2e9e8f;
+              color: #5FD9AE;
               text-decoration: none;
+              word-break: break-all;
+            }
+            .email-content-html a:hover, .email-content-text a:hover {
+              text-decoration: underline;
             }
           `,
         }}
@@ -769,8 +819,28 @@ export default function EmailPreview({
           </div>
         </div>
 
+        {detectedSignals.length > 0 && (
+          <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
+            <p className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+              <ShieldCheck className="h-3 w-3 text-accent" />
+              Applendium detected
+            </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {detectedSignals.map((signal) => (
+                <span
+                  key={signal}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success"
+                >
+                  <span className="h-1 w-1 rounded-full bg-success" />
+                  {signal}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {threadArr.length > 1 && (
-          <div className="rounded-xl border border-border bg-card px-3 py-2 shadow-sm">
+          <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2">
             <div className="flex items-center justify-between gap-3">
               <div className="text-[11px] text-muted-foreground">
                 {threadArr.length} message{threadArr.length === 1 ? '' : 's'} in thread
@@ -787,7 +857,7 @@ export default function EmailPreview({
           </div>
         )}
 
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
@@ -815,7 +885,7 @@ export default function EmailPreview({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
           <div className="flex items-center justify-between gap-3">
             <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <TrendingUp className="h-4 w-4 text-accent" />
@@ -921,7 +991,7 @@ export default function EmailPreview({
         )}
 
         {showClosePanel && (
-          <div className="space-y-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
+          <div className="space-y-3 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-foreground">Close application</div>
@@ -938,7 +1008,7 @@ export default function EmailPreview({
               <select
                 value={closePreset}
                 onChange={(event) => setClosePreset(event.target.value)}
-                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20"
+                className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20"
                 disabled={closingApplication}
               >
                 <option value="no_response">No response</option>
@@ -954,7 +1024,7 @@ export default function EmailPreview({
                 value={closeNote}
                 onChange={(event) => setCloseNote(event.target.value)}
                 placeholder="Add context (optional)"
-                className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20"
+                className="w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20"
                 disabled={closingApplication}
               />
             </div>
@@ -976,7 +1046,7 @@ export default function EmailPreview({
               <ShieldCheck className="h-3.5 w-3.5" />
               Your next move on this {presentationStatusKey === 'interviewed' ? 'interview' : 'application'}
             </div>
-            <div className="mt-2 flex items-center gap-2 rounded-xl border border-border bg-card/80 px-3 py-2">
+            <div className="mt-2 flex items-center gap-2 rounded-xl border border-white/[0.07] bg-background/50 px-3 py-2">
               <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="h-2.5 w-3/4 rounded bg-muted-foreground/20" />
@@ -998,7 +1068,7 @@ export default function EmailPreview({
           </div>
         )}
 
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
           <div className="mb-3 flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5" />
@@ -1008,22 +1078,40 @@ export default function EmailPreview({
           </div>
 
           <div className="space-y-4">
-            {threadArr.map((message, idx) => (
-              <div key={message.id || `${message.thread_id || message.threadId || 'msg'}-${idx}`} id={`msg-${idx}`} className="space-y-2">
-                {idx > 0 && (
-                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                    <div className="h-px flex-1 bg-border" />
-                    Older message
-                    <div className="h-px flex-1 bg-border" />
+            {threadArr.map((message, idx) => {
+              const messageKey = message.id || `${message.thread_id || message.threadId || 'msg'}-${idx}`;
+              // Collapse long bodies; measured on the cleaned text so junk removal counts.
+              const isLong = getCleanMessageText(message).length > 520;
+              const isExpanded = Boolean(expandedMessages[messageKey]);
+              const collapsed = isLong && !isExpanded;
+
+              return (
+                <div key={messageKey} id={`msg-${idx}`} className="space-y-2">
+                  {idx > 0 && (
+                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                      <div className="h-px flex-1 bg-border" />
+                      Older message
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+                    <span className="truncate">{(message.from || 'Unknown sender').replace(/\s*<[^>]*>\s*/g, '').replace(/^"|"$/g, '').trim() || 'Unknown sender'}</span>
+                    <span className="shrink-0">{formatLongDate(message.date)}</span>
                   </div>
-                )}
-                <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
-                  <span className="truncate">{message.from || 'Unknown sender'}</span>
-                  <span className="shrink-0">{formatLongDate(message.date)}</span>
+                  {renderSingleMessage(message, collapsed)}
+                  {isLong && (
+                    <button
+                      type="button"
+                      onClick={() => toggleMessageExpanded(messageKey)}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-accent transition-colors hover:text-accent/80"
+                    >
+                      {isExpanded ? 'Show less' : 'Show full message'}
+                      <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', isExpanded && 'rotate-180')} />
+                    </button>
+                  )}
                 </div>
-                {renderSingleMessage(message)}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

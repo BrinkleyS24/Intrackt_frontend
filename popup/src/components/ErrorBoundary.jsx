@@ -32,24 +32,24 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-gradient-to-br from-red-50 to-orange-100 flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-white rounded-lg shadow-xl p-6">
-            <div className="flex items-center justify-center w-16 h-16 bg-red-100 rounded-full mx-auto mb-4">
-              <AlertCircle className="h-8 w-8 text-red-600" />
+        <div className="flex min-h-screen items-center justify-center bg-background p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/15">
+              <AlertCircle className="h-8 w-8 text-destructive" />
             </div>
-            
-            <h1 className="text-2xl font-bold text-gray-900 text-center mb-2">
+
+            <h1 className="mb-2 text-center text-2xl font-bold text-foreground">
               Oops! Something went wrong
             </h1>
-            
-            <p className="text-gray-600 text-center mb-6">
+
+            <p className="mb-6 text-center text-muted-foreground">
               The application encountered an unexpected error. This has been logged for review.
             </p>
 
             {process.env.NODE_ENV === 'development' && this.state.error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded text-sm">
-                <p className="font-semibold text-red-800 mb-1">Error Details:</p>
-                <p className="text-red-700 font-mono text-xs break-all">
+              <div className="mb-4 rounded-lg border border-destructive/25 bg-destructive/10 p-3 text-sm">
+                <p className="mb-1 font-semibold text-destructive">Error Details:</p>
+                <p className="break-all font-mono text-xs text-destructive/90">
                   {this.state.error.toString()}
                 </p>
               </div>
@@ -57,13 +57,13 @@ class ErrorBoundary extends React.Component {
 
             <button
               onClick={this.handleReset}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center space-x-2"
+              className="flex w-full items-center justify-center space-x-2 rounded-lg bg-accent py-3 px-4 font-semibold text-accent-foreground transition-colors duration-200 hover:bg-accent/90"
             >
               <RefreshCw className="h-4 w-4" />
               <span>Reload Application</span>
             </button>
 
-            <p className="text-xs text-gray-500 text-center mt-4">
+            <p className="mt-4 text-center text-xs text-muted-foreground">
               If this problem persists, try logging out and back in.
             </p>
           </div>

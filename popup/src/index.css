@@ -41,37 +41,39 @@
 }
 
 .dark {
-  --background: 215 30% 8%;
-  --foreground: 210 30% 92%;
+  color-scheme: dark;
+  /* Applendium dark — mirrors the landing-page hero popup (deep navy + bright green/gold/pink) */
+  --background: 220 49% 8%;             /* #0B1220 — hero section bg */
+  --foreground: 213 27% 90%;            /* #DCE2EA soft white */
 
-  --card: 215 30% 11%;
-  --card-foreground: 210 30% 92%;
+  --card: 221 47% 10%;                  /* #0E1626 — popup body surface */
+  --card-foreground: 213 27% 90%;
 
-  --popover: 215 30% 11%;
-  --popover-foreground: 210 30% 92%;
+  --popover: 221 45% 12%;               /* #111A2C */
+  --popover-foreground: 213 27% 90%;
 
-  --primary: 170 55% 50%;
-  --primary-foreground: 215 30% 8%;
+  --primary: 221 44% 13%;               /* #15203A — header bar, distinct from bg */
+  --primary-foreground: 0 0% 100%;      /* white text on header */
 
-  --secondary: 215 25% 18%;
-  --secondary-foreground: 210 30% 85%;
+  --secondary: 219 28% 16%;             /* #1B2333 — subtle chip/pill surface */
+  --secondary-foreground: 215 18% 76%;  /* #B6C0CE */
 
-  --muted: 215 25% 15%;
-  --muted-foreground: 215 15% 55%;
+  --muted: 220 30% 13%;                 /* #161F2E */
+  --muted-foreground: 215 15% 63%;      /* #8C97AB — hero muted ink */
 
-  --accent: 170 55% 45%;
+  --accent: 162 84% 29%;                /* #0C8862 — hero CTA green (white-readable) */
   --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 72% 50%;
-  --destructive-foreground: 0 0% 100%;
-  --success: 160 60% 42%;
-  --success-foreground: 0 0% 100%;
-  --warning: 38 92% 50%;
-  --warning-foreground: 38 92% 14%;
+  --destructive: 348 83% 70%;           /* #F2718C — hero rejected pink */
+  --destructive-foreground: 220 49% 9%; /* dark text on the bright pink */
+  --success: 159 62% 46%;               /* #2FBE8F — hero bright green */
+  --success-foreground: 220 49% 9%;     /* dark text on the bright green */
+  --warning: 41 84% 70%;                /* #F4C770 — hero interview gold */
+  --warning-foreground: 40 55% 12%;     /* dark text on the gold */
 
-  --border: 215 25% 18%;
-  --input: 215 25% 18%;
-  --ring: 170 55% 50%;
+  --border: 216 22% 20%;                /* #28303C — subtle light hairline */
+  --input: 216 22% 20%;
+  --ring: 160 70% 42%;
 }
 
 html, body, #root {
@@ -144,12 +146,36 @@ body {
   -webkit-line-clamp: 2;
 }
 
+/* Smooth staggered reveal when switching tabs / loading the list (mirrors the
+   landing hero's AnimatePresence). The container is keyed on the active tab so
+   this replays on every tab switch; rows stagger via inline animation-delay. */
+@keyframes popupRowIn {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.popup-row-in {
+  animation: popupRowIn 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .popup-row-in {
+    animation: none;
+  }
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border-radius: 5px;
-  padding: 2px 7px;
+  border-radius: 999px;
+  padding: 2px 8px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 9px;
   font-weight: 700;
@@ -185,6 +211,24 @@ body {
 .status-closed {
   background: hsl(var(--muted));
   color: hsl(var(--muted-foreground));
+}
+
+/* Dark theme: the badge surfaces stay translucent, but the text must read on
+   navy — use the bright token instead of the (dark) *-foreground pair. */
+.dark .status-applied {
+  color: hsl(var(--secondary-foreground));
+}
+
+.dark .status-interviewed {
+  color: hsl(var(--warning));
+}
+
+/* Cards get real depth on dark; the light ink shadow is invisible on navy. */
+.dark .card {
+  border-color: hsl(var(--border));
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.45),
+    0 12px 32px rgba(0, 0, 0, 0.40);
 }
 
 /* Toast notifications */
