@@ -51,11 +51,11 @@ function generateDynamicInsight(suggestion) {
   const days = suggestion.daysAgo || 0;
 
   const defaultInsights = {
-    follow_up: "Research shows following up now increases response rates by 65%.",
+    follow_up: "A timely follow-up is one of the easiest ways to get a stalled application moving.",
     thank_you: "Thank-you notes after interviews reinforce positive impressions.",
     status_check: "Status checks keep your application top-of-mind professionally.",
     research: "Gather market data to negotiate confidently.",
-    networking: "Personalized connection requests have 40% higher acceptance rates.",
+    networking: "Personalized connection requests get accepted far more often than generic ones.",
     portfolio: "Add your latest project showcasing the skills mentioned in recent job postings you've applied to."
   };
 
@@ -823,7 +823,7 @@ function Dashboard({
       }
 
       // Prefer the background script's backend base URL (supports localhost override for development).
-      let backendBaseUrl = CONFIG?.ENDPOINTS?.BACKEND_BASE_URL || 'https://gmail-tracker-backend-674309673051.us-central1.run.app';
+      let backendBaseUrl = CONFIG?.ENDPOINTS?.BACKEND_BASE_URL || 'https://applendium-backend-965515515114.us-central1.run.app';
       try {
         const backendResp = await chrome.runtime.sendMessage({ type: 'GET_BACKEND_BASE_URL' });
         if (backendResp?.success && typeof backendResp.backendBaseUrl === 'string' && backendResp.backendBaseUrl.trim()) {
@@ -1701,7 +1701,7 @@ function Dashboard({
                                     ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
                                     : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                                 )}>
-                                  {appToInterview}% conversion
+                                  {appToInterview}% reached interviews
                                 </span>
                               </div>
                             )}
@@ -1732,7 +1732,7 @@ function Dashboard({
                                     ? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400"
                                     : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
                                 )}>
-                                  {interviewToOffer}% conversion
+                                  {interviewToOffer}% became offers
                                 </span>
                               </div>
                             )}
@@ -1781,7 +1781,7 @@ function Dashboard({
                                 <>
                                   <p className="flex items-start gap-2">
                                     <span className="text-red-600 dark:text-red-400">•</span>
-                                    <span><strong>Low application-to-interview rate ({appToInterview}%):</strong> Many job searches see ~10–20% conversion, but it varies by role and market. Your application materials may need refinement.</span>
+                                    <span><strong>Low application-to-interview rate ({appToInterview}%):</strong> Many job searches land in the ~10–20% range, but it varies by role and market. Your application materials may need refinement.</span>
                                   </p>
                                   <p className="flex items-start gap-2 ml-5 text-gray-600 dark:text-gray-400">
                                     Focus: Resume optimization, targeted applications, keyword matching.
@@ -1844,7 +1844,7 @@ function Dashboard({
                               {offers > 0 && (
                                 <p className="flex items-start gap-2">
                                   <span className="text-purple-600 dark:text-purple-400">🎊</span>
-                                  <span><strong>Overall success rate: {overallConversion}%</strong> — You've converted {offers} of {applications} applications into offers. Great work!</span>
+                                  <span><strong>Overall success rate: {overallConversion}%</strong> — You've turned {offers} of {applications} applications into offers. Great work!</span>
                                 </p>
                               )}
                             </div>
@@ -2185,7 +2185,7 @@ function Dashboard({
                           insights.push(`${userResponseRate.toFixed(0)}% of your ${totalApps} applications received responses`);
                           
                           if (userResponseRate >= 30) {
-                            insights.push(`Strong conversion rate — your materials are resonating with employers`);
+                            insights.push(`Strong results — your materials are clearly landing with employers`);
                           } else if (userResponseRate >= 15) {
                             insights.push(`Solid response rate — you're getting noticed by employers`);
                           } else if (userResponseRate >= 5) {
@@ -2304,7 +2304,7 @@ function Dashboard({
                             <p>🔴 Red (&lt;10): Too small for conclusions</p>
                             <p>🟡 Yellow (10-29): Marginal - need more data</p>
                             <p>🟢 Green (30+): Adequate for patterns</p>
-                            <p className="mt-2">Statistical significance requires n≥30 applications per category plus multiple offers to measure conversion reliability.</p>
+                            <p className="mt-2">As a rule of thumb, you need 30+ applications in a category (plus multiple offers) before comparing categories means much.</p>
                           </div>
                         </InfoTooltip>
                       </h4>
@@ -2515,10 +2515,10 @@ function Dashboard({
                               <div className="text-xs">
                                 <p className="font-medium text-purple-900 dark:text-purple-300 mb-1">What makes a pattern reliable?</p>
                                 <p className="text-purple-800 dark:text-purple-400 leading-relaxed">
-                                  Statistical significance typically requires <span className="font-medium">n≥30 applications per category</span> plus 
-                                  <span className="font-medium"> multiple offers</span> to measure conversion rates reliably. 
-                                  With smaller samples, patterns might be random noise rather than true signals. 
-                                  You're in the <span className="font-medium">early exploration phase</span> - use this data to form hypotheses, not conclusions.
+                                  A pattern usually needs <span className="font-medium">30+ applications per category</span> plus
+                                  <span className="font-medium"> multiple offers</span> before it can be trusted.
+                                  With fewer, what looks like a pattern may just be luck.
+                                  You're still <span className="font-medium">early</span> - use this data to form hunches, not conclusions.
                                 </p>
                               </div>
                             </div>
@@ -2768,11 +2768,11 @@ function Dashboard({
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-purple-600 dark:text-purple-400">📊</span>
-                      <span><strong>Smart Follow-up Timing</strong> — Research-backed reminders (65% better response rates)</span>
+                      <span><strong>Smart Follow-up Timing</strong> — Reminders timed to when a follow-up actually helps</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-purple-600 dark:text-purple-400">📈</span>
-                      <span><strong>Advanced Analytics</strong> — Conversion funnels, trends & insights</span>
+                      <span><strong>Advanced Analytics</strong> — See where applications stall, plus trends & insights</span>
                     </li>
                   </ul>
                   <button

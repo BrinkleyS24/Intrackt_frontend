@@ -250,6 +250,9 @@ function App() {
   const [dateRange, setDateRange] = useState('all');
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [stableAllViewSummary, setStableAllViewSummary] = useState(null);
+  // Timestamp of the previous popup open — threads newer than this get the
+  // "new since last visit" divider in the inbox. Read once, then rotated.
+  const [newSinceTimestamp, setNewSinceTimestamp] = useState(null);
   const selectedCategoryRef = useRef('all');
   const hasRestoredSelectedCategoryRef = useRef(false);
   const hasUserNavigatedCategoryRef = useRef(false);
@@ -267,6 +270,29 @@ function App() {
     syncStatus,
     loadingAuth,
   } = useAuth();
+
+  // Read the last-open timestamp for the "new since last visit" divider, then
+  // rotate it to now. The read value drives the whole session; a quick reopen
+  // simply shows fewer "new" rows, which is the honest reading.
+  useEffect(() => {
+    if (!isLoggedIn) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await chrome.storage?.local?.get(['applendiumLastOpenedAt']);
+        const previous = Number(stored?.applendiumLastOpenedAt);
+        if (!cancelled && Number.isFinite(previous) && previous > 0) {
+          setNewSinceTimestamp(previous);
+        }
+        await chrome.storage?.local?.set({ applendiumLastOpenedAt: Date.now() });
+      } catch (_) {
+        /* storage unavailable (lab harness) — divider simply stays hidden */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoggedIn]);
 
   const {
     categorizedEmails,
@@ -829,17 +855,19 @@ function App() {
   const renderMainContent = () => {
     if (selectedCategory === 'emailPreview') {
       return (
-        <EmailPreview
-          email={selectedEmail}
-          onBack={handleBackToCategory}
-          onArchive={handleArchive}
-          onOpenMisclassificationModal={openMisclassificationModal}
-          userPlan={userPlan}
-          onOpenPremiumPage={openPremiumStatusPage}
-          onUpdateCompanyName={handleUpdateCompanyName}
-          onUpdatePosition={handleUpdatePosition}
-          userEmail={userEmail}
-        />
+        <div className="popup-view-enter">
+          <EmailPreview
+            email={selectedEmail}
+            onBack={handleBackToCategory}
+            onArchive={handleArchive}
+            onOpenMisclassificationModal={openMisclassificationModal}
+            userPlan={userPlan}
+            onOpenPremiumPage={openPremiumStatusPage}
+            onUpdateCompanyName={handleUpdateCompanyName}
+            onUpdatePosition={handleUpdatePosition}
+            userEmail={userEmail}
+          />
+        </div>
       );
     }
 
@@ -957,6 +985,7 @@ function App() {
             onMarkAllAsRead={allApplicationsFilter === 'all' ? undefined : markEmailsAsReadForCategory}
             isMarkingAllAsRead={markingAllAsRead}
             compact
+            newSinceTimestamp={newSinceTimestamp}
             footerSlot={
               <div className="px-3 pb-3 pt-2">
                 <PremiumTeaserCard
@@ -1092,9 +1121,9 @@ function App() {
         <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
           {selectedCategory === 'all' || selectedCategory === 'home' ? (
             <>
-              <span data-testid="sync-status-label" className="flex items-center gap-1.5">
-                <span className={`h-1.5 w-1.5 rounded-full ${isSyncActive ? 'bg-warning' : 'bg-success shadow-[0_0_8px_2px_hsl(var(--success)/0.6)]'}`} />
-                {isSyncActive ? 'syncing' : 'synced'}
+              <span data-testid="sync-status-label" className="flex items-center gap-1.5" title={syncStatusLabel}>
+                <span className={`h-1.5 w-1.5 rounded-full ${isSyncStuck ? 'bg-destructive' : isSyncActive ? 'bg-warning' : 'bg-success shadow-[0_0_8px_2px_hsl(var(--success)/0.6)]'}`} />
+                {isSyncStuck ? 'Sync may be stuck' : isSyncActive ? 'syncing' : 'synced'}
               </span>
               <span className="h-3.5 w-px bg-white/10" />
               <button
@@ -1123,7 +1152,7 @@ function App() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto popup-scrollbar">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden popup-scrollbar">
         {renderMainContent()}
       </div>
 

@@ -213,6 +213,7 @@ function EmailList({
   isMarkingAllAsRead,
   compact = false,
   footerSlot = null,
+  newSinceTimestamp = null,
 }) {
   const [activeFilter, setActiveFilter] = useState('all');
   const [showMarkAllConfirm, setShowMarkAllConfirm] = useState(false);
@@ -298,6 +299,16 @@ function EmailList({
     setShowMarkAllConfirm(false);
     onMarkAllAsRead(category, visibleUnreadEmailIds);
   };
+
+  const groupTimestamp = (group) => {
+    const raw = group?.date || group?.latestEmail?.date;
+    if (!raw) return 0;
+    const ts = new Date(raw).getTime();
+    return Number.isNaN(ts) ? 0 : ts;
+  };
+
+  const isNewSinceLastVisit = (group) =>
+    Boolean(newSinceTimestamp) && groupTimestamp(group) > newSinceTimestamp;
 
   const renderHeader = () => {
     if (compact) return null;
@@ -455,9 +466,31 @@ function EmailList({
                 !/[.!?]\s+\S/.test(rawPosition)
               ) ? rawPosition : null;
 
+              // Boundary between "arrived since your last visit" and everything
+              // older — only meaningful in the compact home inbox, where groups
+              // are sorted newest-first.
+              const showNewBoundary =
+                compact &&
+                index > 0 &&
+                isNewSinceLastVisit(paginatedThreadGroups[index - 1]) &&
+                !isNewSinceLastVisit(group);
+
               return (
+                <React.Fragment key={group.threadId}>
+                {showNewBoundary && (
+                  <div
+                    data-testid="new-since-divider"
+                    className="flex items-center gap-2 px-1 pt-1"
+                    aria-label="Conversations above this line arrived since your last visit"
+                  >
+                    <span className="h-px flex-1 bg-accent/30" />
+                    <span className="shrink-0 font-mono text-[8px] font-bold uppercase tracking-[0.14em] text-accent/80">
+                      new above · since last visit
+                    </span>
+                    <span className="h-px flex-1 bg-accent/30" />
+                  </div>
+                )}
                 <button
-                  key={group.threadId}
                   onClick={() => onEmailSelect(email, group)}
                   data-testid="email-thread-card"
                   data-thread-id={group.threadId}
@@ -539,6 +572,7 @@ function EmailList({
                     </p>
                   )}
                 </button>
+                </React.Fragment>
               );
             })}
           </div>

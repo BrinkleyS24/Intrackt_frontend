@@ -85,7 +85,7 @@ test('renders the free-plan inbox and opens a thread preview', async ({}, testIn
   const frame = await activateScenario(page, 'free-rich');
   const northstarThread = frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Northstar Labs' }).first();
 
-  await expect(frame.getByTestId('quota-status-notice')).toContainText('approaching your tracking limit');
+  await expect(frame.getByTestId('quota-status-notice')).toContainText('82/100 tracked');
   await expect(northstarThread).toBeVisible();
   await northstarThread.click();
   await expect(frame.getByTestId('email-preview')).toBeVisible();
@@ -110,7 +110,7 @@ test('renders the free-plan limit reached state with premium-status guidance', a
 
   await expect(page.getByTestId('state-plan')).toContainText('Free');
   await expect(page.getByTestId('state-quota')).toContainText('Limit reached');
-  await expect(frame.getByTestId('quota-status-notice')).toContainText('Tracking limit reached');
+  await expect(frame.getByTestId('quota-status-notice')).toContainText('Limit reached');
   await expect(frame.getByTestId('quota-premium-status-button')).toBeVisible();
   await expect(frame.getByTestId('dashboard-link')).toContainText('Upgrade to Premium');
 

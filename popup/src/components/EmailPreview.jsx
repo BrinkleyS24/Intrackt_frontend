@@ -7,11 +7,44 @@ import { sendMessageToBackground } from '../utils/chromeMessaging';
 import { collapseJourneyStages } from '../utils/applicationPresentation';
 import { isEncryptedPayload, safeTextValue } from '../utils/sensitiveContent';
 import CompanyField from './CompanyField';
+import confetti from '../lib/confetti.browser.min.js';
 import {
   deriveEmailPresentationState,
   normalizeApplicationPresentationStatusKey,
   normalizeApplicationStatusKey,
 } from '../../../shared/applicationDisplayState.js';
+
+const CELEBRATED_OFFERS_KEY = 'applendiumCelebratedOfferThreads';
+
+// Hero-popup celebration palette (bright green / interview gold / soft white).
+const OFFER_CONFETTI_COLORS = ['#2FBE8F', '#F4C770', '#DCE2EA'];
+
+function fireOfferConfetti() {
+  try {
+    confetti({
+      particleCount: 90,
+      spread: 75,
+      startVelocity: 32,
+      origin: { x: 0.5, y: 0.3 },
+      colors: OFFER_CONFETTI_COLORS,
+      zIndex: 1200,
+      disableForReducedMotion: true,
+    });
+    setTimeout(() => {
+      confetti({
+        particleCount: 45,
+        spread: 110,
+        startVelocity: 24,
+        origin: { x: 0.5, y: 0.25 },
+        colors: OFFER_CONFETTI_COLORS,
+        zIndex: 1200,
+        disableForReducedMotion: true,
+      });
+    }, 220);
+  } catch (_) {
+    /* celebration is never allowed to break the preview */
+  }
+}
 
 const STATUS_CLASSES = {
   applied: 'status-badge status-applied',
@@ -355,6 +388,40 @@ export default function EmailPreview({
   const [closePreset, setClosePreset] = useState('no_response');
   const [closeNote, setCloseNote] = useState('');
   const latestLifecycleRequestRef = React.useRef(0);
+
+  // One-time confetti the first time an offer thread is opened — the peak
+  // moment of the whole product should not render like any other row.
+  // Celebrated thread ids persist so reopening the thread stays calm.
+  const offerCelebrationKey = email.thread_id || email.threadId || email.id || null;
+  const threadHasOffer = threadArr.some(
+    (message) => normalizeApplicationStatusKey(message?.category) === 'offers'
+  );
+
+  useEffect(() => {
+    if (!threadHasOffer || !offerCelebrationKey) return undefined;
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const stored = await chrome.storage?.local?.get([CELEBRATED_OFFERS_KEY]);
+        const celebrated = Array.isArray(stored?.[CELEBRATED_OFFERS_KEY])
+          ? stored[CELEBRATED_OFFERS_KEY]
+          : [];
+        if (cancelled || celebrated.includes(offerCelebrationKey)) return;
+        await chrome.storage?.local?.set({
+          [CELEBRATED_OFFERS_KEY]: [...celebrated, offerCelebrationKey].slice(-100),
+        });
+        if (!cancelled) fireOfferConfetti();
+      } catch (_) {
+        /* storage unavailable (lab harness) — skip the celebration */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [threadHasOffer, offerCelebrationKey]);
 
   const loadLifecycle = React.useCallback(async (applicationId, emailId) => {
     // Latest-wins guard: rapidly switching emails can resolve lifecycle responses
