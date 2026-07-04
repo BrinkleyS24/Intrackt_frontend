@@ -5,7 +5,7 @@
  */
 
 export const IS_PRODUCTION_EXTENSION_BUILD = process.env.EXTENSION_BUILD_TARGET === 'production';
-const FALLBACK_BACKEND_BASE_URL = 'https://gmail-tracker-backend-674309673051.us-central1.run.app';
+const FALLBACK_BACKEND_BASE_URL = 'https://applendium-backend-965515515114.us-central1.run.app';
 export const LOCAL_BACKEND_BASE_URL = 'http://localhost:3000';
 export const PRODUCTION_BACKEND_BASE_URL = (
   process.env.BACKEND_BASE_URL_PROD || FALLBACK_BACKEND_BASE_URL

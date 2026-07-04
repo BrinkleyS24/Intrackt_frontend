@@ -32,7 +32,7 @@ $timestamp = (Get-Date).ToString('yyyyMMdd_HHmmss')
 $outDir = Join-Path $buildsDir ("v$timestamp")
 $currentLink = Join-Path $BaseDir 'current'
 $isProductionBuild = $ManifestFile -eq 'manifest.prod.json'
-$productionBackendUrl = 'https://gmail-tracker-backend-674309673051.us-central1.run.app'
+$productionBackendUrl = 'https://applendium-backend-965515515114.us-central1.run.app'
 $productionDashboardUrl = 'https://applendium.com'
 $managedEnvVars = @(
   'DIST_DIR',

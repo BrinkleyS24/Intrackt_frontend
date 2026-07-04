@@ -49,7 +49,7 @@ const IS_PRODUCTION_EXTENSION_BUILD = process.env.EXTENSION_BUILD_TARGET === 'pr
 const ENABLE_VERBOSE_EXTENSION_LOGS = !IS_PRODUCTION_EXTENSION_BUILD || process.env.EXTENSION_VERBOSE_LOGS === 'true';
 const FORCED_BACKEND_TARGET = (process.env.EXTENSION_FORCE_BACKEND_TARGET || '').toString().trim().toLowerCase();
 const ENABLE_APPLICATION_LINK_BACKFILL = process.env.EXTENSION_ENABLE_APP_LINK_BACKFILL === 'true';
-const FALLBACK_BACKEND_BASE_URL = 'https://gmail-tracker-backend-674309673051.us-central1.run.app';
+const FALLBACK_BACKEND_BASE_URL = 'https://applendium-backend-965515515114.us-central1.run.app';
 const PRODUCTION_BACKEND_BASE_URL = (
   process.env.BACKEND_BASE_URL_PROD || FALLBACK_BACKEND_BASE_URL
 ).replace(/\/$/, '');
@@ -4867,4 +4867,3 @@ try {
 } catch (_) {
   // Service worker listeners are best-effort only.
 }
-
