@@ -1086,10 +1086,11 @@ function App() {
               </p>
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                 You may also see a &ldquo;Google hasn&rsquo;t verified this app&rdquo; notice.
-                Applendium has passed every step of Google&rsquo;s verification except the last:
-                an independent security audit (CASA). Until that audit is complete, Google shows
-                this notice to every app at this stage — it&rsquo;s about paperwork in progress,
-                not about what the app can access.{' '}
+                Applendium has passed every step of Google&rsquo;s verification except the last: an
+                independent security audit (CASA), which is underway with TAC Security. Until it
+                completes, Google shows that notice to every app at this stage — it reflects the
+                audit&rsquo;s progress, not what the app can access. To continue, click
+                &ldquo;Advanced,&rdquo; then &ldquo;Go to applendium.com.&rdquo;{' '}
                 <a
                   href="https://applendium.com/privacy"
                   target="_blank"
