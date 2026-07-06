@@ -1082,7 +1082,14 @@ function App() {
                 That permission is how Applendium finds your applications, interviews, and offers
                 and builds your pipeline automatically — no manual logging. The scope we request
                 physically cannot send, delete, or modify email, is never used for ads, and you can
-                revoke it anytime in your Google account.{' '}
+                revoke it anytime in your Google account.
+              </p>
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                You may also see a &ldquo;Google hasn&rsquo;t verified this app&rdquo; notice.
+                Applendium has passed every step of Google&rsquo;s verification except the last:
+                an independent security audit (CASA). Until that audit is complete, Google shows
+                this notice to every app at this stage — it&rsquo;s about paperwork in progress,
+                not about what the app can access.{' '}
                 <a
                   href="https://applendium.com/privacy"
                   target="_blank"
