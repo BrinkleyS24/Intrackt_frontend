@@ -1070,6 +1070,29 @@ function App() {
               </svg>
               <span>{isLoginPending ? 'Signing in...' : 'Sign in with Google'}</span>
             </button>
+
+            <div
+              data-testid="gmail-permission-explainer"
+              className="rounded-xl border border-border bg-muted/40 p-3 text-left"
+            >
+              <p className="text-xs font-semibold text-foreground">
+                Heads up: Google will ask for read-only Gmail access next.
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                That permission is how Applendium finds your applications, interviews, and offers
+                and builds your pipeline automatically — no manual logging. The scope we request
+                physically cannot send, delete, or modify email, is never used for ads, and you can
+                revoke it anytime in your Google account.{' '}
+                <a
+                  href="https://applendium.com/privacy"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium text-primary underline underline-offset-2"
+                >
+                  Privacy policy
+                </a>
+              </p>
+            </div>
           </div>
         </div>
       </div>
