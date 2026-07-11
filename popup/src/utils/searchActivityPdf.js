@@ -179,31 +179,8 @@ export async function downloadSearchActivityPdf({ rows, start, end, userName, us
     },
   });
 
-  // ── Reviewer sign-off ────────────────────────────────────────────────────
-  let afterTableY = (doc.lastAutoTable?.finalY || baselineY + 26) + 30;
-  const pageHeight = doc.internal.pageSize.getHeight();
-  if (afterTableY > pageHeight - 120) {
-    doc.addPage();
-    afterTableY = 72;
-  }
-  doc.setFont('courier', 'bold');
-  doc.setFontSize(7);
-  doc.setTextColor(MUTED);
-  doc.text('FOR REVIEWER USE', margin, afterTableY);
-  doc.setDrawColor(INK);
-  doc.setLineWidth(0.75);
-  const signWidth = (contentWidth - 40) / 3;
-  const signY = afterTableY + 28;
-  ['Reviewed by', 'Signature', 'Date'].forEach((label, index) => {
-    const x = margin + index * (signWidth + 20);
-    doc.line(x, signY, x + signWidth, signY);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.setTextColor(MUTED);
-    doc.text(label, x, signY + 11);
-  });
-
   // ── Footer with provenance on every page ─────────────────────────────────
+  const pageHeight = doc.internal.pageSize.getHeight();
   const pageCount = doc.getNumberOfPages();
   for (let page = 1; page <= pageCount; page += 1) {
     doc.setPage(page);
