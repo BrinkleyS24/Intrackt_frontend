@@ -10,6 +10,7 @@ import LoadingOverlay from './components/LoadingOverlay';
 import { Notification, showNotification } from './components/Notification';
 import Modals from './components/Modals';
 import ReportModal from './components/ReportModal';
+import ReviewAskCard from './components/ReviewAskCard';
 
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
@@ -1199,6 +1200,10 @@ function App() {
       <div className="flex-1 overflow-y-auto overflow-x-hidden popup-scrollbar">
         {renderMainContent()}
       </div>
+
+      {(selectedCategory === 'all' || selectedCategory === 'home') && (
+        <ReviewAskCard trackedCount={quota?.used} isBusy={isSyncActive || isSyncStuck} />
+      )}
 
       {selectedCategory !== 'emailPreview' && (
         <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-3 py-2 text-[10px]">
