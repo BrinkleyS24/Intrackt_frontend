@@ -9,6 +9,7 @@ import EmailPreview from './components/EmailPreview';
 import LoadingOverlay from './components/LoadingOverlay';
 import { Notification, showNotification } from './components/Notification';
 import Modals from './components/Modals';
+import ReportModal from './components/ReportModal';
 
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
@@ -20,7 +21,7 @@ import { compactSafeTextValues } from './utils/sensitiveContent';
 
 import { CONFIG } from './utils/constants';
 import PremiumTeaserCard from './components/PremiumTeaserCard';
-import { AlertTriangle, ArrowLeft, CalendarDays, LogOut, RefreshCw, Search, X } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, CalendarDays, FileDown, LogOut, RefreshCw, Search, X } from 'lucide-react';
 
 // Brand mark shared with the web app (frontend/web/public/logo-transparent.png),
 // copied into the extension's icons/ (bundled to dist). chrome.runtime.getURL
@@ -243,6 +244,7 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [isMisclassificationModalOpen, setIsMisclassificationModalOpen] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [emailToMisclassify, setEmailToMisclassify] = useState(null);
   const [categoryBeforePreview, setCategoryBeforePreview] = useState('all');
   const [allApplicationsFilter, setAllApplicationsFilter] = useState('all');
@@ -260,6 +262,7 @@ function App() {
   const {
     userPlan,
     userEmail,
+    userName,
     userId,
     isLoggedIn,
     isAuthReady,
@@ -1168,6 +1171,16 @@ function App() {
                 <RefreshCw className={`h-3.5 w-3.5 ${isSyncActive ? 'animate-spin' : ''}`} />
               </button>
               <button
+                onClick={() => setIsReportModalOpen(true)}
+                data-testid="report-button"
+                title="Download activity report"
+                aria-label="Download activity report"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
+                type="button"
+              >
+                <FileDown className="h-3.5 w-3.5" />
+              </button>
+              <button
                 onClick={logout}
                 title="Sign out"
                 aria-label="Sign out"
@@ -1204,6 +1217,13 @@ function App() {
         undoMisclassification={undoMisclassification}
         undoToastVisible={undoToastVisible}
         setUndoToastVisible={setUndoToastVisible}
+      />
+      <ReportModal
+        isOpen={isReportModalOpen}
+        onClose={() => setIsReportModalOpen(false)}
+        categorizedEmails={categorizedEmails}
+        userName={userName}
+        userEmail={userEmail}
       />
     </div>
   );
