@@ -9,24 +9,34 @@
 
 ## Detailed Description
 
-Applendium helps users track job application emails from Gmail without maintaining a manual spreadsheet.
+(Hook-driven rewrite 2026-07-08. Honesty rails still apply: no fake match scores, no ATS claims, no testimonials/metrics. The unverified-app note stays.)
 
-The extension launches from the Chrome toolbar and keeps the core workflow inside the popup:
+Your job search already lives in your inbox. Applendium reads the Gmail threads you already have and turns them into a live application tracker, automatically. Every application confirmation, interview invite, offer, and rejection gets sorted into a clean pipeline. No spreadsheet. No manual logging. No write access, ever.
 
-- Sign in with Google from the popup
-- Sync job-application threads from Gmail using read-only Gmail access
-- Group conversations by stage: Applied, Interviews, Offers, and Rejected
-- Search companies and roles from the popup
-- Open a thread to review the full application journey and message history
-- Refresh from the popup when the user wants a fresh view
+How it works:
+- Connect Gmail once (read-only). Applendium finds the job emails already in your inbox.
+- It sorts them by stage: applied, interview, offer, rejected.
+- New emails get added automatically as they arrive.
+- Open any application to read its full conversation history in one place.
+- Download a one-page activity report (PDF) of your applications and weekly counts, for a career coach, a workforce program, or an unemployment work-search requirement.
 
-Applendium is free to install and use — the core job-tracking workflow above is entirely free. An optional Premium plan with AI-assisted application analysis is available separately on the Applendium web app; it is not required to use the extension, and the extension itself never processes payments.
+Built to be honest: most job tools slap a fake "92% match" on everything. Applendium won't. The optional Premium plan (on the Applendium web app) adds Apply Gate, an honest pre-apply verdict (apply, fix your resume first, or skip) based on a posting's real requirements and your own history, plus follow-up reminders that draft the email for you based on where each conversation left off. When there isn't enough data to say something, it says so.
+
+Free forever: the automatic tracker and the activity report. Premium is optional, purchased separately on the web, and never required to use the extension. Works for any profession, not just tech.
+
+Privacy: Gmail access is read-only and used only for the tracking features you see. Never sold, never used for ads. Revoke anytime.
+
+Heads up: connecting Gmail triggers Google's "unverified app" notice. Applendium has passed every step of Google's verification except the final independent security audit, in progress with TAC Security. Read-only and revocable anytime.
 
 Support: https://applendium.com/support
 
 Privacy policy: https://applendium.com/privacy
 
 Premium plan (optional, web): https://applendium.com/upgrade
+
+## What's New (v2.0.3)
+
+New: download a one-page PDF report of your job-search activity — every application, weekly counts, and current status — for a career coach, a workforce program, or an unemployment work-search record. Plus reliability fixes to email classification.
 
 ## Short Reviewer-Safe Summary
 
@@ -42,11 +52,15 @@ Read-only Gmail extension for tracking job-application threads by stage inside a
 
 ## Screenshot Order
 
-1. `chrome-store/assets/screenshots/01-login.png`
-2. `chrome-store/assets/screenshots/02-overview.png`
-3. `chrome-store/assets/screenshots/03-interviews.png`
-4. `chrome-store/assets/screenshots/04-thread-preview.png`
-5. `chrome-store/assets/screenshots/05-free-limit.png`
+Value-first order (regenerated 2026-07-08 with the `free-healthy` fixture: no scarcity bar, sign-in moved last, free-limit shot dropped):
+
+1. `chrome-store/assets/screenshots/01-pipeline.png` — the organized pipeline (lead / money shot)
+2. `chrome-store/assets/screenshots/02-interviews.png` — stage filter
+3. `chrome-store/assets/screenshots/03-thread.png` — thread detail
+4. `chrome-store/assets/screenshots/05-apply-gate.png` — real Apply Gate verdict (premium teaser; composed 2026-07-09 from a live prod verdict via PIL, not the harness generator)
+5. `chrome-store/assets/screenshots/04-signin.png` — read-only Gmail sign-in (context, last)
+
+Rule: never lead with the sign-in shot; never end on a quota/limit shot. Regenerate via `npm run assets:store`.
 
 ## Official References
 
