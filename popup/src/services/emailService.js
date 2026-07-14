@@ -158,6 +158,21 @@ export async function undoMisclassificationService(undoData) {
     return { success: false, error: error.message };
   }
 }
+
+/**
+ * Fetches the "Needs Review" queue: low-confidence emails the classifier flagged
+ * for the user to confirm (instead of silently dropping them).
+ * @returns {Promise<{success: boolean, emails?: Array, count?: number, error?: string}>}
+ */
+export async function fetchReviewQueueService() {
+  try {
+    const response = await sendMessageToBackground({ type: 'FETCH_REVIEW_QUEUE' });
+    return response;
+  } catch (error) {
+    console.error("❌ Applendium: Error sending FETCH_REVIEW_QUEUE message to background:", error);
+    return { success: false, error: error.message };
+  }
+}
 /**
  * Sends a request to the background script to archive an email thread.
  * @param {string} threadId - The ID of the thread to archive.

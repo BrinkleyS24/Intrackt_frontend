@@ -57,6 +57,9 @@ export function useEmails(userEmail, userId, CONFIG) {
   });
   // NEW: State to hold accurate category counts from backend
   const [categoryTotals, setCategoryTotals] = useState(null);
+  // Phase 1 Needs Review lane: low-confidence emails the classifier flagged for the
+  // user to confirm instead of silently dropping.
+  const [reviewEmails, setReviewEmails] = useState([]);
   // State to indicate if email operations are in progress (e.g., fetching, sending)
   const [initialLoading, setInitialLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -780,10 +783,34 @@ export function useEmails(userEmail, userId, CONFIG) {
     }
   }, [categorizedEmails, userId]);
 
+  // Fetch the Needs Review queue (low-confidence emails awaiting user confirmation).
+  const fetchReviewQueue = useCallback(async () => {
+    if (!userEmail || !userId) return;
+    try {
+      const { fetchReviewQueueService } = await import('../services/emailService');
+      const result = await fetchReviewQueueService();
+      if (!isMountedRef.current) return;
+      if (result?.success && Array.isArray(result.emails)) {
+        setReviewEmails(result.emails);
+      }
+    } catch (error) {
+      logEmailWarning('Failed to fetch the review queue.', error);
+    }
+  }, [userEmail, userId, logEmailWarning]);
+
+  // Optimistically drop an email from the review queue once the user classifies it.
+  const resolveReviewEmail = useCallback((emailId) => {
+    setReviewEmails((prev) => prev.filter((email) => String(email?.id) !== String(emailId)));
+  }, []);
+
   // Returns all states and functions provided by this hook
   return {
     categorizedEmails,
     categoryTotals, // NEW: Export category totals to components
+    reviewEmails,
+    reviewCount: reviewEmails.length,
+    fetchReviewQueue,
+    resolveReviewEmail,
     fetchStoredEmails,
     fetchNewEmails,
     isFilteredView,

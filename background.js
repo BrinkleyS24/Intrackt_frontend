@@ -889,6 +889,7 @@ const CONFIG_ENDPOINTS = {
   // Backfill endpoints removed
   // CORRECTED: Changed endpoint to match backend route /misclassification
   REPORT_MISCLASSIFICATION: '/api/emails/misclassification',
+  REVIEW_QUEUE: '/api/emails/review-queue',
   // CORRECTED: Changed endpoint to match backend route /undo-misclassification
   UNDO_MISCLASSIFICATION: '/api/emails/undo-misclassification',
   FETCH_USER_PLAN: '/api/user',
@@ -3758,6 +3759,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(response);
         } catch (error) {
           console.error("❌ Applendium Background: Error archiving email:", error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      case 'FETCH_REVIEW_QUEUE':
+        try {
+          const response = await apiFetch(CONFIG_ENDPOINTS.REVIEW_QUEUE, {
+            method: 'POST',
+            body: { limit: 200 },
+          });
+          sendResponse(response);
+        } catch (error) {
+          console.error('❌ Applendium Background: Error fetching review queue:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;

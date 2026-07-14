@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import EmailList from './components/EmailList';
+import ReviewLane from './components/ReviewLane';
 import EmailPreview from './components/EmailPreview';
 import LoadingOverlay from './components/LoadingOverlay';
 import { Notification, showNotification } from './components/Notification';
@@ -315,7 +316,29 @@ function App() {
     isSyncing,
     syncStuck,
     markingAllAsRead,
+    reviewEmails,
+    reviewCount,
+    fetchReviewQueue,
+    resolveReviewEmail,
   } = useEmails(userEmail, userId, CONFIG);
+
+  // Needs Review: track in-flight classifications so buttons disable during the round-trip.
+  const [reviewBusyIds, setReviewBusyIds] = useState(() => new Set());
+  const handleReviewClassify = useCallback(async (email, category) => {
+    if (!email?.id) return;
+    const id = String(email.id);
+    setReviewBusyIds((prev) => new Set(prev).add(id));
+    try {
+      await handleReportMisclassification(email, category);
+      resolveReviewEmail(email.id);
+    } finally {
+      setReviewBusyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }, [handleReportMisclassification, resolveReviewEmail]);
 
   const isLoadingApp = loadingAuth && !isLoggedIn;
   useEffect(() => {
@@ -468,6 +491,7 @@ function App() {
         try {
           await fetchStoredEmails();
           await fetchQuotaData();
+          fetchReviewQueue();
         } catch (error) {
           appLogger.error('Initial popup data fetch failed:', error?.message || error);
           showNotification('Failed to load initial data.', 'error');
@@ -478,7 +502,7 @@ function App() {
     };
 
     initialDataFetch();
-  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData]);
+  }, [isAuthReady, userEmail, userId, fetchStoredEmails, fetchQuotaData, fetchReviewQueue]);
 
   useEffect(() => {
     const handleBackgroundMessage = (message) => {
@@ -875,6 +899,16 @@ function App() {
       );
     }
 
+    if (selectedCategory === 'review') {
+      return (
+        <ReviewLane
+          emails={reviewEmails}
+          onClassify={handleReviewClassify}
+          busyIds={reviewBusyIds}
+        />
+      );
+    }
+
     if (selectedCategory === 'all' || selectedCategory === 'home') {
       const filteredConversations =
         allApplicationsFilter === 'all'
@@ -1117,9 +1151,11 @@ function App() {
     : () => handleCategoryChange('all');
   const headerMetaLabel = selectedCategory === 'emailPreview'
     ? ''
-    : (selectedCategory === 'all' || selectedCategory === 'home'
-      ? (extensionVersionLabel || 'Applendium')
-      : getCategoryTitle(selectedCategory));
+    : selectedCategory === 'review'
+      ? 'Needs review'
+      : (selectedCategory === 'all' || selectedCategory === 'home'
+        ? (extensionVersionLabel || 'Applendium')
+        : getCategoryTitle(selectedCategory));
 
   return (
     <div data-testid="extension-popup-root" className="flex h-[600px] max-h-[600px] w-[400px] flex-col overflow-hidden rounded-[18px] border border-border bg-background text-foreground shadow-[0_18px_40px_rgba(17,24,39,0.14)]">
@@ -1196,6 +1232,21 @@ function App() {
           )}
         </div>
       </div>
+
+      {reviewCount > 0 && selectedCategory !== 'review' && selectedCategory !== 'emailPreview' && (
+        <button
+          type="button"
+          onClick={() => handleCategoryChange('review')}
+          data-testid="needs-review-banner"
+          className="flex items-center justify-between gap-2 border-b border-warning/20 bg-warning/[0.08] px-4 py-2 text-left text-xs text-foreground transition hover:bg-warning/[0.14]"
+        >
+          <span className="flex items-center gap-2">
+            <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+            <span><span className="font-semibold">{reviewCount}</span> {reviewCount === 1 ? 'email needs' : 'emails need'} a quick review</span>
+          </span>
+          <span className="font-medium text-accent">Review -&gt;</span>
+        </button>
+      )}
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden popup-scrollbar">
         {renderMainContent()}
