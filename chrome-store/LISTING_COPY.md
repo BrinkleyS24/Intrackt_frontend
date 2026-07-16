@@ -2,8 +2,9 @@
 
 ## Listing Basics
 
-- Name: `Applendium`
-- Current manifest description: `Effortlessly track your job applications directly from Gmail.`
+- Name: `Applendium: Job Application Tracker for Gmail` (45/75 chars; keyword-bearing title, changed for v2.0.4 store search visibility)
+- Current manifest description (CWS summary, 130/132 chars): `Automatic job application tracker for Gmail. Sorts applied, interview, offer, and rejected emails. No spreadsheets, no data entry.`
+- Rule: descriptive keywords only, never keyword stuffing (CWS spam policy can reject or delist the listing). Title format is `Brand: what it does`, same pattern as every ranking competitor.
 - Recommended category: `Productivity`
 - Recommended language: `English`
 
