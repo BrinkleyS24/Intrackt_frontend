@@ -151,51 +151,40 @@ const STORE_CAPTURE_CSS = `
 
 const slides = [
   {
-    id: '01-login',
-    scenarioId: 'logged-out',
-    kicker: 'Chrome extension',
-    title: 'Track your job search from the popup.',
-    description: 'Sign in with Google from the extension and start from the Gmail-connected job tracker, not a blank spreadsheet.',
-    previewTitle: 'Google sign-in from the popup',
-    previewDescription: 'The launch flow starts inside the extension popup. This screenshot uses the real shipped popup page rendered through the extension harness.',
-    footerNote: 'Read-only Gmail access is requested at sign-in. The extension no longer asks for send-mail permission.',
-    highlights: ['Read-only Gmail access', 'Popup-first onboarding', 'No manual setup inside the store build'],
-  },
-  {
-    id: '02-overview',
-    scenarioId: 'free-rich',
+    id: '01-pipeline',
+    scenarioId: 'free-healthy',
     kicker: 'Free Chrome extension',
-    title: 'See every application stage at a glance.',
-    description: 'The default view groups job-application threads by stage so users can scan what is applied, interviewing, offered, or rejected in one pass.',
-    previewTitle: 'Pipeline overview inside the popup',
-    previewDescription: 'The All tab surfaces grouped conversations, category totals, search, refresh, and the current free-plan status in a single view.',
-    footerNote: 'The screenshot shows the real popup rendered in the extension harness with fixture-backed data that mirrors the shipped UI states.',
-    highlights: ['Grouped by stage', 'Search companies and roles', 'Refresh from the popup'],
+    title: 'Your job search, organized automatically.',
+    description: 'Applendium reads the job emails already in your Gmail and sorts them into a live pipeline. Every application, interview, offer, and rejection, grouped by stage. No spreadsheet, no manual logging.',
+    previewTitle: 'Your inbox, turned into a pipeline',
+    previewDescription: 'The default view groups your job-application threads by stage, so you can see your whole search in one glance.',
+    footerNote: 'The real popup rendered in the extension harness with fixture data that mirrors the shipped UI.',
+    highlights: ['Built from Gmail automatically', 'Grouped by stage', 'No spreadsheet'],
   },
   {
-    id: '03-interviews',
-    scenarioId: 'free-rich',
-    kicker: 'Workflow focus',
-    title: 'Filter the inbox down to the stage that matters.',
-    description: 'Users can jump from the full pipeline into a single stage without leaving the popup or rebuilding a manual tracker.',
-    previewTitle: 'Stage filters stay one click away',
-    previewDescription: 'This capture focuses the popup on interview threads so the extension feels useful during an active search, not just after a sync completes.',
-    footerNote: 'The popup keeps the same grouped thread layout while the visible stage changes, so users do not have to relearn the interface.',
-    highlights: ['Applied, interviews, offers, rejected', 'Consistent grouped-thread layout', 'Fast stage switching'],
+    id: '02-interviews',
+    scenarioId: 'free-healthy',
+    kicker: 'One click',
+    title: 'Jump to the stage that matters.',
+    description: 'Filter your whole pipeline down to interviews, offers, or any stage without leaving the popup or rebuilding a tracker.',
+    previewTitle: 'Stage filters, one click away',
+    previewDescription: 'Focus the popup on interview threads during an active search, then jump back to the full pipeline instantly.',
+    footerNote: 'The grouped-thread layout stays the same as you switch stages, so there is nothing to relearn.',
+    highlights: ['Applied, interviews, offers, rejected', 'Fast stage switching', 'Consistent layout'],
     prepare: async ({ frame }) => {
       await frame.getByTestId('main-tab-interviewed').click();
     },
   },
   {
-    id: '04-thread-preview',
-    scenarioId: 'free-rich',
+    id: '03-thread',
+    scenarioId: 'free-healthy',
     kicker: 'Thread detail',
-    title: 'Open a thread to review the application journey.',
-    description: 'A single click opens the email history for that application so the user can review the conversation without losing the overall pipeline context.',
-    previewTitle: 'Conversation history inside the popup',
-    previewDescription: 'The preview view is meant for reading and triage. It shows the grouped thread, the role, and the application history without pretending to be an email composer.',
-    footerNote: 'Reply-from-extension is intentionally absent in the launch build. The store release is read-only and focused on tracking reliability.',
-    highlights: ['Grouped thread history', 'Application journey view', 'Read-only launch scope'],
+    title: 'Open any application to see its full history.',
+    description: 'One click opens the whole email conversation for an application, so you can catch up without losing your place in the pipeline.',
+    previewTitle: 'The full conversation, in one place',
+    previewDescription: 'Read the application journey and message history for any role. Read-only, focused on tracking, not composing.',
+    footerNote: 'The launch build is read-only. It never sends, deletes, or modifies your email.',
+    highlights: ['Full thread history', 'Application journey view', 'Read-only access'],
     prepare: async ({ frame }) => {
       const thread = frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Northstar Labs' }).first();
       await thread.click();
@@ -203,15 +192,15 @@ const slides = [
     },
   },
   {
-    id: '05-free-limit',
-    scenarioId: 'free-limit-reached',
-    kicker: 'Honest free plan',
-    title: 'Free-plan limits are visible inside the product.',
-    description: 'The launch build does not hide quota pressure or silently fail. The popup surfaces the limit state directly when tracking reaches the current free cap.',
-    previewTitle: 'Quota guidance inside the popup',
-    previewDescription: 'This view shows the free-plan limit state exactly as it appears in the extension, with clear guidance when tracking reaches the free cap.',
-    footerNote: 'The free plan tracks up to 100 applications. When the cap is reached, the popup surfaces the limit clearly instead of failing silently.',
-    highlights: ['No silent quota failures', 'Clear limit guidance', 'Free to install'],
+    id: '04-signin',
+    scenarioId: 'logged-out',
+    kicker: 'Read-only Gmail',
+    title: 'Connect Gmail once. Read-only, revocable anytime.',
+    description: 'Sign in with Google from the popup. Applendium requests read-only Gmail access, never write access, and you can revoke it whenever you want.',
+    previewTitle: 'Private by design',
+    previewDescription: 'The extension asks only for read-only Gmail scope. It cannot send, delete, or change your email.',
+    footerNote: 'Gmail access is read-only and used only for the tracking features you see. Never sold, never used for ads.',
+    highlights: ['Read-only Gmail scope', 'No write access, ever', 'Revoke anytime'],
   },
 ];
 
@@ -465,8 +454,8 @@ function renderPromoMarkup({ width, height, title, subtitle, eyebrow, popupDataU
             <h1>${title}</h1>
             <p>${subtitle}</p>
             <div class="chips">
-              <span class="chip">Read-only Gmail scope</span>
-              <span class="chip">Popup-first workflow</span>
+              <span class="chip">Read-only Gmail</span>
+              <span class="chip">No spreadsheet</span>
               <span class="chip">Free to install</span>
             </div>
           </div>
@@ -524,7 +513,7 @@ async function generateAssets() {
         type: 'png',
       });
 
-      if (!popupPreviewDataUrl && slide.id === '02-overview') {
+      if (!popupPreviewDataUrl && slide.id === '01-pipeline') {
         const popupHandle = await frame.getByTestId('extension-popup-root').elementHandle();
         if (!popupHandle) {
           throw new Error('Failed to capture popup preview for promo assets.');
@@ -549,7 +538,7 @@ async function generateAssets() {
       fileName: 'small-promo-tile.png',
       eyebrow: 'Chrome extension',
       title: 'Applendium',
-      subtitle: 'Track job-application emails from Gmail in one popup.',
+      subtitle: 'Your job search already lives in your Gmail. See it as one clean pipeline.',
       popupDataUrl: popupPreviewDataUrl,
     });
 
@@ -559,7 +548,7 @@ async function generateAssets() {
       fileName: 'marquee-promo-tile.png',
       eyebrow: 'Free Chrome extension',
       title: 'Applendium',
-      subtitle: 'A Gmail-connected popup that groups job applications by stage so users can review their search without maintaining a manual tracker.',
+      subtitle: 'Your job search already lives in your Gmail. Applendium turns it into a live application tracker, automatically.',
       popupDataUrl: popupPreviewDataUrl,
     });
 
