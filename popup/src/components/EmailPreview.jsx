@@ -387,6 +387,10 @@ export default function EmailPreview({
   const [showClosePanel, setShowClosePanel] = useState(false);
   const [closePreset, setClosePreset] = useState('no_response');
   const [closeNote, setCloseNote] = useState('');
+  // Close reasons that count as a real rejection (mirrors the backend rule in
+  // utils/applicationCloseOutcome.js) — these route the role into the Rejected
+  // tab. Everything else is a neutral close that stays put, dimmed.
+  const closeCountsAsRejection = ['rejected_verbal', 'position_filled', 'other'].includes(closePreset);
   const latestLifecycleRequestRef = React.useRef(0);
 
   // One-time confetti the first time an offer thread is opened — the peak
@@ -778,7 +782,10 @@ export default function EmailPreview({
       });
       if (resp?.success) {
         setShowClosePanel(false);
-        showNotification('Application closed.', 'success');
+        showNotification(
+          closeCountsAsRejection ? 'Marked as rejected — moved to your Rejected tab.' : 'Application closed.',
+          'success',
+        );
       } else {
         showNotification(resp?.error || 'Failed to close application', 'error');
       }
@@ -1049,7 +1056,7 @@ export default function EmailPreview({
         </div>
 
         {email?.applicationId && !isEffectivelyClosed && typeof staleDays === 'number' && staleDays >= 60 && (
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs text-warning-foreground">
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs text-foreground">
             <div>No activity for {staleDays} days. If you heard back off-email, you can close this role.</div>
             <InlineButton variant="outline" className="border-warning/30 bg-card/80" onClick={() => openClosePanel('stale')}>
               Close
@@ -1063,7 +1070,9 @@ export default function EmailPreview({
               <div>
                 <div className="text-sm font-semibold text-foreground">Close application</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  This does not delete anything. It marks the role as closed.
+                  {closeCountsAsRejection
+                    ? 'Counts as a rejection — moves this role to your Rejected tab. Nothing is deleted; you can reopen it anytime.'
+                    : 'Closes this role and keeps it where it is, marked done. Nothing is deleted; you can reopen it anytime.'}
                 </div>
               </div>
               <button onClick={() => setShowClosePanel(false)} className="text-muted-foreground transition hover:text-foreground" type="button">
