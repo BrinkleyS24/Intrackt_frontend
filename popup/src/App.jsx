@@ -17,6 +17,7 @@ import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
 import { useEmailQuota } from './hooks/useEmailQuota';
 import { getApplicationKey, groupEmailsByThread } from './utils/grouping';
+import { deriveGroupPipelineStatus, mergeGroupsByApplication } from '../../shared/applicationDisplayState.js';
 import { getCategoryTitle } from './utils/uiHelpers';
 import { getPremiumDashboardUrl } from './utils/runtimeConfig';
 import { compactSafeTextValues } from './utils/sensitiveContent';
@@ -646,9 +647,32 @@ function App() {
     [allRelevantEmails]
   );
 
+  // Pipeline model: collapse each role to a single card (merged across threads by
+  // application) and tag it with the ONE tab it belongs to. Terminal outcomes
+  // (Offer/Rejection, including a manual "rejected verbally") pull the role out of
+  // Applied/Interviewed. Buckets are mutually exclusive, so the counts read as a
+  // funnel instead of double-counting one role across several stages.
+  const pipelineRoleGroups = useMemo(
+    () =>
+      mergeGroupsByApplication(groupEmailsByThread(finalRelevantEmails), getApplicationKey).map((group) => ({
+        ...group,
+        pipelineStatus: deriveGroupPipelineStatus(group.emails),
+      })),
+    [finalRelevantEmails]
+  );
+
+  const pipelineBuckets = useMemo(() => {
+    const buckets = { applied: [], interviewed: [], offers: [], rejected: [] };
+    for (const group of pipelineRoleGroups) {
+      if (buckets[group.pipelineStatus]) buckets[group.pipelineStatus].push(group);
+    }
+    return buckets;
+  }, [pipelineRoleGroups]);
+
+  // The "All" tab shows every role once, plus still-processing (provisional) syncs.
   const allViewConversationGroups = useMemo(
-    () => groupEmailsByThread([...finalRelevantEmails, ...previewCandidateEmails]),
-    [finalRelevantEmails, previewCandidateEmails]
+    () => [...pipelineRoleGroups, ...groupEmailsByThread(previewCandidateEmails)],
+    [pipelineRoleGroups, previewCandidateEmails]
   );
 
   const allViewFilteredGroups = useMemo(
@@ -657,11 +681,11 @@ function App() {
   );
 
   const allViewCategoryGroups = useMemo(() => ({
-    applied: filterConversationGroups(groupEmailsByThread((categorizedEmails.applied || []).filter((email) => !isPreviewCandidateEmail(email))), normalizedListSearchQuery, dateRange),
-    interviewed: filterConversationGroups(groupEmailsByThread((categorizedEmails.interviewed || []).filter((email) => !isPreviewCandidateEmail(email))), normalizedListSearchQuery, dateRange),
-    offers: filterConversationGroups(groupEmailsByThread((categorizedEmails.offers || []).filter((email) => !isPreviewCandidateEmail(email))), normalizedListSearchQuery, dateRange),
-    rejected: filterConversationGroups(groupEmailsByThread((categorizedEmails.rejected || []).filter((email) => !isPreviewCandidateEmail(email))), normalizedListSearchQuery, dateRange),
-  }), [categorizedEmails, dateRange, filterConversationGroups, normalizedListSearchQuery]);
+    applied: filterConversationGroups(pipelineBuckets.applied, normalizedListSearchQuery, dateRange),
+    interviewed: filterConversationGroups(pipelineBuckets.interviewed, normalizedListSearchQuery, dateRange),
+    offers: filterConversationGroups(pipelineBuckets.offers, normalizedListSearchQuery, dateRange),
+    rejected: filterConversationGroups(pipelineBuckets.rejected, normalizedListSearchQuery, dateRange),
+  }), [pipelineBuckets, dateRange, filterConversationGroups, normalizedListSearchQuery]);
 
   const allViewLiveSummary = useMemo(
     () => ({
@@ -814,22 +838,16 @@ function App() {
 
   const countFilteredConversations = useCallback((categoryKey, options = {}) => {
     const { includeSearch = true, includeDate = true } = options;
-    const emailsForCount =
-      categoryKey === 'all'
-        ? [
-            ...(categorizedEmails.applied || []),
-            ...(categorizedEmails.interviewed || []),
-            ...(categorizedEmails.offers || []),
-            ...(categorizedEmails.rejected || []),
-          ]
-        : categorizedEmails[categoryKey] || [];
+    // Count roles from the same mutually-exclusive pipeline buckets the tabs render,
+    // so the summary never double-counts a role that spans multiple stages.
+    const groups = categoryKey === 'all' ? pipelineRoleGroups : (pipelineBuckets[categoryKey] || []);
 
     return filterConversationGroups(
-      groupEmailsByThread(emailsForCount),
+      groups,
       includeSearch ? normalizedListSearchQuery : '',
       includeDate ? dateRange : 'all'
     ).length;
-  }, [categorizedEmails, dateRange, filterConversationGroups, normalizedListSearchQuery]);
+  }, [pipelineRoleGroups, pipelineBuckets, dateRange, filterConversationGroups, normalizedListSearchQuery]);
 
   const footerSummary = useMemo(() => {
     if (selectedCategory === 'all' || selectedCategory === 'home') {
@@ -1038,8 +1056,11 @@ function App() {
       );
     }
 
-    const emailsForCategory = categorizedEmails[selectedCategory] || [];
-    const groupedConversations = groupEmailsByThread(emailsForCategory);
+    // Category pages read the same pipeline bucket as the tabs (one card per role,
+    // terminal roles already routed to their outcome tab). Fall back to raw thread
+    // grouping for any non-pipeline category (e.g. irrelevant).
+    const groupedConversations = pipelineBuckets[selectedCategory]
+      || groupEmailsByThread(categorizedEmails[selectedCategory] || []);
     const filteredConversations = filterConversationGroups(groupedConversations, normalizedListSearchQuery);
     const totalConversations = filteredConversations.length;
     const allConversationEmails = filteredConversations.flatMap((conv) => conv.emails);
@@ -1056,6 +1077,7 @@ function App() {
         </div>
         <EmailList
           emails={allConversationEmails}
+          preGroupedThreads={filteredConversations}
           category={selectedCategory}
           selectedEmail={selectedEmail}
           onEmailSelect={handleEmailSelect}

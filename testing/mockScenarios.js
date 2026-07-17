@@ -317,6 +317,67 @@ const SCENARIOS = {
       },
     },
   },
+  'free-healthy': {
+    id: 'free-healthy',
+    label: 'Free Plan Healthy Inbox',
+    description: 'Free-plan state with an organized pipeline and plenty of quota headroom. Used for store screenshots so no scarcity banner appears.',
+    auth: {
+      email: 'qa.free@applendium.dev',
+      name: 'Free Plan QA',
+      userId: 'qa-free-001',
+    },
+    userPlan: 'free',
+    quotaData: {
+      trackedApplications: 6,
+      totalProcessed: 6,
+      limit: 100,
+      relevantMessagesProcessed: 9,
+      limitReached: false,
+      limitBehavior: 'existing_continue_new_paused',
+      next_reset_date: '2026-04-30T00:00:00.000Z',
+    },
+    sync: {
+      inProgress: false,
+      lastSyncAt: '2026-04-05T12:45:00.000Z',
+      lastCompletedAt: '2026-04-05T12:45:00.000Z',
+      startedAt: null,
+    },
+    categorizedEmails: freeRichCategorizedEmails,
+    applications: {
+      9001: {
+        application: { id: 9001, current_status: 'applied', is_closed: false, user_closed_at: null },
+        lifecycle: [
+          { emailId: 102, category: 'applied', date: '2026-04-03T15:20:00.000Z', subject: 'Application received: Senior Product Manager' },
+          { emailId: 101, category: 'applied', date: '2026-04-05T12:40:00.000Z', subject: 'Application received: Senior Product Manager' },
+        ],
+      },
+      9002: {
+        application: { id: 9002, current_status: 'applied', is_closed: true, user_closed_at: '2026-03-12T09:00:00.000Z' },
+        lifecycle: [
+          { emailId: 103, category: 'applied', date: '2026-03-10T14:00:00.000Z', subject: 'Checking in on your Staff Engineer application' },
+        ],
+      },
+      9003: {
+        application: { id: 9003, current_status: 'interviewed', is_closed: false, user_closed_at: null },
+        lifecycle: [
+          { emailId: 202, category: 'applied', date: '2026-04-02T12:00:00.000Z', subject: 'Acme AI interview logistics' },
+          { emailId: 201, category: 'interviewed', date: '2026-04-04T16:30:00.000Z', subject: 'Interview scheduled with Acme AI' },
+        ],
+      },
+      9004: {
+        application: { id: 9004, current_status: 'offers', is_closed: true, user_closed_at: null },
+        lifecycle: [
+          { emailId: 301, category: 'offers', date: '2026-04-02T18:10:00.000Z', subject: 'Offer letter for Senior Designer' },
+        ],
+      },
+      9005: {
+        application: { id: 9005, current_status: 'rejected', is_closed: true, user_closed_at: null },
+        lifecycle: [
+          { emailId: 401, category: 'rejected', date: '2026-03-30T13:10:00.000Z', subject: 'Update on your analytics application' },
+        ],
+      },
+    },
+  },
   'free-limit-reached': {
     id: 'free-limit-reached',
     label: 'Free Plan Limit Reached',
