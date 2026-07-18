@@ -17,7 +17,7 @@ import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
 import { useEmailQuota } from './hooks/useEmailQuota';
 import { getApplicationKey, groupEmailsByThread } from './utils/grouping';
-import { deriveGroupPipelineStatus, mergeGroupsByApplication } from '../../shared/applicationDisplayState.js';
+import { deriveGroupClosedByChoice, deriveGroupPipelineStatus, mergeGroupsByApplication } from '../../shared/applicationDisplayState.js';
 import { getCategoryTitle } from './utils/uiHelpers';
 import { getPremiumDashboardUrl } from './utils/runtimeConfig';
 import { compactSafeTextValues } from './utils/sensitiveContent';
@@ -251,6 +251,9 @@ function App() {
   const [emailToMisclassify, setEmailToMisclassify] = useState(null);
   const [categoryBeforePreview, setCategoryBeforePreview] = useState('all');
   const [allApplicationsFilter, setAllApplicationsFilter] = useState('all');
+  // When true, the Applied/Interviews pill shows the roles the user closed by
+  // choice (withdrew / accepted elsewhere) instead of the active leads.
+  const [showClosedChoiceRoles, setShowClosedChoiceRoles] = useState(false);
   const [listSearchQuery, setListSearchQuery] = useState('');
   const [dateRange, setDateRange] = useState('all');
   const [showDateFilter, setShowDateFilter] = useState(false);
@@ -657,6 +660,9 @@ function App() {
       mergeGroupsByApplication(groupEmailsByThread(finalRelevantEmails), getApplicationKey).map((group) => ({
         ...group,
         pipelineStatus: deriveGroupPipelineStatus(group.emails),
+        // Withdrew / accepted elsewhere: keeps its stage tab but is parked under
+        // that tab's Closed sub-filter and excluded from the active counts.
+        closedByChoice: deriveGroupClosedByChoice(group.emails),
       })),
     [finalRelevantEmails]
   );
@@ -668,6 +674,15 @@ function App() {
     }
     return buckets;
   }, [pipelineRoleGroups]);
+
+  // What the stat cards / home pills count and show: live leads only. Roles the
+  // user closed by choice stay reachable via the category page's Closed filter.
+  const activePipelineBuckets = useMemo(() => ({
+    applied: pipelineBuckets.applied.filter((group) => !group.closedByChoice),
+    interviewed: pipelineBuckets.interviewed.filter((group) => !group.closedByChoice),
+    offers: pipelineBuckets.offers,
+    rejected: pipelineBuckets.rejected,
+  }), [pipelineBuckets]);
 
   // The "All" tab shows every role once, plus still-processing (provisional) syncs.
   const allViewConversationGroups = useMemo(
@@ -681,10 +696,17 @@ function App() {
   );
 
   const allViewCategoryGroups = useMemo(() => ({
-    applied: filterConversationGroups(pipelineBuckets.applied, normalizedListSearchQuery, dateRange),
-    interviewed: filterConversationGroups(pipelineBuckets.interviewed, normalizedListSearchQuery, dateRange),
-    offers: filterConversationGroups(pipelineBuckets.offers, normalizedListSearchQuery, dateRange),
-    rejected: filterConversationGroups(pipelineBuckets.rejected, normalizedListSearchQuery, dateRange),
+    applied: filterConversationGroups(activePipelineBuckets.applied, normalizedListSearchQuery, dateRange),
+    interviewed: filterConversationGroups(activePipelineBuckets.interviewed, normalizedListSearchQuery, dateRange),
+    offers: filterConversationGroups(activePipelineBuckets.offers, normalizedListSearchQuery, dateRange),
+    rejected: filterConversationGroups(activePipelineBuckets.rejected, normalizedListSearchQuery, dateRange),
+  }), [activePipelineBuckets, dateRange, filterConversationGroups, normalizedListSearchQuery]);
+
+  // Roles the user closed by choice (withdrew / accepted elsewhere), per stage tab.
+  // Not active, not rejections — reachable through the "Closed" toggle under the pills.
+  const allViewClosedChoiceGroups = useMemo(() => ({
+    applied: filterConversationGroups(pipelineBuckets.applied.filter((group) => group.closedByChoice), normalizedListSearchQuery, dateRange),
+    interviewed: filterConversationGroups(pipelineBuckets.interviewed.filter((group) => group.closedByChoice), normalizedListSearchQuery, dateRange),
   }), [pipelineBuckets, dateRange, filterConversationGroups, normalizedListSearchQuery]);
 
   const allViewLiveSummary = useMemo(
@@ -839,15 +861,16 @@ function App() {
   const countFilteredConversations = useCallback((categoryKey, options = {}) => {
     const { includeSearch = true, includeDate = true } = options;
     // Count roles from the same mutually-exclusive pipeline buckets the tabs render,
-    // so the summary never double-counts a role that spans multiple stages.
-    const groups = categoryKey === 'all' ? pipelineRoleGroups : (pipelineBuckets[categoryKey] || []);
+    // so the summary never double-counts a role that spans multiple stages. Active
+    // buckets only — user-choice closes are not live leads.
+    const groups = categoryKey === 'all' ? pipelineRoleGroups : (activePipelineBuckets[categoryKey] || []);
 
     return filterConversationGroups(
       groups,
       includeSearch ? normalizedListSearchQuery : '',
       includeDate ? dateRange : 'all'
     ).length;
-  }, [pipelineRoleGroups, pipelineBuckets, dateRange, filterConversationGroups, normalizedListSearchQuery]);
+  }, [pipelineRoleGroups, activePipelineBuckets, dateRange, filterConversationGroups, normalizedListSearchQuery]);
 
   const footerSummary = useMemo(() => {
     if (selectedCategory === 'all' || selectedCategory === 'home') {
@@ -928,8 +951,11 @@ function App() {
     }
 
     if (selectedCategory === 'all' || selectedCategory === 'home') {
-      const filteredConversations =
-        allApplicationsFilter === 'all'
+      const closedChoiceGroups = allViewClosedChoiceGroups[allApplicationsFilter] || [];
+      const showingClosedChoice = showClosedChoiceRoles && closedChoiceGroups.length > 0;
+      const filteredConversations = showingClosedChoice
+        ? closedChoiceGroups
+        : allApplicationsFilter === 'all'
           ? allViewFilteredGroups
           : allViewCategoryGroups[allApplicationsFilter] || [];
       const totalConversations = filteredConversations.length;
@@ -1013,6 +1039,7 @@ function App() {
                 key={tab.id}
                 onClick={() => {
                   setAllApplicationsFilter(tab.id);
+                    setShowClosedChoiceRoles(false);
                     setShowDateFilter(false);
                   }}
                   data-testid={`main-tab-${tab.id}`}
@@ -1027,6 +1054,23 @@ function App() {
                 </button>
               ))}
             </div>
+
+            {closedChoiceGroups.length > 0 && (allApplicationsFilter === 'applied' || allApplicationsFilter === 'interviewed') && (
+              <button
+                onClick={() => setShowClosedChoiceRoles((prev) => !prev)}
+                data-testid="closed-choice-toggle"
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  showingClosedChoice
+                    ? 'border-white/25 bg-white/[0.06] text-foreground'
+                    : 'border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground'
+                }`}
+                type="button"
+              >
+                {showingClosedChoice
+                  ? '← Back to active'
+                  : `Closed by you (${closedChoiceGroups.length})`}
+              </button>
+            )}
 
           </div>
 

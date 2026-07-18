@@ -215,20 +215,21 @@ function EmailList({
   footerSlot = null,
   newSinceTimestamp = null,
 }) {
-  const [activeFilter, setActiveFilter] = useState('all');
+  const normalizedCategoryKey = (category || '').toString().toLowerCase();
+  const supportsActiveFilter = !compact && (normalizedCategoryKey === 'applied' || normalizedCategoryKey === 'interviewed');
+  // Pipeline model: Applied/Interviews default to live leads only; roles the user
+  // closed by choice (withdrew / accepted elsewhere) live under the Closed filter.
+  const [activeFilter, setActiveFilter] = useState(supportsActiveFilter ? 'active' : 'all');
   const [showMarkAllConfirm, setShowMarkAllConfirm] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = CONFIG.PAGINATION.PAGE_SIZE;
 
   useEffect(() => {
-    const normalizedCategory = (category || '').toString().toLowerCase();
-    const supportsActiveFilter = !compact && (normalizedCategory === 'applied' || normalizedCategory === 'interviewed');
-    if (!supportsActiveFilter && activeFilter !== 'all') {
-      setActiveFilter('all');
-    }
+    // Reset to the category's default view whenever the category changes.
+    setActiveFilter(supportsActiveFilter ? 'active' : 'all');
     setShowMarkAllConfirm(false);
     setCurrentPage(1);
-  }, [activeFilter, category, compact]);
+  }, [category, supportsActiveFilter]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -245,6 +246,13 @@ function EmailList({
     if (activeFilter === 'all') return threadGroups;
 
     return threadGroups.filter((group) => {
+      // Pipeline groups carry an explicit closed-by-choice flag (withdrew /
+      // accepted elsewhere). Anything else in an active bucket is a live lead —
+      // rejections and silence close-outs were already routed to Rejected.
+      if (typeof group.closedByChoice === 'boolean') {
+        return activeFilter === 'active' ? !group.closedByChoice : group.closedByChoice;
+      }
+
       const email = group.latestEmail || {};
       const normalizedCategory = normalizeApplicationStatusKey(category);
       const presentation = category === 'all'

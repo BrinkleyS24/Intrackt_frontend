@@ -104,30 +104,40 @@ export function deriveEmailPresentationState(email = {}, options = {}) {
 
 // --- Pipeline (one-card-per-role) tab model -------------------------------
 //
-// The inbox tabs are a funnel: a role lives in exactly ONE tab = its current
-// status. Terminal outcomes win (an Offer or a Rejection pulls the role out of
-// Applied/Interviewed), otherwise the furthest active stage wins. This is what
-// makes "Applied: N" mean "N still-live leads" instead of "N roles that ever
-// received an applied-stage email, half of them dead". Higher rank wins.
+// The inbox tabs are a funnel: a role lives in exactly ONE tab = its latest
+// status update (owner-defined 2026-07). Rules:
+//   - Active stages only move FORWARD (a late "thanks for applying" auto-ack
+//     can never demote an interviewed role back to Applied).
+//   - Terminal updates (offer / rejection) pull the role out of the active
+//     tabs; when a role has both, the NEWER one wins (a rescinded offer is a
+//     rejection; a re-offer after a rejection is an offer).
+//   - Employer silence counts as a rejection FOR DISPLAY ("rejected in
+//     silence"): manual closes with a ghosting/no-response reason land in the
+//     Rejected tab. Stats and Apply Gate memory keep the honest distinction
+//     via the backend's isUserRejected rule.
+//   - Candidate-driven closes (withdrew / accepted elsewhere) are neither
+//     active nor rejections: the role keeps its stage tab but is parked under
+//     that tab's Closed sub-filter (see deriveGroupClosedByChoice).
 export const PIPELINE_STATUS_RANK = {
   applied: 0,
   interviewed: 1,
-  rejected: 2,
-  offers: 3,
 };
+
+const TERMINAL_PIPELINE_STATUSES = new Set(['offers', 'rejected']);
 
 /**
  * The pipeline tab a single email's ROLE belongs to.
  * Uses the application's reconciled current_status (which already reflects the
- * furthest stage for backend-linked roles) and folds in a manual "rejected
- * verbally"-style close (`isUserRejected`). Neutral closes (withdrew / no
- * response) are NOT rejections — they keep their active stage and are dimmed in
- * place. Falls back to the email's own category when the role is unlinked.
+ * role's stage for backend-linked roles), folds in manual closes that count as
+ * rejections for display (isUserRejected, plus 'silence' closes), and falls
+ * back to the email's own category when the role is unlinked.
  * @returns {'applied'|'interviewed'|'offers'|'rejected'}
  */
 export function derivePipelineStatus(email) {
   if (!email) return 'applied';
   if (email.isUserRejected) return 'rejected';
+  // Ghosting / no-response close-outs display as rejections ("rejected in silence").
+  if (email.manualCloseKind === 'silence') return 'rejected';
 
   const appStatus = normalizeApplicationStatusKey(email.applicationStatus);
   if (appStatus === 'offers' || appStatus === 'rejected' || appStatus === 'interviewed' || appStatus === 'applied') {
@@ -141,21 +151,68 @@ export function derivePipelineStatus(email) {
 
 /**
  * The pipeline tab for a whole role (a group of emails spanning one or more
- * threads). Terminal-wins: the highest-ranked status across the role's emails.
+ * threads). Terminal statuses beat active ones; between the two terminals the
+ * most RECENT supporting email decides (rejected wins ties — the backend's
+ * resolution makes the same call). Among active stages the furthest wins, so
+ * stage never regresses on late lower-stage emails.
  * @returns {'applied'|'interviewed'|'offers'|'rejected'}
  */
 export function deriveGroupPipelineStatus(emails) {
-  let best = 'applied';
-  let bestRank = -1;
+  let bestActive = 'applied';
+  let bestActiveRank = -1;
+  let terminal = null;
+  let terminalTime = -1;
+
   for (const email of emails || []) {
     const status = derivePipelineStatus(email);
+    if (TERMINAL_PIPELINE_STATUSES.has(status)) {
+      const time = toEpoch(email?.date);
+      // Newest terminal update wins; on an exact tie prefer 'rejected'.
+      if (time > terminalTime || (time === terminalTime && status === 'rejected')) {
+        terminal = status;
+        terminalTime = time;
+      }
+      continue;
+    }
     const rank = PIPELINE_STATUS_RANK[status] ?? 0;
-    if (rank > bestRank) {
-      bestRank = rank;
-      best = status;
+    if (rank > bestActiveRank) {
+      bestActiveRank = rank;
+      bestActive = status;
     }
   }
-  return best;
+
+  return terminal || bestActive;
+}
+
+/**
+ * True when the role was closed by the candidate's own decision (withdrew /
+ * accepted elsewhere / no longer interested). These roles keep their stage tab
+ * but are hidden from the default (Active) view and shown under the Closed
+ * sub-filter instead — they are not rejections and not live leads.
+ */
+export function deriveGroupClosedByChoice(emails) {
+  return (emails || []).some((email) => email?.manualCloseKind === 'user_choice');
+}
+
+// Mirror of backend utils/applicationCloseOutcome.js classifyManualCloseKind —
+// keep the two in sync. The background uses this to recompute manualCloseKind
+// when it patches cached emails from a close/reopen response (the backend
+// snapshot provides it on full syncs, but patches only have the raw reason).
+const USER_CHOICE_CLOSE_LABELS = ['withdrew', 'accepted elsewhere', 'no longer interested'];
+const SILENCE_CLOSE_LABELS = ['no response', 'no reply', 'ghosted', 'stale'];
+const GHOSTING_OR_STALE_PATTERN = /ghost|no response|no reply|went stale|\bstale\b|daily action queue/i;
+
+/**
+ * @param {string|null|undefined} userClosedReason
+ * @returns {'rejection'|'silence'|'user_choice'}
+ */
+export function classifyManualCloseKind(userClosedReason) {
+  const raw = (userClosedReason == null ? '' : String(userClosedReason)).trim();
+  const leadingLabel = raw.split(' - ')[0].trim().toLowerCase();
+  if (USER_CHOICE_CLOSE_LABELS.includes(leadingLabel)) return 'user_choice';
+  if (SILENCE_CLOSE_LABELS.includes(leadingLabel)) return 'silence';
+  if (GHOSTING_OR_STALE_PATTERN.test(raw)) return 'silence';
+  return 'rejection';
 }
 
 const toEpoch = (value) => {

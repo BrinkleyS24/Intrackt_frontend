@@ -387,10 +387,18 @@ export default function EmailPreview({
   const [showClosePanel, setShowClosePanel] = useState(false);
   const [closePreset, setClosePreset] = useState('no_response');
   const [closeNote, setCloseNote] = useState('');
-  // Close reasons that count as a real rejection (mirrors the backend rule in
-  // utils/applicationCloseOutcome.js) — these route the role into the Rejected
-  // tab. Everything else is a neutral close that stays put, dimmed.
-  const closeCountsAsRejection = ['rejected_verbal', 'position_filled', 'other'].includes(closePreset);
+  // Close taxonomy (mirrors backend utils/applicationCloseOutcome.js):
+  //   - rejection (Rejected verbally / Position filled / Other) -> Rejected tab.
+  //   - silence (No response) -> Rejected tab too ("rejected in silence"), but
+  //     stats and Apply Gate keep treating it as a non-rejection.
+  //   - user choice (Withdrew / Accepted elsewhere) -> stays in its stage tab
+  //     under the Closed filter; never counted as a rejection.
+  const closeKind = ['rejected_verbal', 'position_filled', 'other'].includes(closePreset)
+    ? 'rejection'
+    : closePreset === 'no_response'
+      ? 'silence'
+      : 'user_choice';
+  const closeMovesToRejected = closeKind === 'rejection' || closeKind === 'silence';
   const latestLifecycleRequestRef = React.useRef(0);
 
   // One-time confetti the first time an offer thread is opened — the peak
@@ -783,7 +791,9 @@ export default function EmailPreview({
       if (resp?.success) {
         setShowClosePanel(false);
         showNotification(
-          closeCountsAsRejection ? 'Marked as rejected — moved to your Rejected tab.' : 'Application closed.',
+          closeMovesToRejected
+            ? 'Moved to your Rejected tab.'
+            : 'Closed — find it under this tab\'s Closed filter.',
           'success',
         );
       } else {
@@ -1070,9 +1080,11 @@ export default function EmailPreview({
               <div>
                 <div className="text-sm font-semibold text-foreground">Close application</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {closeCountsAsRejection
+                  {closeKind === 'rejection'
                     ? 'Counts as a rejection — moves this role to your Rejected tab. Nothing is deleted; you can reopen it anytime.'
-                    : 'Closes this role and keeps it where it is, marked done. Nothing is deleted; you can reopen it anytime.'}
+                    : closeKind === 'silence'
+                      ? 'No response is a silent rejection — moves this role to your Rejected tab (it won\'t count against your stats). Nothing is deleted; you can reopen it anytime.'
+                      : 'Your call, not a rejection — moves this role to this tab\'s Closed list. Nothing is deleted; you can reopen it anytime.'}
                 </div>
               </div>
               <button onClick={() => setShowClosePanel(false)} className="text-muted-foreground transition hover:text-foreground" type="button">

@@ -13,6 +13,7 @@ import { getAuth, signInWithCustomToken, signOut, onAuthStateChanged, setPersist
 
 import { firebaseConfig, firebaseConfigIsComplete } from './firebaseConfig';
 import {
+  classifyManualCloseKind,
   deriveApplicationStatusFromLifecycle,
   deriveDisplayCategory,
   isTerminalApplicationStatus,
@@ -587,6 +588,8 @@ function applyResolvedStateToEmail(email, state) {
     applicationId: state.applicationId ?? email.applicationId ?? null,
     isClosed,
     isUserClosed,
+    isUserRejected: Boolean(state.isUserRejected ?? email.isUserRejected),
+    manualCloseKind: state.manualCloseKind ?? email.manualCloseKind ?? null,
     isOutcomeClosed: Boolean(state.isOutcomeClosed),
     applicationStatus: applicationStatus || email.applicationStatus || null,
     displayCategory: state.displayCategory || deriveDisplayCategory(email.category, applicationStatus, isClosed),
@@ -620,6 +623,7 @@ async function patchCachedEmailsForApplication(applicationId, application) {
   const isOutcomeClosed = isTerminalApplicationStatus(applicationStatus);
   const isClosed = Boolean(application.is_closed || application.user_closed_at || isOutcomeClosed);
   const isUserClosed = Boolean(application.user_closed_at);
+  const manualCloseKind = isUserClosed ? classifyManualCloseKind(application.user_closed_reason) : null;
 
   return updateCachedEmails((categorizedEmails) => {
     const next = {};
@@ -631,6 +635,8 @@ async function patchCachedEmailsForApplication(applicationId, application) {
           applicationStatus,
           isClosed,
           isUserClosed,
+          isUserRejected: isUserClosed && manualCloseKind === 'rejection',
+          manualCloseKind,
           isOutcomeClosed,
           displayCategory: deriveDisplayCategory(email.category, applicationStatus, isClosed),
         });
@@ -647,6 +653,7 @@ async function patchCachedEmailsFromLifecycle(applicationId, application, lifecy
   const isOutcomeClosed = isTerminalApplicationStatus(applicationStatus);
   const isClosed = Boolean(application.is_closed || application.user_closed_at || isOutcomeClosed);
   const isUserClosed = Boolean(application.user_closed_at);
+  const manualCloseKind = isUserClosed ? classifyManualCloseKind(application.user_closed_reason) : null;
   const lifecycleIds = new Set(
     lifecycle
       .map((item) => Number(item?.emailId))
@@ -665,6 +672,8 @@ async function patchCachedEmailsFromLifecycle(applicationId, application, lifecy
           applicationStatus,
           isClosed,
           isUserClosed,
+          isUserRejected: isUserClosed && manualCloseKind === 'rejection',
+          manualCloseKind,
           isOutcomeClosed,
           displayCategory: deriveDisplayCategory(email.category, applicationStatus, isClosed),
         });

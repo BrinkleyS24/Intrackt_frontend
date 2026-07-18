@@ -19,8 +19,9 @@ const mod = await import('data:text/javascript,' + encodeURIComponent(src));
 const {
   derivePipelineStatus,
   deriveGroupPipelineStatus,
+  deriveGroupClosedByChoice,
   mergeGroupsByApplication,
-  PIPELINE_STATUS_RANK,
+  classifyManualCloseKind,
 } = mod;
 
 // Mirror of popup getApplicationKey (app_id > company+position > thread > email).
@@ -40,19 +41,32 @@ function getApplicationKey(email) {
 }
 
 test('derivePipelineStatus: manual "rejected verbally" counts as a rejection', () => {
-  // Applied-category email whose application is still "applied" but was closed as
-  // a verbal rejection -> belongs in Rejected.
   assert.equal(
     derivePipelineStatus({ category: 'Applied', applicationStatus: 'applied', isUserRejected: true }),
     'rejected',
   );
 });
 
-test('derivePipelineStatus: neutral close (no response) keeps its active stage', () => {
-  // isUserClosed but NOT a rejection -> stays Applied (dimmed in place elsewhere).
+test('derivePipelineStatus: a silence close-out displays as a rejection', () => {
+  // "No response" / ghosted / DAQ close-outs = rejected in silence -> Rejected tab.
   assert.equal(
-    derivePipelineStatus({ category: 'Applied', applicationStatus: 'applied', isUserClosed: true, isClosed: true }),
-    'applied',
+    derivePipelineStatus({
+      category: 'Applied', applicationStatus: 'applied',
+      isUserClosed: true, isClosed: true, manualCloseKind: 'silence',
+    }),
+    'rejected',
+  );
+});
+
+test('derivePipelineStatus: a user-choice close keeps its stage (routes to Closed sub-filter)', () => {
+  // Withdrew / accepted elsewhere: not a rejection, not active; tab stays,
+  // visibility is handled by deriveGroupClosedByChoice.
+  assert.equal(
+    derivePipelineStatus({
+      category: 'Interviewed', applicationStatus: 'interviewed',
+      isUserClosed: true, isClosed: true, manualCloseKind: 'user_choice',
+    }),
+    'interviewed',
   );
 });
 
@@ -71,37 +85,67 @@ test('derivePipelineStatus: unlinked email falls back to its own category', () =
   assert.equal(derivePipelineStatus({ category: 'weird-unknown' }), 'applied');
 });
 
-test('deriveGroupPipelineStatus: terminal outcome wins across a role\'s emails', () => {
+test('deriveGroupPipelineStatus: a terminal update pulls the role out of the active tabs', () => {
   // applied thread + rejection thread -> the role is Rejected.
   assert.equal(
     deriveGroupPipelineStatus([
-      { category: 'Applied', applicationStatus: 'applied' },
-      { category: 'Rejected', applicationStatus: 'rejected' },
+      { category: 'Applied', applicationStatus: 'applied', date: '2026-01-01' },
+      { category: 'Rejected', applicationStatus: 'rejected', date: '2026-01-10' },
     ]),
     'rejected',
   );
-  // offer beats a stray rejection.
+});
+
+test('deriveGroupPipelineStatus: between offer and rejection, the NEWER update wins', () => {
+  // Offer then rescinded -> Rejected.
   assert.equal(
     deriveGroupPipelineStatus([
-      { category: 'Rejected', applicationStatus: 'rejected' },
-      { category: 'Offers', applicationStatus: 'offers' },
+      { category: 'Offers', applicationStatus: null, date: '2026-01-05' },
+      { category: 'Rejected', applicationStatus: null, date: '2026-01-12' },
+    ]),
+    'rejected',
+  );
+  // Rejection then a re-offer -> Offers.
+  assert.equal(
+    deriveGroupPipelineStatus([
+      { category: 'Rejected', applicationStatus: null, date: '2026-01-05' },
+      { category: 'Offers', applicationStatus: null, date: '2026-01-12' },
     ]),
     'offers',
   );
-  // active role: applied + interviewed -> Interviewed (furthest active).
+});
+
+test('deriveGroupPipelineStatus: stage never regresses on a late lower-stage email', () => {
+  // Interview invite, then a late automated "thanks for applying" -> stays Interviewed.
   assert.equal(
     deriveGroupPipelineStatus([
-      { category: 'Applied', applicationStatus: 'interviewed' },
-      { category: 'Interviewed', applicationStatus: 'interviewed' },
+      { category: 'Interviewed', applicationStatus: null, date: '2026-01-05' },
+      { category: 'Applied', applicationStatus: null, date: '2026-01-09' },
     ]),
     'interviewed',
   );
 });
 
-test('PIPELINE_STATUS_RANK orders offers > rejected > interviewed > applied', () => {
-  assert.ok(PIPELINE_STATUS_RANK.offers > PIPELINE_STATUS_RANK.rejected);
-  assert.ok(PIPELINE_STATUS_RANK.rejected > PIPELINE_STATUS_RANK.interviewed);
-  assert.ok(PIPELINE_STATUS_RANK.interviewed > PIPELINE_STATUS_RANK.applied);
+test('deriveGroupClosedByChoice: flags withdrew/accepted-elsewhere roles, not silence closes', () => {
+  assert.equal(
+    deriveGroupClosedByChoice([{ category: 'Applied', manualCloseKind: 'user_choice' }]),
+    true,
+  );
+  assert.equal(
+    deriveGroupClosedByChoice([{ category: 'Applied', manualCloseKind: 'silence' }]),
+    false,
+  );
+  assert.equal(deriveGroupClosedByChoice([{ category: 'Applied' }]), false);
+});
+
+test('classifyManualCloseKind mirror matches the backend taxonomy', () => {
+  assert.equal(classifyManualCloseKind('Rejected verbally'), 'rejection');
+  assert.equal(classifyManualCloseKind('Position filled'), 'rejection');
+  assert.equal(classifyManualCloseKind(''), 'rejection');
+  assert.equal(classifyManualCloseKind('No response'), 'silence');
+  assert.equal(classifyManualCloseKind('Closed from Daily Action Queue ghosting signal: Move SDET out of active focus'), 'silence');
+  assert.equal(classifyManualCloseKind('Withdrew - took another role'), 'user_choice');
+  assert.equal(classifyManualCloseKind('Accepted elsewhere'), 'user_choice');
 });
 
 test('mergeGroupsByApplication: collapses two threads of one linked role into one card', () => {
