@@ -65,7 +65,7 @@ test('allows a mocked login transition from logged-out into the free inbox', asy
 
   await expect(page.getByTestId('state-auth')).toContainText('Signed out');
   await expect(frame.getByTestId('login-google-button')).toBeVisible();
-  await expect(frame.getByText('Welcome back')).toBeVisible();
+  await expect(frame.getByText(/turns it into a live pipeline/i)).toBeVisible();
   await frame.getByTestId('login-google-button').click();
   await expect(frame.getByTestId('plan-badge')).toContainText('Free');
   await expect(frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Northstar Labs' }).first()).toBeVisible();
