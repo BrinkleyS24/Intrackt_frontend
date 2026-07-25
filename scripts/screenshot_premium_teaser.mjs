@@ -33,8 +33,11 @@ async function main() {
   const frame = page.frameLocator('[data-testid="popup-preview-frame"]');
   await frame.getByTestId('extension-popup-root').waitFor();
 
-  // Shot 1: All view — should show the PremiumTeaserCard.
-  await frame.getByText('Premium insights ready').waitFor({ timeout: 10_000 });
+  // Shot 1: All view — should show the PremiumTeaserCard. The card sits in the
+  // footer slot below the thread list, so scroll it into view or the shot just
+  // captures the list even though the waitFor passed.
+  await frame.getByTestId('premium-teaser').waitFor({ timeout: 10_000 });
+  await frame.getByTestId('premium-teaser').scrollIntoViewIfNeeded();
   await frameEl.screenshot({ path: path.join(outDir, '01-teaser-card.png') });
   console.log('Captured teaser card (All view).');
 

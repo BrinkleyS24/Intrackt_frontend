@@ -172,10 +172,22 @@ test('renders premium footer behavior without a live dashboard promise', async (
   await expect(frame.getByTestId('dashboard-link')).toContainText('Premium dashboard');
   await expect(premiumThread).toBeVisible();
 
+  // Premium members used to get NOTHING here: the teaser slot returned null for
+  // them, so the 10px footer link was the only pointer to the paid surfaces and
+  // trial users never found the dashboard. Guard against that regressing.
+  await expect(frame.getByTestId('premium-active-card')).toBeVisible();
+  await expect(frame.getByTestId('premium-active-cta')).toContainText('Open your dashboard');
+  await expect(frame.getByTestId('premium-teaser')).toHaveCount(0);
+
   await page.screenshot({
     path: testInfo.outputPath('lab-premium-rich.png'),
     fullPage: true,
   });
+
+  // Opening an in-flight thread should offer the contextual next move too.
+  await premiumThread.dispatchEvent('click');
+  await expect(frame.getByTestId('email-preview')).toBeVisible();
+  await expect(frame.getByTestId('premium-next-move')).toBeVisible();
 
   await page.close();
 });

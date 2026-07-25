@@ -1143,8 +1143,8 @@ export default function EmailPreview({
             </div>
             <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
               {presentationStatusKey === 'interviewed'
-                ? 'When to follow up, what to send, and how similar interviews have played out — Premium maps your next step.'
-                : 'When to follow up, whether to keep chasing, and how similar applications have played out — Premium maps your next step.'}
+                ? 'When to follow up, what to send, and how similar interviews have played out. Premium maps your next step.'
+                : 'When to follow up, whether to keep chasing, and how similar applications have played out. Premium maps your next step.'}
             </p>
             <button
               onClick={onOpenPremiumPage}
@@ -1154,6 +1154,30 @@ export default function EmailPreview({
               Unlock with Premium →
             </button>
           </div>
+        )}
+
+        {userPlan === 'premium' && (presentationStatusKey === 'applied' || presentationStatusKey === 'interviewed') && onOpenPremiumPage && (
+          <button
+            onClick={onOpenPremiumPage}
+            data-testid="premium-next-move"
+            type="button"
+            className="flex w-full items-center justify-between gap-2 rounded-2xl border border-accent/20 bg-accent/5 px-3 py-2.5 text-left shadow-sm transition hover:bg-accent/10"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-accent" />
+              <span className="min-w-0">
+                <span className="block text-[11px] font-semibold text-foreground">
+                  Your next move on this {presentationStatusKey === 'interviewed' ? 'interview' : 'application'}
+                </span>
+                <span className="block text-[10px] leading-4 text-muted-foreground">
+                  {presentationStatusKey === 'interviewed'
+                    ? 'When to follow up and what to send, based on how similar interviews played out'
+                    : 'When to follow up and whether to keep chasing, based on how similar applications played out'}
+                </span>
+              </span>
+            </span>
+            <span className="shrink-0 text-[11px] font-semibold text-accent">Open →</span>
+          </button>
         )}
 
         <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">

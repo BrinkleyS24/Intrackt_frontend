@@ -23,3 +23,4 @@ test-results
 .playwright-trace-debug*
 .premium-dashboard/
 .premium-teaser-shots/
+.premium-active-shots/
