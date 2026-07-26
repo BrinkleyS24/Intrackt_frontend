@@ -5,6 +5,7 @@ import { parseEmailDate, getCategoryTitle } from '../utils/uiHelpers';
 import { showNotification } from './Notification';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
 import { collapseJourneyStages } from '../utils/applicationPresentation';
+import { hasBackwardMergedOutcome } from '../utils/applicationJourney.mjs';
 import { isEncryptedPayload, safeTextValue } from '../utils/sensitiveContent';
 import CompanyField from './CompanyField';
 import confetti from '../lib/confetti.browser.min.js';
@@ -579,7 +580,11 @@ export default function EmailPreview({
     if (!email?.applicationId) return false;
     const stages = Array.isArray(rawJourneyData?.stages) ? rawJourneyData.stages : [];
     const appliedCount = stages.filter((stage) => (stage?.category || '').toString().toLowerCase() === 'applied').length;
-    return appliedCount > 1 || stages.length >= 8;
+    if (appliedCount > 1 || stages.length >= 8) return true;
+    return hasBackwardMergedOutcome(stages.map((stage) => ({
+      category: normalizeApplicationStatusKey(stage?.category || stage?.current_status),
+      date: stage?.date,
+    })));
   }, [rawJourneyData, email?.applicationId]);
 
   const hasVisibleTerminalStage = useMemo(() => {
