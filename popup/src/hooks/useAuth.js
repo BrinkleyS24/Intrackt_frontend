@@ -32,6 +32,7 @@ export const useAuth = (onPaymentStatusChange) => {
   const [isAuthReady, setIsAuthReady] = useState(false); // Indicates initial auth state check is done
   const [quotaData, setQuotaData] = useState(null); // New state for quota data
   const [syncStatus, setSyncStatus] = useState(null);
+  const [gmailAuth, setGmailAuth] = useState(null); // Gmail connection health, from /sync-status
   const [loadingAuth, setLoadingAuth] = useState(true); // Indicate if auth state is still loading (INITIALIZED TO TRUE)
   const isLoggedIn = !!userEmail; // Derived state
 
@@ -62,6 +63,7 @@ export const useAuth = (onPaymentStatusChange) => {
     if (!userEmail || !userId) {
       setQuotaData(null);
       setSyncStatus(null);
+      setGmailAuth(null);
       return;
     }
     try {
@@ -69,10 +71,14 @@ export const useAuth = (onPaymentStatusChange) => {
       if (response?.success) {
         setQuotaData(response.quota || null);
         setSyncStatus(response.sync || null);
+        setGmailAuth(response.gmailAuth || null);
         return { success: true, quota: response.quota || null, sync: response.sync || null };
       }
 
       // Fallback: if sync status fetch fails, at least keep quota populated from storage.
+      // gmailAuth is deliberately left as-is rather than cleared: a network blip is
+      // not evidence the connection healed, and clearing it would flicker the
+      // reconnect banner off for a user whose inbox is still dark.
       const stored = await chrome.storage.local.get(['quotaData']);
       setQuotaData((prev) => stored.quotaData || prev || null);
       return { success: false, quota: stored.quotaData || null, sync: null, error: response?.error || null };
@@ -171,6 +177,7 @@ export const useAuth = (onPaymentStatusChange) => {
     loadingAuth,
     quotaData,
     syncStatus,
+    gmailAuth,
     fetchUserPlan: fetchUserPlanFromService, // Expose service function directly
     fetchQuotaData, // Expose the memoized fetchQuotaData
     reloadUserState: loadCurrentUserStateFromStorage, // Expose reload function for immediate refresh

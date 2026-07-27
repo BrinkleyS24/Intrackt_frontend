@@ -3649,6 +3649,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 )?.[EMAILS_CACHE_META_KEY]?.lastCompletedAt || null,
               },
               dataCompleteness: status.dataCompleteness,
+              // A dead Google refresh token stops the inbox flowing without
+              // changing anything else here — sync just goes quiet and the
+              // cached pipeline still renders. Carry the flag so the popup can
+              // say so instead of showing a stale view as if it were current.
+              gmailAuth: status.gmailAuth || null,
             });
           } else {
             sendResponse({ success: false, error: status?.error || 'Quota data not found in response.' });

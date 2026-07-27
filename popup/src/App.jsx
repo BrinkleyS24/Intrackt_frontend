@@ -12,6 +12,7 @@ import { Notification, showNotification } from './components/Notification';
 import Modals from './components/Modals';
 import ReportModal from './components/ReportModal';
 import ReviewAskCard from './components/ReviewAskCard';
+import GmailReconnectBanner from './components/GmailReconnectBanner';
 
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
@@ -277,6 +278,7 @@ function App() {
     fetchQuotaData,
     quotaData,
     syncStatus,
+    gmailAuth,
     loadingAuth,
   } = useAuth();
 
@@ -568,6 +570,12 @@ function App() {
     try {
       const syncResult = await fetchNewEmails(false);
       if (!syncResult?.success) {
+        // The backend records the dead connection during this very attempt, so
+        // re-read status to bring the reconnect banner up now. Without this the
+        // failure toast points at a banner that has not rendered yet.
+        if (syncResult?.requiresReauth || syncResult?.errorCode === 'INVALID_GRANT' || syncResult?.errorCode === 'INSUFFICIENT_SCOPES') {
+          await fetchQuotaData();
+        }
         return;
       }
       showNotification('Emails refreshed!', 'success');
@@ -577,6 +585,24 @@ function App() {
       showNotification(`Failed to refresh emails: ${error.message}`, 'error');
     }
   }, [userEmail, userId, fetchNewEmails, fetchStoredEmails, fetchQuotaData]);
+
+  // Re-running the OAuth flow is the repair: buildGoogleOAuthUrl always sends
+  // prompt=consent + access_type=offline (background.js), so consenting again
+  // issues a fresh refresh token to replace the dead one. The user stays signed
+  // in throughout — the old advice to "sign out and sign back in" was never
+  // necessary, just the only path that happened to exist.
+  const handleGmailReconnect = useCallback(async () => {
+    try {
+      await loginGoogleOAuth();
+      const refreshed = await fetchQuotaData();
+      if (refreshed?.success) {
+        showNotification('Gmail reconnected. Catching up on what we missed...', 'success');
+        await fetchNewEmails(false);
+      }
+    } catch (error) {
+      showNotification(`Reconnect failed: ${error.message}`, 'error');
+    }
+  }, [loginGoogleOAuth, fetchQuotaData, fetchNewEmails]);
 
   const handleCategoryChange = useCallback((category) => {
     const normalizedCategory = normalizeStoredCategory(category);
@@ -1334,6 +1360,10 @@ function App() {
           )}
         </div>
       </div>
+
+      {/* Ranked above Needs Review: while the connection is dead nothing new is
+          arriving at all, so reviewing the existing backlog is the lesser ask. */}
+      <GmailReconnectBanner gmailAuth={gmailAuth} onReconnect={handleGmailReconnect} />
 
       {reviewCount > 0 && selectedCategory !== 'review' && selectedCategory !== 'emailPreview' && (
         <button
