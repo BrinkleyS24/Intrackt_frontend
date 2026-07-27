@@ -1595,6 +1595,7 @@ async function installExtensionTestScenario(scenarioId) {
       lastSyncAt: scenario.sync?.lastSyncAt || null,
       lastCompletedAt: scenario.sync?.lastCompletedAt || scenario.sync?.lastSyncAt || null,
     },
+    gmailAuth: scenario.gmailAuth || null,
   };
 
   const payload = {
@@ -1943,6 +1944,7 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
         success: true,
         quota: stored.quotaData || null,
         sync: testingState.state?.sync || null,
+        gmailAuth: testingState.state?.gmailAuth || null,
         testing: buildExtensionTestingStatus(testingState.state),
       });
       return true;

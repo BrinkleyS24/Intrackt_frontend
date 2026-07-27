@@ -13,6 +13,7 @@ import Modals from './components/Modals';
 import ReportModal from './components/ReportModal';
 import ReviewAskCard from './components/ReviewAskCard';
 import GmailReconnectBanner from './components/GmailReconnectBanner';
+import { deriveGmailConnectionState } from './utils/gmailConnection.mjs';
 
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
@@ -371,7 +372,16 @@ function App() {
   const showHeaderQuotaPill = hasQuotaData && userPlan !== 'premium' && quota?.total !== Infinity;
   const showQuotaStatusNotice = showHeaderQuotaPill && ['warning', 'critical', 'exceeded'].includes(quotaWarningLevel);
   const headerQuotaLabel = showHeaderQuotaPill ? `${Math.min(quota.used, quota.total)}/${quota.total}` : null;
+  // A dead connection outranks every other sync state. The last sync really did
+  // complete, so the timestamp is not lying — but rendering a green "synced"
+  // above a banner saying we cannot see the inbox reproduces the exact
+  // stale-but-healthy-looking signal the banner exists to correct.
+  const gmailDisconnected = useMemo(
+    () => deriveGmailConnectionState(gmailAuth).requiresReconnect,
+    [gmailAuth]
+  );
   const syncStatusLabel = useMemo(() => {
+    if (gmailDisconnected) return 'Not syncing - Gmail access needs reconnecting';
     if (isSyncStuck) return 'Sync may be stuck';
     if (isSyncActive) {
       const activeSyncMessage = normalizeActiveSyncMessage(syncStatus?.message);
@@ -401,7 +411,7 @@ function App() {
       minute: '2-digit',
     });
     return `${labelPrefix} ${formatter.format(lastRefreshAt)}`;
-  }, [isSyncActive, isSyncStuck, syncStatus?.message, syncStatus?.lastSyncAt, syncStatus?.lastCompletedAt]);
+  }, [gmailDisconnected, isSyncActive, isSyncStuck, syncStatus?.message, syncStatus?.lastSyncAt, syncStatus?.lastCompletedAt]);
 
   useEffect(() => {
     if (!selectedEmail?.id) return;
@@ -1309,7 +1319,10 @@ function App() {
           <span data-testid="plan-badge" className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
             {userPlan === 'premium' ? 'Premium' : 'Free'}
           </span>
-          {showHeaderQuotaPill && headerQuotaLabel && (
+          {/* Hidden while disconnected: a tracking count cannot move when
+              nothing is arriving, and the row needs the space for the honest
+              sync state rather than a number frozen months ago. */}
+          {showHeaderQuotaPill && headerQuotaLabel && !gmailDisconnected && (
             <QuotaHeaderBadge
               quota={quota}
               label={headerQuotaLabel}
@@ -1321,8 +1334,8 @@ function App() {
           {selectedCategory === 'all' || selectedCategory === 'home' ? (
             <>
               <span data-testid="sync-status-label" className="flex items-center gap-1.5" title={syncStatusLabel}>
-                <span className={`h-1.5 w-1.5 rounded-full ${isSyncStuck ? 'bg-destructive' : isSyncActive ? 'bg-warning' : 'bg-success shadow-[0_0_8px_2px_hsl(var(--success)/0.6)]'}`} />
-                {isSyncStuck ? 'Sync may be stuck' : isSyncActive ? 'syncing' : 'synced'}
+                <span className={`h-1.5 w-1.5 rounded-full ${gmailDisconnected || isSyncStuck ? 'bg-destructive' : isSyncActive ? 'bg-warning' : 'bg-success shadow-[0_0_8px_2px_hsl(var(--success)/0.6)]'}`} />
+                {gmailDisconnected ? 'not syncing' : isSyncStuck ? 'Sync may be stuck' : isSyncActive ? 'syncing' : 'synced'}
               </span>
               <span className="h-3.5 w-px bg-white/10" />
               <button

@@ -582,6 +582,44 @@ const SCENARIOS = {
       },
     },
   },
+  'gmail-disconnected': {
+    id: 'gmail-disconnected',
+    label: 'Gmail Disconnected',
+    description: 'Signed-in state with a dead Google refresh token: the cached pipeline still renders but nothing new has been tracked for months, so the reconnect banner must be the first thing seen.',
+    auth: {
+      email: 'qa.disconnected@applendium.dev',
+      name: 'Disconnected QA',
+      userId: 'qa-disconnected-001',
+    },
+    userPlan: 'free',
+    quotaData: {
+      trackedApplications: 31,
+      totalProcessed: 31,
+      limit: 500,
+      relevantMessagesProcessed: 64,
+      limitReached: false,
+      limitBehavior: 'existing_continue_new_paused',
+      next_reset_date: '2026-08-30T00:00:00.000Z',
+    },
+    // The tell that made this invisible: sync reports a clean, completed run.
+    // Nothing here says "broken" — it just stopped, months ago.
+    sync: {
+      inProgress: false,
+      lastSyncAt: '2026-04-15T09:12:00.000Z',
+      lastCompletedAt: '2026-04-15T09:12:00.000Z',
+      startedAt: null,
+    },
+    // Mirrors the worst real prod row found on 2026-07-26: a free user 102 days
+    // dark. Keep the gap large so the duration copy is exercised, not the
+    // "today" branch.
+    gmailAuth: {
+      requiresReconnect: true,
+      errorCode: 'INVALID_GRANT',
+      failedAt: '2026-04-15T09:12:00.000Z',
+    },
+    categorizedEmails: freeRichCategorizedEmails,
+    applications: {},
+  },
   'empty-inbox': {
     id: 'empty-inbox',
     label: 'Empty Inbox',
