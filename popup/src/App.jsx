@@ -26,6 +26,7 @@ import { compactSafeTextValues } from './utils/sensitiveContent';
 
 import { CONFIG } from './utils/constants';
 import PremiumTeaserCard from './components/PremiumTeaserCard';
+import HistoryCoverageNote from './components/HistoryCoverageNote';
 import { AlertTriangle, ArrowLeft, CalendarDays, Check, FileDown, LogOut, RefreshCw, Search, Shield, X } from 'lucide-react';
 
 // Brand mark shared with the web app (frontend/web/public/logo-transparent.png),
@@ -280,6 +281,7 @@ function App() {
     quotaData,
     syncStatus,
     gmailAuth,
+    historyCoverage,
     loadingAuth,
   } = useAuth();
 
@@ -1131,6 +1133,17 @@ function App() {
                 />
               </div>
             }
+          />
+
+          {/* Pinned below the list rather than inside it: this states a boundary on the
+              whole dataset, not on the last row, and the case that most needs saying is an
+              EMPTY list — a user whose applications all predate the window. EmailList only
+              renders its footerSlot when it has rows, so a footnote in there would go
+              silent exactly when it matters most. */}
+          <HistoryCoverageNote
+            coverage={historyCoverage}
+            userPlan={userPlan}
+            onUpgrade={openPremiumStatusPage}
           />
         </div>
       );

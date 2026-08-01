@@ -33,6 +33,10 @@ export const useAuth = (onPaymentStatusChange) => {
   const [quotaData, setQuotaData] = useState(null); // New state for quota data
   const [syncStatus, setSyncStatus] = useState(null);
   const [gmailAuth, setGmailAuth] = useState(null); // Gmail connection health, from /sync-status
+  // How far back this plan's import reaches, from /sync-status. The backend has always
+  // sent this and the popup has always dropped it, so a user whose applications predate
+  // the window had no way to tell "outside my plan" from "the tracker missed them".
+  const [historyCoverage, setHistoryCoverage] = useState(null);
   const [loadingAuth, setLoadingAuth] = useState(true); // Indicate if auth state is still loading (INITIALIZED TO TRUE)
   const isLoggedIn = !!userEmail; // Derived state
 
@@ -64,6 +68,7 @@ export const useAuth = (onPaymentStatusChange) => {
       setQuotaData(null);
       setSyncStatus(null);
       setGmailAuth(null);
+      setHistoryCoverage(null);
       return;
     }
     try {
@@ -72,6 +77,7 @@ export const useAuth = (onPaymentStatusChange) => {
         setQuotaData(response.quota || null);
         setSyncStatus(response.sync || null);
         setGmailAuth(response.gmailAuth || null);
+        setHistoryCoverage(response.dataCompleteness || null);
         return { success: true, quota: response.quota || null, sync: response.sync || null };
       }
 
@@ -178,6 +184,7 @@ export const useAuth = (onPaymentStatusChange) => {
     quotaData,
     syncStatus,
     gmailAuth,
+    historyCoverage,
     fetchUserPlan: fetchUserPlanFromService, // Expose service function directly
     fetchQuotaData, // Expose the memoized fetchQuotaData
     reloadUserState: loadCurrentUserStateFromStorage, // Expose reload function for immediate refresh
