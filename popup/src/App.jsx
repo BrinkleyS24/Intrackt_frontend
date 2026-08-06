@@ -329,6 +329,7 @@ function App() {
     reviewCount,
     fetchReviewQueue,
     resolveReviewEmail,
+    applicationCount,
   } = useEmails(userEmail, userId, CONFIG);
 
   // Needs Review: track in-flight classifications so buttons disable during the round-trip.
@@ -747,6 +748,17 @@ function App() {
     interviewed: filterConversationGroups(pipelineBuckets.interviewed.filter((group) => group.closedByChoice), normalizedListSearchQuery, dateRange),
   }), [pipelineBuckets, dateRange, filterConversationGroups, normalizedListSearchQuery]);
 
+  // How much of the Closed tile is "they never replied" rather than "they said no".
+  // Silence-closes route into the rejected bucket (derivePipelineStatus), so without this
+  // split the tile reads as a rejection count the user never actually received — and the
+  // close-out tooltip already promises silence "won't count against your stats".
+  const silenceClosedCount = useMemo(
+    () => allViewCategoryGroups.rejected.filter(
+      (group) => (group.emails || []).some((email) => email?.manualCloseKind === 'silence'),
+    ).length,
+    [allViewCategoryGroups],
+  );
+
   const allViewLiveSummary = useMemo(
     () => ({
       counts: {
@@ -910,12 +922,21 @@ function App() {
     ).length;
   }, [pipelineRoleGroups, activePipelineBuckets, dateRange, filterConversationGroups, normalizedListSearchQuery]);
 
+  // The canonical total only applies to the unfiltered all-time view: it is computed
+  // backend-side over every relevant email, so showing it beside a search- or date-filtered
+  // list would state a total the visible cards contradict.
+  const canonicalTotal = useMemo(() => {
+    if (normalizedListSearchQuery || dateRange !== 'all') return null;
+    const total = applicationCount?.total;
+    return Number.isFinite(total) ? total : null;
+  }, [applicationCount, dateRange, normalizedListSearchQuery]);
+
   const footerSummary = useMemo(() => {
     if (selectedCategory === 'all' || selectedCategory === 'home') {
       const activeView = allApplicationsFilter;
       const count =
         activeView === 'all'
-          ? allViewHeadlineSummary.total
+          ? (canonicalTotal ?? allViewHeadlineSummary.total)
           : allViewHeadlineSummary.counts?.[activeView] || 0;
 
       if (activeView === 'applied') {
@@ -957,7 +978,7 @@ function App() {
     }
 
     return `${count} ${count === 1 ? 'tracked application' : 'tracked applications'}`;
-  }, [allApplicationsFilter, allViewHeadlineSummary, countFilteredConversations, selectedCategory]);
+  }, [allApplicationsFilter, allViewHeadlineSummary, canonicalTotal, countFilteredConversations, selectedCategory]);
 
   const renderMainContent = () => {
     if (selectedCategory === 'emailPreview') {
@@ -1006,9 +1027,16 @@ function App() {
             <div className="grid grid-cols-4 gap-2">
               {[
                 { key: 'applied', label: 'Applied', value: stats.applied, cardClass: 'bg-white/[0.05]', textClass: 'text-foreground', ringClass: 'ring-white/10' },
-                { key: 'interviewed', label: 'Interviews', value: stats.interviewed, cardClass: 'bg-warning/10', textClass: 'text-warning', ringClass: 'ring-warning/20' },
+                // "In interviews", not "Interviews": this is where roles stand RIGHT NOW, so a
+                // role that interviewed and was then rejected has moved on to Closed. The web
+                // app's "Ever interviewed" counts the same role forever, which is why the two
+                // numbers differ — both are right, and the labels now say so.
+                { key: 'interviewed', label: 'In interviews', value: stats.interviewed, cardClass: 'bg-warning/10', textClass: 'text-warning', ringClass: 'ring-warning/20' },
                 { key: 'offers', label: 'Offers', value: stats.offers, cardClass: 'bg-success/10', textClass: 'text-success', ringClass: 'ring-success/20' },
-                { key: 'rejected', label: 'Rejected', value: stats.rejected, cardClass: 'bg-destructive/[0.08]', textClass: 'text-destructive', ringClass: 'ring-destructive/20' },
+                // "Closed" rather than "Rejected": the bucket also holds roles closed for
+                // silence, which nobody actually rejected you for. Calling that a rejection
+                // overstated the bad news; the caption below breaks the two apart.
+                { key: 'rejected', label: 'Closed', value: stats.rejected, cardClass: 'bg-destructive/[0.08]', textClass: 'text-destructive', ringClass: 'ring-destructive/20' },
               ].map((stat) => (
                 <div key={stat.key} className={`${stat.cardClass} rounded-xl px-2 py-2.5 text-center ring-1 ${stat.ringClass}`}>
                   <div className={`text-[20px] font-bold leading-none tracking-[-0.02em] tabular-nums ${stat.textClass}`}>{stat.value}</div>
@@ -1016,6 +1044,13 @@ function App() {
                 </div>
               ))}
             </div>
+
+            <p className="px-0.5 text-[10px] leading-snug text-muted-foreground">
+              Where each role stands today.
+              {silenceClosedCount > 0
+                ? ` ${silenceClosedCount} of the ${stats.rejected} closed had no reply — not a rejection.`
+                : ''}
+            </p>
 
             <div className="space-y-2">
               <ListSearchBar

@@ -701,6 +701,7 @@ async function getCachedSyncState() {
     'irrelevantEmails',
     'quotaData',
     'categoryTotals',
+    'applicationCount',
     'applicationStats',
     EMAILS_CACHE_META_KEY,
   ]);
@@ -715,6 +716,7 @@ async function getCachedSyncState() {
     },
     quota: cached.quotaData || null,
     categoryTotals: cached.categoryTotals || null,
+    applicationCount: cached.applicationCount || null,
     applicationStats: cached.applicationStats || null,
     meta: cached[EMAILS_CACHE_META_KEY] || null,
   };
@@ -2498,6 +2500,7 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
         [EMAILS_CACHE_META_KEY]: nextCacheMeta,
         // Keep totals in sync with DB so the dashboard doesn't depend on local array size.
         ...(response.categoryTotals ? { categoryTotals: response.categoryTotals } : {}),
+        ...(response.applicationCount ? { applicationCount: response.applicationCount } : {}),
       });
 
       if (!skipNotify) {
@@ -2506,6 +2509,7 @@ async function refreshStoredEmailsCache(syncInProgress = undefined, options = {}
           success: true,
           categorizedEmails: nextCategorizedEmails,
           ...(response.categoryTotals ? { categoryTotals: response.categoryTotals } : {}),
+          ...(response.applicationCount ? { applicationCount: response.applicationCount } : {}),
           syncInProgress,
         });
       }
@@ -2785,6 +2789,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
         success: true,
         categorizedEmails: cached.categorizedEmails,
         ...(cached.categoryTotals ? { categoryTotals: cached.categoryTotals } : {}),
+        ...(cached.applicationCount ? { applicationCount: cached.applicationCount } : {}),
         ...(cached.applicationStats ? { applicationStats: cached.applicationStats } : {}),
         quota: nextQuota,
         userEmail,
@@ -2897,6 +2902,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
             lastCompletedAt: new Date().toISOString(),
           }),
           categoryTotals: response.categoryTotals || null, // NEW: Cache accurate category counts
+          applicationCount: response.applicationCount || null, // Canonical count, computed backend-side
           applicationStats: applicationStats || null // NEW: Cache application statistics
         });
         bgLogger.info('Emails and quota cached successfully in local storage.');
@@ -2907,6 +2913,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
           success: true,
           categorizedEmails: response.categorizedEmails,
           categoryTotals: response.categoryTotals, // NEW: Pass category totals to popup
+          applicationCount: response.applicationCount, // Canonical count, computed backend-side
           applicationStats: applicationStats, // NEW: Pass application stats to popup
           quota: response.quota,
           userEmail: userEmail, // Include userEmail for targeted updates in popup
@@ -2944,6 +2951,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
             totalRelevantCount: cachedCount,
           }),
           categoryTotals: response.categoryTotals || null, // NEW: Update category totals even during sync
+          applicationCount: response.applicationCount || null, // Canonical count, computed backend-side
           applicationStats: applicationStats || null // NEW: Update application stats even during sync
         });
         bgLogger.info('Sync in progress - merged backend emails into cache and updated quota/category totals.');
@@ -2956,6 +2964,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
           success: true,
           categorizedEmails: emailsForUi,
           categoryTotals: response.categoryTotals, // NEW: Pass category totals to popup
+          applicationCount: response.applicationCount, // Canonical count, computed backend-side
           applicationStats: applicationStats, // NEW: Pass application stats to popup
           quota: response.quota,
           userEmail: userEmail,
@@ -3014,6 +3023,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
                 irrelevant: cached.irrelevantEmails || [],
               },
               ...(cached.categoryTotals ? { categoryTotals: cached.categoryTotals } : {}),
+        ...(cached.applicationCount ? { applicationCount: cached.applicationCount } : {}),
               applicationStats,
               quota: cached.quotaData || null,
               userEmail,

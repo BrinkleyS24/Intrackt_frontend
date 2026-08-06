@@ -57,6 +57,10 @@ export function useEmails(userEmail, userId, CONFIG) {
   });
   // NEW: State to hold accurate category counts from backend
   const [categoryTotals, setCategoryTotals] = useState(null);
+  // The backend's canonical application count. The popup used to derive its own from
+  // client-side thread grouping, which disagreed with the web app (358 vs 344) because
+  // the two counted different things. One number now, computed once, server-side.
+  const [applicationCount, setApplicationCount] = useState(null);
   // Phase 1 Needs Review lane: low-confidence emails the classifier flagged for the
   // user to confirm instead of silently dropping.
   const [reviewEmails, setReviewEmails] = useState([]);
@@ -166,6 +170,9 @@ export function useEmails(userEmail, userId, CONFIG) {
           if (msg.categoryTotals) {
             setCategoryTotals(msg.categoryTotals);
           }
+          if (msg.applicationCount) {
+            setApplicationCount(msg.applicationCount);
+          }
         } else {
           console.error('[popup] Email sync failed:', msg.error);
           showNotification(`Email sync failed: ${msg.error}`, 'error');
@@ -183,11 +190,16 @@ export function useEmails(userEmail, userId, CONFIG) {
       const emailKeys = ['appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'irrelevantEmails'];
       const hasEmailChange = emailKeys.some((key) => key in changes);
       const hasCategoryTotalsChange = 'categoryTotals' in changes;
+      const hasApplicationCountChange = 'applicationCount' in changes;
 
-      if (!hasEmailChange && !hasCategoryTotalsChange) return;
+      if (!hasEmailChange && !hasCategoryTotalsChange && !hasApplicationCountChange) return;
 
       if (hasCategoryTotalsChange) {
         setCategoryTotals(changes.categoryTotals?.newValue || null);
+      }
+
+      if (hasApplicationCountChange) {
+        setApplicationCount(changes.applicationCount?.newValue || null);
       }
 
       if (!hasEmailChange) return;
@@ -291,10 +303,13 @@ export function useEmails(userEmail, userId, CONFIG) {
       hasLoadedOnceRef.current = true;
       
       // NEW: Retrieve category totals from local storage
-      const result = await chrome.storage.local.get(['categoryTotals', STORED_EMAILS_CACHE_META_KEY]);
+      const result = await chrome.storage.local.get(['categoryTotals', 'applicationCount', STORED_EMAILS_CACHE_META_KEY]);
       if (!isMountedRef.current || requestId !== storedRequestIdRef.current) return;
       if (result.categoryTotals) {
         setCategoryTotals(result.categoryTotals);
+      }
+      if (result.applicationCount) {
+        setApplicationCount(result.applicationCount);
       }
       if (userEmail && userId) {
         const cacheMeta = result[STORED_EMAILS_CACHE_META_KEY] || null;
@@ -811,6 +826,7 @@ export function useEmails(userEmail, userId, CONFIG) {
   return {
     categorizedEmails,
     categoryTotals, // NEW: Export category totals to components
+    applicationCount, // Canonical, backend-computed application count
     reviewEmails,
     reviewCount: reviewEmails.length,
     fetchReviewQueue,
