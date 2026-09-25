@@ -25,6 +25,11 @@ import {
   listExtensionTestScenarios,
 } from './testing/mockScenarios.js';
 import { BRIDGE_TRUSTED_ORIGINS, isAllowedBridgePath } from './shared/bridgePaths.js';
+import {
+  APPLY_GATE_LAST_CHECK_KEY,
+  extractJobPostingFromPage,
+  summarizeApplyGateResult,
+} from './shared/applyGateCheck.js';
 
 const FIREBASE_AUTH_AVAILABLE = firebaseConfigIsComplete;
 
@@ -68,6 +73,7 @@ const DEFAULT_API_TIMEOUT_MS = Number.isFinite(Number.parseInt(process.env.EXTEN
   ? Math.max(5_000, Number.parseInt(process.env.EXTENSION_API_TIMEOUT_MS || '', 10))
   : 30_000;
 const LONG_RUNNING_API_TIMEOUT_MS = 5 * 60 * 1000;
+const APPLY_GATE_TIMEOUT_MS = 90_000;
 const EXTENSION_TESTING_ENABLED = !IS_PRODUCTION_EXTENSION_BUILD;
 const EXTENSION_TEST_STATE_KEY = 'applendiumExtensionTestStateV1';
 const EXTENSION_TEST_SNAPSHOT_KEY = 'applendiumExtensionTestSnapshotV1';
@@ -245,6 +251,41 @@ function validateIncomingMessage(message) {
     case 'GET_EXTENSION_TEST_STATE':
     case 'DEACTIVATE_EXTENSION_TEST_MODE':
       return { valid: true, message: normalized };
+
+    // Apply Gate from the popup: the posting the user is looking at, read out of the active tab.
+    // Limits mirror the backend's ApplyGateAnalyzeBodySchema so a bad payload fails here, not there.
+    case 'APPLY_GATE_ANALYZE': {
+      if (!isPlainObject(message.payload)) return { valid: false, error: 'Invalid Apply Gate payload.' };
+      const jobTitle = validateOptionalString(message.payload.jobTitle, { maxLength: 200, allowEmpty: true });
+      const companyName = validateOptionalString(message.payload.companyName, { maxLength: 200, allowEmpty: true });
+      const jobDescription = validateOptionalString(message.payload.jobDescription, { maxLength: 100000, allowEmpty: true });
+      const jobUrl = validateOptionalString(message.payload.jobUrl, { maxLength: 2000, allowEmpty: true });
+      for (const [name, field] of [['jobTitle', jobTitle], ['companyName', companyName], ['jobDescription', jobDescription], ['jobUrl', jobUrl]]) {
+        if (!field.valid) return { valid: false, error: `Invalid ${name}: ${field.error}` };
+      }
+      if (!jobTitle.value && !jobDescription.value && !jobUrl.value) {
+        return { valid: false, error: 'Nothing to check: no title, description or link.' };
+      }
+      return {
+        valid: true,
+        message: {
+          ...normalized,
+          payload: {
+            jobTitle: jobTitle.value || '',
+            companyName: companyName.value || '',
+            jobDescription: jobDescription.value || '',
+            jobUrl: jobUrl.value || '',
+          },
+        },
+      };
+    }
+
+    case 'APPLY_GATE_ACTION': {
+      const verdictId = validateOptionalString(message.verdictId, { maxLength: 100 });
+      if (!verdictId.valid || !verdictId.value) return { valid: false, error: 'Invalid verdictId.' };
+      if (!['applied', 'fixed', 'skipped'].includes(message.action)) return { valid: false, error: 'Invalid Apply Gate action.' };
+      return { valid: true, message: { ...normalized, verdictId: verdictId.value, action: message.action } };
+    }
 
     case 'ACTIVATE_EXTENSION_TEST_SCENARIO': {
       const scenarioId = validateOptionalString(message.scenarioId, { maxLength: 100 });
@@ -911,6 +952,8 @@ const CONFIG_ENDPOINTS = {
   CORRECTION_ANALYTICS: '/api/emails/analytics/corrections', // GET endpoint for correction analytics
   APPLICATION_STATS: '/api/emails/applications/stats', // GET endpoint for application lifecycle statistics
   SEARCH_READ: '/api/insights/search-read', // GET: the free user's one read of their own search
+  APPLY_GATE_ANALYZE: '/api/emails/apply-gate/analyze', // POST (premium): check the posting in the active tab
+  APPLY_GATE_ACTION: '/api/emails/apply-gate', // PATCH /:verdictId/action (premium): what the user decided
   CLOSE_APPLICATION: '/api/emails/applications/:applicationId/close',
   REOPEN_APPLICATION: '/api/emails/applications/:applicationId/reopen',
 };
@@ -1950,6 +1993,24 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
         gmailAuth: testingState.state?.gmailAuth || null,
         testing: buildExtensionTestingStatus(testingState.state),
       });
+      return true;
+    }
+
+    case 'READ_ACTIVE_JOB_POSTING': {
+      const scenario = getExtensionTestScenario(testingState.state?.scenarioId);
+      sendResponse({ success: true, posting: scenario?.applyGate?.posting || null });
+      return true;
+    }
+
+    case 'APPLY_GATE_ANALYZE': {
+      const scenario = getExtensionTestScenario(testingState.state?.scenarioId);
+      const result = scenario?.applyGate?.result || null;
+      sendResponse(result ? { success: true, result } : { success: false, error: 'Apply Gate is not part of this test scenario.' });
+      return true;
+    }
+
+    case 'APPLY_GATE_ACTION': {
+      sendResponse({ success: true });
       return true;
     }
 
@@ -3613,6 +3674,69 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
 
   // Backfill handlers removed
+
+      case 'READ_ACTIVE_JOB_POSTING':
+        // activeTab: opening the popup grants access to the tab it was opened on, for this visit
+        // only. Pages Chrome never lets extensions script (chrome://, the Web Store, PDFs) just
+        // return no posting.
+        try {
+          const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+          if (!tab?.id || !/^https?:/i.test(tab.url || '')) {
+            sendResponse({ success: true, posting: null });
+            break;
+          }
+          const [injection] = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: extractJobPostingFromPage,
+          });
+          sendResponse({ success: true, posting: injection?.result || null });
+        } catch (error) {
+          sendResponse({ success: true, posting: null, reason: error.message });
+        }
+        break;
+
+      case 'APPLY_GATE_ANALYZE':
+        try {
+          if (!currentUserId || !currentUserEmail) {
+            sendResponse({ success: false, error: 'Not authenticated' });
+            break;
+          }
+          // A check waits on the model; the 30s default cut real ones off mid-analysis.
+          const result = await apiFetch(CONFIG_ENDPOINTS.APPLY_GATE_ANALYZE, {
+            method: 'POST',
+            body: JSON.stringify(msg.payload),
+            timeoutMs: APPLY_GATE_TIMEOUT_MS,
+          });
+          // Cached so reopening the popup on the same posting shows the call instead of re-running
+          // it — and so a check that finishes after the popup closed is not lost.
+          if (result?.success) {
+            try {
+              await chrome.storage.local.set({
+                [APPLY_GATE_LAST_CHECK_KEY]: { url: msg.payload.jobUrl || '', at: Date.now(), summary: summarizeApplyGateResult(result) },
+              });
+            } catch (_) { /* the popup still gets the result below */ }
+          }
+          sendResponse({ success: Boolean(result?.success), result: result || null });
+        } catch (error) {
+          sendResponse({ success: false, error: error.message, status: error.status || null });
+        }
+        break;
+
+      case 'APPLY_GATE_ACTION':
+        try {
+          if (!currentUserId || !currentUserEmail) {
+            sendResponse({ success: false, error: 'Not authenticated' });
+            break;
+          }
+          await apiFetch(`${CONFIG_ENDPOINTS.APPLY_GATE_ACTION}/${encodeURIComponent(msg.verdictId)}/action`, {
+            method: 'PATCH',
+            body: JSON.stringify({ action: msg.action }),
+          });
+          sendResponse({ success: true });
+        } catch (error) {
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
 
       case 'FETCH_SEARCH_READ':
         try {

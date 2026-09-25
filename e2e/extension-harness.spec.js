@@ -192,6 +192,77 @@ test('renders premium footer behavior without a live dashboard promise', async (
   await page.close();
 });
 
+test('premium members check the job they are looking at and decide from the popup', async ({}, testInfo) => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'premium-rich');
+
+  // Seen a job -> check it -> decide, without copying the posting into another tab.
+  // (Clicking this scenario scrolls the lab page; bring the popup preview back before measuring.)
+  await page.getByTestId('popup-preview-frame').scrollIntoViewIfNeeded();
+  const strip = frame.getByTestId('apply-gate-strip');
+  await expect(strip).toBeInViewport();
+  await expect(strip).toContainText('Senior QA Automation Engineer · Signal Labs');
+  await frame.getByTestId('apply-gate-check').click();
+
+  await expect(frame.getByTestId('apply-gate-decision')).toHaveText('Fix first');
+  await expect(strip).toContainText('Close one gap, then apply');
+  await expect(strip).toContainText('Add the CI/CD work you have done before sending this one.');
+  await expect(strip).toContainText('no CI/CD pipeline work');
+  await expect(strip).not.toContainText('A fourth reason');
+  await expect(strip).toContainText('Checked against your default résumé');
+  await page.screenshot({ path: testInfo.outputPath('lab-apply-gate-verdict.png'), fullPage: true });
+
+  // Same buttons as the web page, and the choice is recorded.
+  await expect(frame.getByTestId('apply-gate-action-fixed')).toHaveText("I'll fix first");
+  await frame.getByTestId('apply-gate-action-fixed').click();
+  await expect(frame.getByTestId('apply-gate-recorded')).toContainText('fixing first');
+
+  await page.close();
+});
+
+test('the page reader takes structured postings first and ignores pages that are not postings', async () => {
+  const source = require('node:fs').readFileSync(path.join(__dirname, '..', 'shared', 'applyGateCheck.js'), 'utf8');
+  const { extractJobPostingFromPage } = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+  const read = async (html) => {
+    const page = await context.newPage();
+    await page.setContent(html);
+    const result = await page.evaluate(`(${extractJobPostingFromPage.toString()})()`);
+    const pwned = await page.evaluate(() => window.__pwned === 1);
+    await page.close();
+    return { ...result, pwned };
+  };
+
+  const jobPosting = {
+    '@type': 'JobPosting',
+    title: 'QA Engineer',
+    hiringOrganization: { '@type': 'Organization', name: 'Acme' },
+    // The <img onerror> must NOT run: the reader parses into an inert document.
+    description: '<p>About the role</p><ul><li>Own the Playwright suite</li><li>Ship weekly</li></ul><img src="x" onerror="window.__pwned=1">',
+  };
+  const structured = await read(`<html><head><title>Jobs</title>
+    <meta property="og:site_name" content="LinkedIn">
+    <script type="application/ld+json">${JSON.stringify({ '@context': 'https://schema.org', '@graph': [jobPosting] })}</script>
+    </head><body><nav>Home Jobs</nav><main>noise</main></body></html>`);
+  expect(structured.source).toBe('structured');
+  expect(structured.title).toBe('QA Engineer');
+  expect(structured.company).toBe('Acme');
+  expect(structured.description).toContain('• Own the Playwright suite');
+  expect(structured.looksLikeJob).toBe(true);
+  expect(structured.pwned).toBe(false);
+
+  const plain = await read(`<html><head><title>QA Lead - Beta</title><meta property="og:site_name" content="Beta Corp"></head>
+    <body><h1>QA Lead</h1><main><h2>Responsibilities</h2><p>${'Lead the test strategy for the platform team. '.repeat(12)}</p>
+    <h2>Qualifications</h2><p>${'Five years of automation experience with CI pipelines. '.repeat(6)}</p></main></body></html>`);
+  expect(plain.source).toBe('page');
+  expect(plain.title).toBe('QA Lead');
+  expect(plain.company).toBe('Beta Corp');
+  expect(plain.looksLikeJob).toBe(true);
+
+  // A job-board search page names jobs but is not one posting.
+  const search = await read(`<html><body><h1>Search results</h1><main>${'QA Engineer at Acme. Apply now. '.repeat(40)}</main></body></html>`);
+  expect(search.looksLikeJob).toBe(false);
+});
+
 test('free users see one real read of their own search the moment the popup opens', async ({}, testInfo) => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'free-rich');
@@ -204,6 +275,8 @@ test('free users see one real read of their own search the moment the popup open
   await expect(read).toContainText('last 30 days');
   await expect(frame.getByTestId('search-read-cta')).toContainText('See what to do about it');
   await expect(frame.getByTestId('search-read-cta')).toBeInViewport();
+  // The popup reads the open tab only for premium members, who can act on the check.
+  await expect(frame.getByTestId('apply-gate-strip')).toHaveCount(0);
 
   // The evidence is one tap away, and the recommendation is never in the free popup.
   await expect(frame.getByTestId('search-read-detail')).toHaveCount(0);

@@ -22,7 +22,9 @@
     "identity",
     "storage",
     "alarms",
-    "notifications"
+    "notifications",
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
     "https://applendium-backend-965515515114.us-central1.run.app/*",
@@ -54,7 +56,9 @@
         "http://localhost/*",
         "http://127.0.0.1/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
     }
   ],

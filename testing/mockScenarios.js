@@ -468,6 +468,41 @@ const SCENARIOS = {
       userId: 'qa-premium-001',
     },
     userPlan: 'premium',
+    // Apply Gate from the popup: the job the harness pretends is open in the active tab, and the
+    // verdict the backend would return for it (shape of POST /api/emails/apply-gate/analyze).
+    applyGate: {
+      posting: {
+        source: 'structured',
+        url: 'https://boards.greenhouse.io/signallabs/jobs/4242',
+        title: 'Senior QA Automation Engineer',
+        company: 'Signal Labs',
+        description: 'Responsibilities: own the Playwright suite. Qualifications: 5+ years of test automation, CI/CD, TypeScript.',
+        looksLikeJob: true,
+      },
+      result: {
+        success: true,
+        id: 'verdict-qa-1',
+        verdict: 'risky',
+        jobTitle: 'Senior QA Automation Engineer',
+        companyName: 'Signal Labs',
+        reasons: [
+          'Your résumé shows Playwright but no CI/CD pipeline work.',
+          'The role asks for 5+ years; your dated history shows 4.',
+          'Core overlap: test automation, TypeScript, API testing.',
+          'A fourth reason the popup should not show.',
+        ],
+        explanation: {
+          decision: 'fix_first',
+          display_decision: {
+            action: 'FIX_THEN_APPLY',
+            label: 'Fix first',
+            headline: 'Close one gap, then apply',
+            subtext: 'Add the CI/CD work you have done before sending this one.',
+          },
+        },
+        resumeDocument: { variantId: 'v-default', source: 'default', fingerprint: 'abc123', characters: 2400 },
+      },
+    },
     quotaData: {
       trackedApplications: 214,
       totalProcessed: 214,

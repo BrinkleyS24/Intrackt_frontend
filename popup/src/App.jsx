@@ -28,6 +28,8 @@ import { CONFIG } from './utils/constants';
 import PremiumTeaserCard from './components/PremiumTeaserCard';
 import SearchReadStrip from './components/SearchReadStrip';
 import { useSearchRead } from './hooks/useSearchRead';
+import ApplyGateStrip from './components/ApplyGateStrip';
+import { useApplyGateCheck } from './hooks/useApplyGateCheck';
 import HistoryCoverageNote from './components/HistoryCoverageNote';
 import { AlertTriangle, ArrowLeft, CalendarDays, Check, FileDown, LogOut, RefreshCw, Search, Shield, X } from 'lucide-react';
 
@@ -290,6 +292,8 @@ function App() {
   // The free search read feeds two surfaces (the strip above the list, the footer card's progress
   // line), so it is fetched once here. Premium members have the full coach in the web app.
   const searchRead = useSearchRead(Boolean(isLoggedIn && userPlan && userPlan !== 'premium'));
+  // Premium only: the popup reads the open tab only for people who can act on the check.
+  const applyGateCheck = useApplyGateCheck(Boolean(isLoggedIn && userPlan === 'premium'));
 
   // Read the last-open timestamp for the "new since last visit" divider, then
   // rotate it to now. The read value drives the whole session; a quick reopen
@@ -895,6 +899,24 @@ function App() {
     }
   }, []);
 
+  // A premium page by path (/apply-gate, /resumes) on the same site openPremiumStatusPage uses.
+  const openWebAppPath = useCallback(async (path) => {
+    const rawUrl = await getPremiumDashboardUrl();
+    if (!rawUrl || typeof path !== 'string' || !path.startsWith('/')) return;
+    let baseUrl;
+    try {
+      baseUrl = new URL(rawUrl).origin;
+    } catch {
+      baseUrl = rawUrl.replace(/\/+$/, '');
+    }
+    const url = `${baseUrl}${path}`;
+    try {
+      chrome.tabs.create({ url });
+    } catch (_) {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+  }, []);
+
   const renderQuotaStatusNotice = useCallback(() => {
     if (!showQuotaStatusNotice || !quota) {
       return null;
@@ -1170,7 +1192,10 @@ function App() {
             compact
             newSinceTimestamp={newSinceTimestamp}
             headerSlot={
-              <SearchReadStrip read={searchRead.read} onOpenPremiumPage={openPremiumStatusPage} />
+              <>
+                <ApplyGateStrip check={applyGateCheck} onOpenWebPath={openWebAppPath} />
+                <SearchReadStrip read={searchRead.read} onOpenPremiumPage={openPremiumStatusPage} />
+              </>
             }
             footerSlot={
               <div className="px-3 pb-3 pt-2">
