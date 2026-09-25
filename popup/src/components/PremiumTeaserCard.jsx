@@ -66,8 +66,8 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
           : 'What is working across your search as it builds up',
       },
       {
-        label: 'Outcome Memory',
-        detail: 'How applications like yours actually played out, so the advice is grounded',
+        label: 'Weekly Summary',
+        detail: 'What changed in your search this week, and what to do next week',
       },
     ];
 

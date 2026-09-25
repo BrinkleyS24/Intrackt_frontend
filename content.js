@@ -29,6 +29,10 @@ function isAllowedBridgePath(pathname) {
 		|| pathname.startsWith("/upgrade/")
 		|| pathname === "/apply-gate"
 		|| pathname.startsWith("/apply-gate/")
+		|| pathname === "/next-actions"
+		|| pathname.startsWith("/next-actions/")
+		|| pathname === "/resumes"
+		|| pathname.startsWith("/resumes/")
 		|| pathname === "/fix-suggestions"
 		|| pathname.startsWith("/fix-suggestions/")
 		|| pathname === "/outcome-memory"

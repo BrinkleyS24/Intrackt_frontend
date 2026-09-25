@@ -26,6 +26,9 @@ export const BRIDGE_PATHS = [
   '/dashboard',
   '/upgrade',
   '/apply-gate',
+  '/next-actions',
+  '/resumes',
+  // Old names that now redirect (to /next-actions and /strategy-alerts); kept so bookmarks work.
   '/fix-suggestions',
   '/outcome-memory',
   '/strategy-alerts',
