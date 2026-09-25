@@ -910,6 +910,7 @@ const CONFIG_ENDPOINTS = {
   UPDATE_COMPANY_NAME: '/api/emails/:emailId/company', // PATCH endpoint for company name correction
   CORRECTION_ANALYTICS: '/api/emails/analytics/corrections', // GET endpoint for correction analytics
   APPLICATION_STATS: '/api/emails/applications/stats', // GET endpoint for application lifecycle statistics
+  SEARCH_READ: '/api/insights/search-read', // GET: the free user's one read of their own search
   CLOSE_APPLICATION: '/api/emails/applications/:applicationId/close',
   REOPEN_APPLICATION: '/api/emails/applications/:applicationId/reopen',
 };
@@ -1948,6 +1949,18 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
         sync: testingState.state?.sync || null,
         gmailAuth: testingState.state?.gmailAuth || null,
         testing: buildExtensionTestingStatus(testingState.state),
+      });
+      return true;
+    }
+
+    case 'FETCH_SEARCH_READ': {
+      // Test mode only (this switch is unreachable unless a scenario is active).
+      const scenario = getExtensionTestScenario(testingState.state?.scenarioId);
+      sendResponse({
+        success: true,
+        read: scenario?.searchRead?.read || null,
+        progress: scenario?.searchRead?.progress || null,
+        unavailable: false,
       });
       return true;
     }
@@ -3600,6 +3613,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
 
   // Backfill handlers removed
+
+      case 'FETCH_SEARCH_READ':
+        try {
+          if (!currentUserId || !currentUserEmail) {
+            sendResponse({ success: false, error: 'Not authenticated' });
+            break;
+          }
+          const searchRead = await apiFetch(CONFIG_ENDPOINTS.SEARCH_READ, { method: 'GET' });
+          sendResponse({
+            success: Boolean(searchRead?.success),
+            read: searchRead?.read || null,
+            progress: searchRead?.progress || null,
+            unavailable: Boolean(searchRead?.unavailable),
+          });
+        } catch (error) {
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
 
       case 'FETCH_QUOTA_DATA':
         try {

@@ -258,6 +258,16 @@ const SCENARIOS = {
   },
   'free-rich': {
     id: 'free-rich',
+    searchRead: {
+      read: {
+        kind: 'performance-rejection-velocity-auto_screen',
+        title: 'Your rejections are coming back too fast for anyone to have read the résumé',
+        description: '6 of 8 timed rejections arrived within 3 days of applying, averaging 1.4 days. Decisions that fast are consistent with the application form filtering you out — work authorisation, location, salary, or a required-experience question — before a recruiter opens anything.',
+        stat: '75% of your timed rejections arrived this way',
+        timeframe: 'In the last 30 days',
+      },
+      progress: null,
+    },
     label: 'Free Plan Rich Inbox',
     description: 'Free-plan state with quota pressure, unread threads, preview history, and closed applications.',
     auth: {
@@ -380,6 +390,15 @@ const SCENARIOS = {
   },
   'free-limit-reached': {
     id: 'free-limit-reached',
+    searchRead: {
+      read: null,
+      progress: {
+        unit: 'timed_rejections',
+        have: 3,
+        need: 5,
+        label: "Your first read appears once 5 rejections can be timed from application to decision. You're at 3.",
+      },
+    },
     label: 'Free Plan Limit Reached',
     description: 'Free-plan state after the tracked application cap is reached, so upgrade pressure and blocked-new-tracking copy can be validated.',
     auth: {
