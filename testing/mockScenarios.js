@@ -396,7 +396,7 @@ const SCENARIOS = {
         unit: 'timed_rejections',
         have: 3,
         need: 5,
-        label: "Your first read appears once 5 rejections can be timed from application to decision. You're at 3.",
+        label: "Your first read appears once 5 rejections from the last 30 days can be timed from application to decision. You're at 3.",
       },
     },
     label: 'Free Plan Limit Reached',
