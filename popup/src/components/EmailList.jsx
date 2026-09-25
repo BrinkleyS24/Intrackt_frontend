@@ -212,6 +212,7 @@ function EmailList({
   onMarkAllAsRead,
   isMarkingAllAsRead,
   compact = false,
+  headerSlot = null,
   footerSlot = null,
   newSinceTimestamp = null,
 }) {
@@ -420,6 +421,9 @@ function EmailList({
         renderEmptyState()
       ) : (
         <div className="flex-1 overflow-y-auto popup-scrollbar px-3 py-3">
+          {/* Scrolls with the rows rather than pinning: it is seen on open and then gets out of
+              the way of the list, which is the product. */}
+          {headerSlot}
           <div key={`${category}-${activeFilter}`} className="space-y-2">
             {paginatedThreadGroups.map((group, index) => {
               const email = (group.latestEmail || group.earliestEmail) || {};

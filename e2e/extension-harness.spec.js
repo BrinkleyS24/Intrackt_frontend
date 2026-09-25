@@ -192,17 +192,27 @@ test('renders premium footer behavior without a live dashboard promise', async (
   await page.close();
 });
 
-test('free users get one real read of their own search, with the plan kept premium', async ({}, testInfo) => {
+test('free users see one real read of their own search the moment the popup opens', async ({}, testInfo) => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'free-rich');
 
+  // Measured 2026-09-25: in the list footer the read started ~1,100px below a 236px viewport for a
+  // full page of applications. It must be visible without any scrolling.
   const read = frame.getByTestId('search-read');
-  await read.scrollIntoViewIfNeeded();
+  await expect(read).toBeInViewport();
   await expect(read).toContainText('Your rejections are coming back too fast');
-  await expect(read).toContainText('In the last 30 days');
+  await expect(read).toContainText('last 30 days');
   await expect(frame.getByTestId('search-read-cta')).toContainText('See what to do about it');
-  // The recommendation ("read the screening questions…") is premium and must never render here.
-  await expect(frame.getByTestId('premium-teaser')).not.toContainText('screening questions');
+  await expect(frame.getByTestId('search-read-cta')).toBeInViewport();
+
+  // The evidence is one tap away, and the recommendation is never in the free popup.
+  await expect(frame.getByTestId('search-read-detail')).toHaveCount(0);
+  await frame.getByTestId('search-read-why').click();
+  await expect(frame.getByTestId('search-read-detail')).toContainText('timed rejections');
+  await expect(frame.getByTestId('extension-popup-root')).not.toContainText('screening questions');
+
+  // One surface for the read: the footer teaser does not repeat it.
+  await expect(frame.getByTestId('premium-teaser')).toHaveCount(0);
 
   await page.screenshot({ path: testInfo.outputPath('lab-free-search-read.png'), fullPage: true });
   await page.close();
@@ -215,6 +225,7 @@ test('a free user without enough data sees honest progress instead of a blur', a
   const progress = frame.getByTestId('search-read-progress');
   await progress.scrollIntoViewIfNeeded();
   await expect(progress).toContainText("You're at 3.");
+  await expect(frame.getByTestId('premium-teaser')).toContainText('Your first search read');
   await expect(frame.getByTestId('search-read')).toHaveCount(0);
   await page.close();
 });

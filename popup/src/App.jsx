@@ -26,6 +26,8 @@ import { compactSafeTextValues } from './utils/sensitiveContent';
 
 import { CONFIG } from './utils/constants';
 import PremiumTeaserCard from './components/PremiumTeaserCard';
+import SearchReadStrip from './components/SearchReadStrip';
+import { useSearchRead } from './hooks/useSearchRead';
 import HistoryCoverageNote from './components/HistoryCoverageNote';
 import { AlertTriangle, ArrowLeft, CalendarDays, Check, FileDown, LogOut, RefreshCw, Search, Shield, X } from 'lucide-react';
 
@@ -284,6 +286,10 @@ function App() {
     historyCoverage,
     loadingAuth,
   } = useAuth();
+
+  // The free search read feeds two surfaces (the strip above the list, the footer card's progress
+  // line), so it is fetched once here. Premium members have the full coach in the web app.
+  const searchRead = useSearchRead(Boolean(isLoggedIn && userPlan && userPlan !== 'premium'));
 
   // Read the last-open timestamp for the "new since last visit" divider, then
   // rotate it to now. The read value drives the whole session; a quick reopen
@@ -1163,12 +1169,16 @@ function App() {
             isMarkingAllAsRead={markingAllAsRead}
             compact
             newSinceTimestamp={newSinceTimestamp}
+            headerSlot={
+              <SearchReadStrip read={searchRead.read} onOpenPremiumPage={openPremiumStatusPage} />
+            }
             footerSlot={
               <div className="px-3 pb-3 pt-2">
                 <PremiumTeaserCard
                   userPlan={userPlan}
                   stats={allViewHeadlineSummary.counts}
                   onOpenPremiumPage={openPremiumStatusPage}
+                  searchRead={searchRead}
                 />
               </div>
             }
