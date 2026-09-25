@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowUpRight, Lock, Sparkles, X } from 'lucide-react';
+import { useSearchRead } from '../hooks/useSearchRead';
 
 const DISMISS_KEY = 'applendiumPremiumTeaserDismissedAt';
 // Premium members get their own dismiss key so dismissing one card never
@@ -12,6 +13,8 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage }
   const [visible, setVisible] = useState(false);
   const isPremium = userPlan === 'premium';
   const storageKey = isPremium ? ACTIVE_DISMISS_KEY : DISMISS_KEY;
+  // Called unconditionally (hooks rule); only fetches for free users.
+  const searchRead = useSearchRead(!isPremium);
 
   useEffect(() => {
     let cancelled = false;
@@ -167,7 +170,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage }
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1.5 text-[11px] font-semibold text-accent">
           <Sparkles className="h-3.5 w-3.5" />
-          Premium insights ready
+          {searchRead.read ? 'From your inbox' : 'Premium insights ready'}
         </div>
         <button
           onClick={handleDismiss}
@@ -179,14 +182,32 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage }
         </button>
       </div>
 
-      <div className="mt-2.5 flex items-start gap-2 rounded-xl border border-border bg-card/80 px-3 py-2.5">
-        <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <div className="text-[11px] font-semibold leading-4 text-foreground">{heroInsight}</div>
-          <div className="mt-1.5 h-2.5 w-5/6 rounded bg-muted-foreground/20" />
-          <div className="mt-1.5 h-2 w-2/3 rounded bg-muted-foreground/15" />
+      {searchRead.read ? (
+        <div data-testid="search-read" className="mt-2.5 rounded-xl border border-accent/20 bg-card/80 px-3 py-2.5">
+          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Your search read · {searchRead.read.timeframe}
+          </div>
+          <div className="mt-1 text-[11px] font-semibold leading-4 text-foreground">{searchRead.read.title}</div>
+          <div className="mt-1 text-[11px] leading-4 text-muted-foreground">{searchRead.read.description}</div>
         </div>
-      </div>
+      ) : (
+        <div className="mt-2.5 flex items-start gap-2 rounded-xl border border-border bg-card/80 px-3 py-2.5">
+          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[11px] font-semibold leading-4 text-foreground">{heroInsight}</div>
+            {searchRead.progress ? (
+              <div data-testid="search-read-progress" className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                {searchRead.progress.label}
+              </div>
+            ) : (
+              <>
+                <div className="mt-1.5 h-2.5 w-5/6 rounded bg-muted-foreground/20" />
+                <div className="mt-1.5 h-2 w-2/3 rounded bg-muted-foreground/15" />
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="mt-2.5 space-y-2">
         {features.map(({ label, detail }) => (
@@ -203,11 +224,12 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage }
       </div>
 
       <button
-        onClick={onOpenPremiumPage}
+        onClick={() => onOpenPremiumPage(searchRead.read ? 'ext_search_read' : undefined)}
+        data-testid={searchRead.read ? 'search-read-cta' : undefined}
         className="mt-3 w-full rounded-xl bg-accent px-3 py-2 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
         type="button"
       >
-        Unlock Premium →
+        {searchRead.read ? 'See what to do about it →' : 'Unlock Premium →'}
       </button>
     </div>
   );

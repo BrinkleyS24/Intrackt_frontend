@@ -191,3 +191,30 @@ test('renders premium footer behavior without a live dashboard promise', async (
 
   await page.close();
 });
+
+test('free users get one real read of their own search, with the plan kept premium', async ({}, testInfo) => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'free-rich');
+
+  const read = frame.getByTestId('search-read');
+  await read.scrollIntoViewIfNeeded();
+  await expect(read).toContainText('Your rejections are coming back too fast');
+  await expect(read).toContainText('In the last 30 days');
+  await expect(frame.getByTestId('search-read-cta')).toContainText('See what to do about it');
+  // The recommendation ("read the screening questions…") is premium and must never render here.
+  await expect(frame.getByTestId('premium-teaser')).not.toContainText('screening questions');
+
+  await page.screenshot({ path: testInfo.outputPath('lab-free-search-read.png'), fullPage: true });
+  await page.close();
+});
+
+test('a free user without enough data sees honest progress instead of a blur', async () => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'free-limit-reached');
+
+  const progress = frame.getByTestId('search-read-progress');
+  await progress.scrollIntoViewIfNeeded();
+  await expect(progress).toContainText("You're at 3.");
+  await expect(frame.getByTestId('search-read')).toHaveCount(0);
+  await page.close();
+});

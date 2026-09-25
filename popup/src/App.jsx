@@ -861,7 +861,7 @@ function App() {
     setSelectedEmail(null);
   }, [handleArchiveEmail, fetchStoredEmails]);
 
-  const openPremiumStatusPage = useCallback(async () => {
+  const openPremiumStatusPage = useCallback(async (source) => {
     const rawUrl = await getPremiumDashboardUrl();
 
     if (!rawUrl) {
@@ -876,7 +876,11 @@ function App() {
       baseUrl = rawUrl.replace(/\/+$/, '');
     }
 
-    const url = `${baseUrl}/upgrade`;
+    // Button handlers also call this with a click event; only a well-formed tag is forwarded.
+    const sourceParam = typeof source === 'string' && /^[a-z0-9_]{1,40}$/.test(source)
+      ? `?source=${source}`
+      : '';
+    const url = `${baseUrl}/upgrade${sourceParam}`;
 
     try {
       chrome.tabs.create({ url });
