@@ -96,6 +96,12 @@ test('renders the free-plan inbox and opens a thread preview', async ({}, testIn
   await frame.getByTestId('popup-header-back').click();
   await expect(frame.getByTestId('refresh-button')).toBeVisible();
 
+  // The history note states the plan's window and what Premium adds, from the backend's
+  // numbers (it used to hard-code "Premium imports 90 days", no gain once free reached 90).
+  const coverageNote = frame.getByTestId('history-coverage-note');
+  await expect(coverageNote).toContainText('your plan imports the last 90 days');
+  await expect(coverageNote).toContainText('Premium imports 180 days');
+
   await page.screenshot({
     path: testInfo.outputPath('lab-free-rich.png'),
     fullPage: true,
@@ -178,6 +184,11 @@ test('renders premium footer behavior without a live dashboard promise', async (
   await expect(frame.getByTestId('premium-active-card')).toBeVisible();
   await expect(frame.getByTestId('premium-active-cta')).toContainText('Open your dashboard');
   await expect(frame.getByTestId('premium-teaser')).toHaveCount(0);
+
+  // Premium's own window, and no upgrade line.
+  const coverageNote = frame.getByTestId('history-coverage-note');
+  await expect(coverageNote).toContainText('your plan imports the last 180 days');
+  await expect(coverageNote).not.toContainText('Premium imports');
 
   await page.screenshot({
     path: testInfo.outputPath('lab-premium-rich.png'),
@@ -294,7 +305,7 @@ test('free users see one real read of their own search the moment the popup open
   const read = frame.getByTestId('search-read');
   await expect(read).toBeInViewport();
   await expect(read).toContainText('Your rejections are coming back too fast');
-  await expect(read).toContainText('last 30 days');
+  await expect(read).toContainText('last 90 days');
   await expect(frame.getByTestId('search-read-cta')).toContainText('See what to do about it');
   await expect(frame.getByTestId('search-read-cta')).toBeInViewport();
   // Free users get one Apply Gate check a week on the job they are looking at (2026-09-26).

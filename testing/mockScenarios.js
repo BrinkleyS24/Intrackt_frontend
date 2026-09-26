@@ -258,6 +258,13 @@ const SCENARIOS = {
   },
   'free-rich': {
     id: 'free-rich',
+    // Plan windows as the backend sends them since 2026-09-26 (90 free, 180 premium).
+    dataCompleteness: {
+      syncComplete: true,
+      historyWindowDays: 90,
+      premiumHistoryWindowDays: 180,
+      visibleSinceDate: '2026-01-06T00:00:00.000Z',
+    },
     // A free user on a job page with this week's check unused (one per rolling week, 2026-09-26).
     applyGate: {
       posting: {
@@ -288,7 +295,7 @@ const SCENARIOS = {
         title: 'Your rejections are coming back too fast for anyone to have read the résumé',
         description: '6 of 8 timed rejections arrived within 3 days of applying, averaging 1.4 days. Decisions that fast are consistent with the application form filtering you out — work authorisation, location, salary, or a required-experience question — before a recruiter opens anything.',
         stat: '75% of your timed rejections arrived this way',
-        timeframe: 'In the last 30 days',
+        timeframe: 'In the last 90 days',
       },
       progress: null,
     },
@@ -432,7 +439,7 @@ const SCENARIOS = {
         unit: 'timed_rejections',
         have: 3,
         need: 5,
-        label: "Your first read appears once 5 rejections from the last 30 days can be timed from application to decision. You're at 3.",
+        label: "Your first read appears once 5 rejections from the last 90 days can be timed from application to decision. You're at 3.",
       },
     },
     label: 'Free Plan Limit Reached',
@@ -496,6 +503,12 @@ const SCENARIOS = {
   },
   'premium-rich': {
     id: 'premium-rich',
+    dataCompleteness: {
+      syncComplete: true,
+      historyWindowDays: 180,
+      premiumHistoryWindowDays: 180,
+      visibleSinceDate: '2025-10-08T00:00:00.000Z',
+    },
     label: 'Premium Plan Active Search',
     description: 'Premium state for validating no free-plan quota friction and premium footer behavior.',
     auth: {

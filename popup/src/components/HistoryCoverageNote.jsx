@@ -3,8 +3,9 @@
  * @description A quiet footnote under the application list stating how far back the
  * user's plan actually imports.
  *
- * Why this exists: a sync only ever reaches back 30 days (free) or 90 (premium), and
- * deep backfill does not go deeper — it is 90 days back from *today*, not gap-filling.
+ * Why this exists: a sync only ever reaches back the plan's window (90 days free, 180
+ * premium since 2026-09-26; the backend sends the numbers), and the history backfill does
+ * not go deeper — it is the window back from *today*, not gap-filling.
  * Applications older than that line are simply invisible, and until now nothing said so.
  * One real premium user has ~196 of them. A truncated list with no explanation does not
  * read as "outside my plan's window", it reads as "this tracker missed my applications",
@@ -46,7 +47,11 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
   // premium-era value while reads snap back to 30 days. The backend derives this one from
   // the same helper that enforces the clamp, so the sentence can't outrun the query.
   const importStart = formatImportStart(coverage?.visibleSinceDate);
-  const isFree = userPlan !== 'premium';
+  // The upgrade line states the real difference, from the backend. It used to hard-code
+  // "Premium imports 90 days", which became no difference at all once free reached 90.
+  // With no Premium number (an older backend) or no gain, it says nothing.
+  const premiumDays = Number(coverage?.premiumHistoryWindowDays);
+  const showUpgrade = userPlan !== 'premium' && Number.isFinite(premiumDays) && premiumDays > windowDays;
 
   return (
     <div
@@ -61,7 +66,7 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
             : `Your plan imports the last ${windowDays} days of email.`}
         </span>{' '}
         <span>Applications older than that aren&apos;t here.</span>
-        {isFree && (
+        {showUpgrade && (
           <>
             {' '}
             <button
@@ -69,7 +74,7 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
               onClick={onUpgrade}
               className="font-medium text-foreground underline underline-offset-2 transition hover:opacity-80"
             >
-              Premium imports 90 days
+              Premium imports {premiumDays} days
             </button>
             <span>.</span>
           </>
