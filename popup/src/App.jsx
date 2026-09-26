@@ -84,19 +84,18 @@ const isPreviewCandidateEmail = (email) => {
   );
 };
 
-const MAIN_TABS = [
-  { id: 'all', label: 'All', activeClassName: 'bg-accent text-accent-foreground border-transparent' },
-  { id: 'applied', label: 'Applied', activeClassName: 'bg-secondary text-foreground border-transparent' },
-  { id: 'interviewed', label: 'Interviews', activeClassName: 'bg-warning text-warning-foreground border-transparent' },
-  { id: 'offers', label: 'Offers', activeClassName: 'bg-success text-success-foreground border-transparent' },
-  // Same bucket and same word as the Closed tile above it: it also holds roles closed for silence,
-  // which nobody rejected. The chip said "Rejected" while the tile said "Closed" (review, 2026-09-26).
-  { id: 'rejected', label: 'Closed', activeClassName: 'bg-destructive text-destructive-foreground border-transparent' },
-];
+// The stat tiles double as the list filters (review, 2026-09-26): a row of chips under them repeated
+// the same four buckets and cost a full row of a 600px popup.
+const TILE_ACTIVE_RING = {
+  applied: 'ring-2 ring-white/45',
+  interviewed: 'ring-2 ring-warning/70',
+  offers: 'ring-2 ring-success/70',
+  rejected: 'ring-2 ring-destructive/70',
+};
 
-const ListSearchBar = React.memo(function ListSearchBar({ value, onChange, placeholder }) {
+const ListSearchBar = React.memo(function ListSearchBar({ value, onChange, placeholder, trailing = null }) {
   return (
-    <div className="mt-3">
+    <div>
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
@@ -105,12 +104,13 @@ const ListSearchBar = React.memo(function ListSearchBar({ value, onChange, place
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           data-testid="list-search-input"
-          className="w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 pr-10 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20"
+          className={`w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20 ${trailing ? 'pr-24' : 'pr-10'}`}
         />
+        {trailing ? <div className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center">{trailing}</div> : null}
         {value && (
           <button
             onClick={() => onChange('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
+            className={`absolute top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground ${trailing ? 'right-[4.75rem]' : 'right-3'}`}
             title="Clear search"
             type="button"
           >
@@ -160,7 +160,7 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
           <button
             onClick={onOpenPremiumPage}
             data-testid="quota-premium-status-button"
-            className="shrink-0 rounded-full border border-destructive/25 px-2.5 py-1 text-[10px] font-semibold text-destructive transition hover:bg-destructive/10"
+            className="shrink-0 rounded-full border border-destructive/25 px-2.5 py-1 text-[11px] font-semibold text-destructive transition hover:bg-destructive/10"
             type="button"
           >
             Premium status
@@ -177,7 +177,7 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
   // without breaking the calm of the rest of the popup.
   return (
     <div data-testid="quota-status-notice" className="px-1">
-      <div className="flex items-center justify-between text-[10px] tabular-nums text-muted-foreground">
+      <div className="flex items-center justify-between text-[11px] tabular-nums text-muted-foreground">
         <span>
           <span className={`font-semibold ${accentTextClassName}`}>{Math.min(quota.used, quota.total)}/{quota.total}</span> tracked
         </span>
@@ -207,7 +207,7 @@ function QuotaHeaderBadge({ quota, label, warningLevel }) {
   return (
     <span className="relative inline-flex shrink-0 items-center group">
       <span
-        className={`cursor-help rounded px-1.5 py-0.5 text-[10px] tabular-nums ${getQuotaPillClassName(warningLevel)}`}
+        className={`cursor-help rounded px-1.5 py-0.5 text-[11px] tabular-nums ${getQuotaPillClassName(warningLevel)}`}
         title={`${summary} ${detail}`}
         tabIndex={0}
         aria-describedby={tooltipId}
@@ -218,7 +218,7 @@ function QuotaHeaderBadge({ quota, label, warningLevel }) {
       <span
         id={tooltipId}
         role="tooltip"
-        className="pointer-events-none absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-border bg-card px-3 py-2 text-[10px] leading-4 text-foreground shadow-[0_10px_24px_rgba(15,23,42,0.18)] opacity-0 invisible transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        className="pointer-events-none absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-border bg-card px-3 py-2 text-[11px] leading-4 text-foreground shadow-[0_10px_24px_rgba(15,23,42,0.18)] opacity-0 invisible transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
       >
         <span className="absolute -top-1 left-3 h-2 w-2 rotate-45 border-l border-t border-border bg-card" />
         <span className="block font-semibold text-foreground">Tracked application quota</span>
@@ -1071,96 +1071,106 @@ function App() {
                 // silence, which nobody actually rejected you for. Calling that a rejection
                 // overstated the bad news; the caption below breaks the two apart.
                 { key: 'rejected', label: 'Closed', value: stats.rejected, cardClass: 'bg-destructive/[0.08]', textClass: 'text-destructive', ringClass: 'ring-destructive/20' },
-              ].map((stat) => (
-                <div key={stat.key} className={`${stat.cardClass} rounded-xl px-2 py-2.5 text-center ring-1 ${stat.ringClass}`}>
-                  <div className={`text-[20px] font-bold leading-none tracking-[-0.02em] tabular-nums ${stat.textClass}`}>{stat.value}</div>
-                  <div className="mt-1 font-mono text-[8px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{stat.label}</div>
-                </div>
-              ))}
+              ].map((stat) => {
+                const active = allApplicationsFilter === stat.key;
+                return (
+                  <button
+                    key={stat.key}
+                    type="button"
+                    data-testid={`main-tab-${stat.key}`}
+                    aria-pressed={active}
+                    title={active ? 'Show all applications' : `Show only ${stat.label.toLowerCase()}`}
+                    onClick={() => {
+                      setAllApplicationsFilter(active ? 'all' : stat.key);
+                      setShowClosedChoiceRoles(false);
+                      setShowDateFilter(false);
+                    }}
+                    className={`${stat.cardClass} rounded-xl px-2 py-2.5 text-center transition hover:brightness-125 ${active ? TILE_ACTIVE_RING[stat.key] : `ring-1 ${stat.ringClass}`}`}
+                  >
+                    <div className={`text-[20px] font-bold leading-none tracking-[-0.02em] tabular-nums ${stat.textClass}`}>{stat.value}</div>
+                    <div className="mt-1 font-mono text-[10px] font-bold uppercase leading-tight tracking-[0.1em] text-muted-foreground">{stat.label}</div>
+                  </button>
+                );
+              })}
             </div>
 
-            <p className="px-0.5 text-[10px] leading-snug text-muted-foreground">
-              Where each role stands today.
-              {silenceClosedCount > 0
-                ? ` ${silenceClosedCount} of the ${stats.rejected} closed had no reply — not a rejection.`
-                : ''}
-            </p>
+            {allApplicationsFilter !== 'all' || silenceClosedCount > 0 ? (
+              <div className="flex items-center justify-between gap-2 px-0.5 text-[11px] leading-snug text-muted-foreground">
+                <span>
+                  {silenceClosedCount > 0
+                    ? `${silenceClosedCount} of the ${stats.rejected} closed had no reply — not a rejection.`
+                    : ''}
+                </span>
+                {allApplicationsFilter !== 'all' ? (
+                  <button
+                    type="button"
+                    data-testid="main-tab-all"
+                    onClick={() => {
+                      setAllApplicationsFilter('all');
+                      setShowClosedChoiceRoles(false);
+                    }}
+                    className="shrink-0 font-medium text-accent transition hover:text-accent/80"
+                  >
+                    Show all
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="space-y-2">
               <ListSearchBar
                 value={listSearchQuery}
                 onChange={setListSearchQuery}
                 placeholder="Search companies, roles..."
+                trailing={
+                  <button
+                    onClick={() => setShowDateFilter((current) => !current)}
+                    title="Filter by date"
+                    aria-label="Filter by date"
+                    aria-expanded={showDateFilter}
+                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                      dateRange !== 'all'
+                        ? 'bg-accent/15 text-accent'
+                        : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'
+                    }`}
+                    type="button"
+                  >
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    {dateRange !== 'all' ? dateRange : null}
+                  </button>
+                }
               />
 
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setShowDateFilter((current) => !current)}
-                  title="Filter by date"
-                  aria-label="Filter by date"
-                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors ${
-                    dateRange !== 'all'
-                      ? 'border-accent/30 bg-accent/10 text-accent'
-                      : 'border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground'
-                  }`}
-                  type="button"
-                >
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  {dateRange !== 'all' && (dateRange === '7d' ? 'Past 7 days' : dateRange === '30d' ? 'Past 30 days' : 'Past 90 days')}
-                </button>
-
-                {showDateFilter && (
-                  <div className="flex gap-1">
-                    {[
-                      { key: 'all', label: 'All' },
-                      { key: '7d', label: '7d' },
-                      { key: '30d', label: '30d' },
-                      { key: '90d', label: '90d' },
-                    ].map((option) => (
-                      <button
-                        key={option.key}
-                        onClick={() => {
-                          setDateRange(option.key);
-                          setShowDateFilter(false);
-                        }}
-                        className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
-                          dateRange === option.key
-                            ? 'bg-accent text-accent-foreground'
-                            : 'bg-muted text-muted-foreground hover:text-foreground'
-                        }`}
-                        type="button"
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {showDateFilter && (
+                <div className="flex items-center gap-1">
+                  {[
+                    { key: 'all', label: 'Any time' },
+                    { key: '7d', label: '7 days' },
+                    { key: '30d', label: '30 days' },
+                    { key: '90d', label: '90 days' },
+                  ].map((option) => (
+                    <button
+                      key={option.key}
+                      onClick={() => {
+                        setDateRange(option.key);
+                        setShowDateFilter(false);
+                      }}
+                      className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                        dateRange === option.key
+                          ? 'bg-accent text-accent-foreground'
+                          : 'bg-white/[0.05] text-muted-foreground hover:text-foreground'
+                      }`}
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {renderQuotaStatusNotice()}
 
-            <div className="flex gap-1.5 overflow-x-auto pb-1 popup-scrollbar">
-              {MAIN_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setAllApplicationsFilter(tab.id);
-                    setShowClosedChoiceRoles(false);
-                    setShowDateFilter(false);
-                  }}
-                  data-testid={`main-tab-${tab.id}`}
-                  className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                    allApplicationsFilter === tab.id
-                      ? tab.activeClassName
-                      : 'border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground'
-                  }`}
-                  type="button"
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
 
             {closedChoiceGroups.length > 0 && (allApplicationsFilter === 'applied' || allApplicationsFilter === 'interviewed') && (
               <button
@@ -1405,7 +1415,7 @@ function App() {
             <img src={LOGO_URL} alt="" className="h-3.5 w-3.5" />
           </span>
           <span className="truncate text-sm font-semibold lowercase text-foreground">applendium</span>
-          <span data-testid="plan-badge" className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          <span data-testid="plan-badge" className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
             {userPlan === 'premium' ? 'Premium' : 'Free'}
           </span>
           {/* Hidden while disconnected: a tracking count cannot move when
@@ -1419,7 +1429,7 @@ function App() {
             />
           )}
         </div>
-        <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
           {selectedCategory === 'all' || selectedCategory === 'home' ? (
             <>
               <span data-testid="sync-status-label" className="flex items-center gap-1.5" title={syncStatusLabel}>
@@ -1491,10 +1501,10 @@ function App() {
       )}
 
       {selectedCategory !== 'emailPreview' && (
-        <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-3 py-2 text-[10px]">
+        <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-3 py-2 text-[11px]">
           <span className="text-muted-foreground">{footerSummary}</span>
           <button onClick={openPremiumStatusPage} className="font-medium text-accent transition hover:text-accent/80" data-testid="dashboard-link" type="button">
-            {userPlan === 'premium' ? 'Premium dashboard ->' : 'Upgrade to Premium ->'}
+            {userPlan === 'premium' ? 'Premium dashboard →' : 'Upgrade to Premium →'}
           </button>
         </div>
       )}

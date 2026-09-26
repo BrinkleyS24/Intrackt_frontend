@@ -192,6 +192,28 @@ test('renders premium footer behavior without a live dashboard promise', async (
   await page.close();
 });
 
+test('the first application starts near the top of the popup, not halfway down', async () => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'free-healthy');
+  await page.getByTestId('popup-preview-frame').scrollIntoViewIfNeeded();
+  const root = await frame.getByTestId('extension-popup-root').boundingBox();
+  const firstCard = await frame.locator('[data-testid="email-thread-card"]').first().boundingBox();
+  const offset = Math.round(firstCard.y - root.y);
+  console.log(`[layout] first application card starts ${offset}px below the popup top`);
+  // 2026-09-26: 309px before the tiles became the filters and the date control moved into search.
+  expect(offset).toBeLessThanOrEqual(230);
+
+  // The tiles are the filters: tap one to narrow the list, tap "Show all" (or the tile again) to undo.
+  const cardsBefore = await frame.locator('[data-testid="email-thread-card"]').count();
+  await frame.getByTestId('main-tab-applied').click();
+  await expect(frame.getByTestId('main-tab-applied')).toHaveAttribute('aria-pressed', 'true');
+  await expect(frame.getByTestId('main-tab-all')).toBeVisible();
+  await frame.getByTestId('main-tab-all').click();
+  await expect(frame.getByTestId('main-tab-applied')).toHaveAttribute('aria-pressed', 'false');
+  await expect(frame.locator('[data-testid="email-thread-card"]')).toHaveCount(cardsBefore);
+  await page.close();
+});
+
 test('premium members check the job they are looking at and decide from the popup', async ({}, testInfo) => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'premium-rich');

@@ -480,6 +480,13 @@ function EmailList({
                 !/[.!?]\s+\S/.test(rawPosition)
               ) ? rawPosition : null;
 
+              const companyName = safeTextValue(email.company_name, '').trim();
+              const cardTitle = companyName || displaySubject;
+              const cardSubtitle = safePosition || displaySender;
+              // The latest email, as the event that moved this application. Only when the title is the
+              // company; otherwise the subject already is the title.
+              const latestEventLine = companyName ? displaySubject : null;
+
               // Boundary between "arrived since your last visit" and everything
               // older — only meaningful in the compact home inbox, where groups
               // are sorted newest-first.
@@ -498,7 +505,7 @@ function EmailList({
                     aria-label="Conversations above this line arrived since your last visit"
                   >
                     <span className="h-px flex-1 bg-accent/30" />
-                    <span className="shrink-0 font-mono text-[8px] font-bold uppercase tracking-[0.14em] text-accent/80">
+                    <span className="shrink-0 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-accent/80">
                       new above · since last visit
                     </span>
                     <span className="h-px flex-1 bg-accent/30" />
@@ -523,6 +530,10 @@ function EmailList({
                   )}
                   type="button"
                 >
+                  {/* The application first, the email second (review, 2026-09-26): a card titled
+                      "Application received: Growth Marketing..." made the reader hunt for the
+                      company in 10px underneath. With no company extracted, the subject is still
+                      the best name the card has. */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <div
@@ -535,15 +546,15 @@ function EmailList({
                               : 'font-medium text-foreground/90'
                         )}
                       >
-                        {displaySubject}
+                        {cardTitle}
                       </div>
-                      <div className="popup-line-clamp-1 mt-1 text-[11px] text-muted-foreground">
-                        {displaySender}
+                      <div className="popup-line-clamp-1 mt-0.5 text-[12px] text-muted-foreground">
+                        {cardSubtitle}
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       {isUnread && <span className="h-2 w-2 rounded-full bg-accent" />}
-                      <span className="text-[10px] text-muted-foreground">{formatDate(displayDate)}</span>
+                      <span className="text-[11px] text-muted-foreground">{formatDate(displayDate)}</span>
                     </div>
                   </div>
 
@@ -551,20 +562,11 @@ function EmailList({
                     <span className={statusStyle.badgeClassName}>
                       {isPreviewCandidate ? 'Scanning' : getCategoryTitle(effectiveDisplayStatusKey)}
                     </span>
-                    {email.company_name && (
-                      <span className="max-w-[96px] truncate text-[10px] text-muted-foreground">{email.company_name}</span>
-                    )}
-                    {email.company_name && safePosition && (
-                      <span className="text-[10px] text-muted-foreground">|</span>
-                    )}
-                    {safePosition && (
-                      <span className="truncate text-[10px] text-muted-foreground">{safePosition}</span>
+                    {latestEventLine && (
+                      <span className="truncate text-[11px] text-muted-foreground">{latestEventLine}</span>
                     )}
                     {!compact && (
-                      <>
-                        <span className="text-[10px] text-muted-foreground">|</span>
-                        <span className="text-[10px] text-muted-foreground">{group.messageCount} messages</span>
-                      </>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">· {group.messageCount} messages</span>
                     )}
                   </div>
 
@@ -574,14 +576,14 @@ function EmailList({
 
                   {isUnread && !compact && (
                     <div className="mt-2">
-                      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium', statusStyle.pillClassName)}>
+                      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium', statusStyle.pillClassName)}>
                         {group.unreadCount} unread
                       </span>
                     </div>
                   )}
 
                   {!compact && (
-                    <p className="popup-line-clamp-2 mt-2 text-[11px] text-muted-foreground">
+                    <p className="popup-line-clamp-2 mt-2 text-[12px] text-muted-foreground">
                       {truncatedPreview || 'No preview available.'}
                     </p>
                   )}
