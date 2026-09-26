@@ -258,6 +258,30 @@ const SCENARIOS = {
   },
   'free-rich': {
     id: 'free-rich',
+    // A free user on a job page with this week's check unused (one per rolling week, 2026-09-26).
+    applyGate: {
+      posting: {
+        source: 'structured',
+        url: 'https://jobs.lever.co/northwind/qa-analyst',
+        title: 'QA Analyst',
+        company: 'Northwind',
+        description: 'Responsibilities: manual and automated testing. Qualifications: 2+ years QA, SQL.',
+        looksLikeJob: true,
+      },
+      allowance: { plan: 'free', unlimited: false, limit: 1, used: 0, remaining: 1, nextAvailableAt: null },
+      result: {
+        success: true,
+        id: 'verdict-free-1',
+        verdict: 'good_fit',
+        reasons: ['Your QA history matches the testing work.', 'SQL appears in two of your roles.'],
+        explanation: {
+          decision: 'apply_now',
+          display_decision: { action: 'APPLY', label: 'Apply', headline: 'Worth applying', subtext: 'Your experience covers what they ask for.' },
+        },
+        resumeDocument: { variantId: null, source: 'legacy', fingerprint: 'def456', characters: 1800 },
+        allowance: { limit: 1, used: 1, remaining: 0, nextAvailableAt: '2026-10-03T12:00:00.000Z' },
+      },
+    },
     searchRead: {
       read: {
         kind: 'performance-rejection-velocity-auto_screen',
@@ -390,6 +414,18 @@ const SCENARIOS = {
   },
   'free-limit-reached': {
     id: 'free-limit-reached',
+    // This week's free check already used.
+    applyGate: {
+      posting: {
+        source: 'page',
+        url: 'https://boards.greenhouse.io/contoso/jobs/77',
+        title: 'Support Engineer',
+        company: 'Contoso',
+        description: 'Responsibilities: triage tickets. Qualifications: customer support experience.',
+        looksLikeJob: true,
+      },
+      allowance: { plan: 'free', unlimited: false, limit: 1, used: 1, remaining: 0, nextAvailableAt: '2026-10-03T12:00:00.000Z' },
+    },
     searchRead: {
       read: null,
       progress: {

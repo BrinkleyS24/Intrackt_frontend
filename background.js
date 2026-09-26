@@ -280,6 +280,9 @@ function validateIncomingMessage(message) {
       };
     }
 
+    case 'APPLY_GATE_ALLOWANCE':
+      return { valid: true, message: normalized };
+
     case 'APPLY_GATE_ACTION': {
       const verdictId = validateOptionalString(message.verdictId, { maxLength: 100 });
       if (!verdictId.valid || !verdictId.value) return { valid: false, error: 'Invalid verdictId.' };
@@ -953,7 +956,8 @@ const CONFIG_ENDPOINTS = {
   APPLICATION_STATS: '/api/emails/applications/stats', // GET endpoint for application lifecycle statistics
   SEARCH_READ: '/api/insights/search-read', // GET: the free user's one read of their own search
   APPLY_GATE_ANALYZE: '/api/emails/apply-gate/analyze', // POST (premium): check the posting in the active tab
-  APPLY_GATE_ACTION: '/api/emails/apply-gate', // PATCH /:verdictId/action (premium): what the user decided
+  APPLY_GATE_ACTION: '/api/emails/apply-gate', // PATCH /:verdictId/action: what the user decided (owner-scoped)
+  APPLY_GATE_ALLOWANCE: '/api/emails/apply-gate/allowance', // GET: Premium unlimited; free one check per 7 days
   CLOSE_APPLICATION: '/api/emails/applications/:applicationId/close',
   REOPEN_APPLICATION: '/api/emails/applications/:applicationId/reopen',
 };
@@ -2014,6 +2018,12 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
       return true;
     }
 
+    case 'APPLY_GATE_ALLOWANCE': {
+      const scenario = getExtensionTestScenario(testingState.state?.scenarioId);
+      sendResponse({ success: true, allowance: scenario?.applyGate?.allowance || { plan: 'premium', unlimited: true } });
+      return true;
+    }
+
     case 'FETCH_SEARCH_READ': {
       // Test mode only (this switch is unreachable unless a scenario is active).
       const scenario = getExtensionTestScenario(testingState.state?.scenarioId);
@@ -2398,6 +2408,7 @@ async function apiFetch(endpoint, options = {}) {
       backendError.requestId = errorJson?.requestId || requestId || null;
       backendError.errorCode = errorJson?.errorCode || null;
       backendError.requiresReauth = Boolean(errorJson?.requiresReauth);
+      backendError.payload = errorJson || null;
       throw backendError;
     }
 
@@ -3718,7 +3729,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse({ success: Boolean(result?.success), result: result || null });
         } catch (error) {
+          if (error?.statusCode === 402 && error?.payload?.code === 'free_weekly_check_used') {
+            // No `error` field on purpose: sendMessageToBackground throws on one, and this is a state
+            // the popup shows, not a failure.
+            sendResponse({ success: false, weeklyCheckUsed: true, nextAvailableAt: error.payload.nextAvailableAt || null });
+            break;
+          }
           sendResponse({ success: false, error: error.message, status: error.status || null });
+        }
+        break;
+
+      case 'APPLY_GATE_ALLOWANCE':
+        try {
+          if (!currentUserId || !currentUserEmail) {
+            sendResponse({ success: false, error: 'Not authenticated' });
+            break;
+          }
+          const allowance = await apiFetch(CONFIG_ENDPOINTS.APPLY_GATE_ALLOWANCE, { method: 'GET' });
+          sendResponse({ success: true, allowance: allowance || null });
+        } catch (error) {
+          sendResponse({ success: false, error: error.message });
         }
         break;
 

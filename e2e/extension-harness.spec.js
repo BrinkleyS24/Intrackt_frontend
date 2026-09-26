@@ -297,8 +297,15 @@ test('free users see one real read of their own search the moment the popup open
   await expect(read).toContainText('last 30 days');
   await expect(frame.getByTestId('search-read-cta')).toContainText('See what to do about it');
   await expect(frame.getByTestId('search-read-cta')).toBeInViewport();
-  // The popup reads the open tab only for premium members, who can act on the check.
-  await expect(frame.getByTestId('apply-gate-strip')).toHaveCount(0);
+  // Free users get one Apply Gate check a week on the job they are looking at (2026-09-26).
+  const strip = frame.getByTestId('apply-gate-strip');
+  await expect(strip).toContainText('your free check this week');
+  await frame.getByTestId('apply-gate-check').click();
+  await expect(frame.getByTestId('apply-gate-decision')).toHaveText('Apply');
+  await expect(frame.getByTestId('apply-gate-free-used-note')).toContainText("That was this week's free check");
+  await expect(frame.getByTestId('apply-gate-see-premium')).toBeVisible();
+  // The Premium-only full read is not offered to a free user.
+  await expect(frame.getByTestId('apply-gate-full-read')).toHaveCount(0);
 
   // The evidence is one tap away, and the recommendation is never in the free popup.
   await expect(frame.getByTestId('search-read-detail')).toHaveCount(0);
@@ -322,5 +329,9 @@ test('a free user without enough data sees honest progress instead of a blur', a
   await expect(progress).toContainText("You're at 3.");
   await expect(frame.getByTestId('premium-teaser')).toContainText('Your first search read');
   await expect(frame.getByTestId('search-read')).toHaveCount(0);
+
+  // This week's free Apply Gate check is already used: say when the next opens, offer no check.
+  await expect(frame.getByTestId('apply-gate-used')).toContainText('The next one opens');
+  await expect(frame.getByTestId('apply-gate-check')).toHaveCount(0);
   await page.close();
 });

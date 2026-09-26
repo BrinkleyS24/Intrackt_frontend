@@ -211,3 +211,14 @@ export function samePostingUrl(a, b) {
   const left = normalize(a);
   return Boolean(left) && left === normalize(b);
 }
+
+/** "later today", "tomorrow", or "Tue, Sep 30" — when a free user's next weekly check opens. */
+export function describeNextFreeCheck(nextAvailableAt, now = new Date()) {
+  const at = new Date(nextAvailableAt || '');
+  if (Number.isNaN(at.getTime())) return 'next week';
+  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const days = Math.round((startOfDay(at) - startOfDay(now)) / 86_400_000);
+  if (days <= 0) return 'later today';
+  if (days === 1) return 'tomorrow';
+  return at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+}

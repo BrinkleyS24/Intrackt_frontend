@@ -294,8 +294,8 @@ function App() {
   // The free search read feeds two surfaces (the strip above the list, the footer card's progress
   // line), so it is fetched once here. Premium members have the full coach in the web app.
   const searchRead = useSearchRead(Boolean(isLoggedIn && userPlan && userPlan !== 'premium'));
-  // Premium only: the popup reads the open tab only for people who can act on the check.
-  const applyGateCheck = useApplyGateCheck(Boolean(isLoggedIn && userPlan === 'premium'));
+  // Everyone signed in: Premium checks any posting, free gets one check a week (2026-09-26).
+  const applyGateCheck = useApplyGateCheck(Boolean(isLoggedIn && userPlan), { premium: userPlan === 'premium' });
 
   // Read the last-open timestamp for the "new since last visit" divider, then
   // rotate it to now. The read value drives the whole session; a quick reopen
@@ -1205,7 +1205,7 @@ function App() {
             newSinceTimestamp={newSinceTimestamp}
             headerSlot={
               <>
-                <ApplyGateStrip check={applyGateCheck} onOpenWebPath={openWebAppPath} />
+                <ApplyGateStrip check={applyGateCheck} onOpenWebPath={openWebAppPath} onOpenPremiumPage={openPremiumStatusPage} />
                 <SearchReadStrip read={searchRead.read} onOpenPremiumPage={openPremiumStatusPage} />
               </>
             }

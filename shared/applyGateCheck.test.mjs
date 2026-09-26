@@ -17,6 +17,7 @@ const {
   summarizeApplyGateResult,
   describeRecordedAction,
   samePostingUrl,
+  describeNextFreeCheck,
 } = await import(`data:text/javascript,${encodeURIComponent(source)}`);
 
 const displayResult = (action, overrides = {}) => ({
@@ -74,4 +75,12 @@ test('the same posting is recognised through tracking parameters, a different jo
   assert.equal(samePostingUrl('https://www.linkedin.com/jobs/view/1?trk=x&refId=y', 'https://www.linkedin.com/jobs/view/1/'), true);
   assert.equal(samePostingUrl('https://www.linkedin.com/jobs/search/?currentJobId=1', 'https://www.linkedin.com/jobs/search/?currentJobId=2'), false);
   assert.equal(samePostingUrl('', ''), false);
+});
+
+test("says when the next free check opens in words, not a timestamp", () => {
+  const now = new Date(2026, 8, 26, 10, 0);
+  assert.equal(describeNextFreeCheck(new Date(2026, 8, 26, 18, 0).toISOString(), now), "later today");
+  assert.equal(describeNextFreeCheck(new Date(2026, 8, 27, 9, 0).toISOString(), now), "tomorrow");
+  assert.match(describeNextFreeCheck(new Date(2026, 9, 1, 9, 0).toISOString(), now), /Oct 1/);
+  assert.equal(describeNextFreeCheck(null, now), "next week");
 });

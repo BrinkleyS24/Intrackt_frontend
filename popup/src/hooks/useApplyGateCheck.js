@@ -7,7 +7,7 @@ import {
   summarizeApplyGateResult,
 } from '../../../shared/applyGateCheck.js';
 
-const HIDDEN = { phase: 'hidden', posting: null, summary: null, error: null, recorded: null, recording: false };
+const HIDDEN = { phase: 'hidden', posting: null, summary: null, error: null, recorded: null, recording: false, allowance: null };
 
 async function readCachedCheck(url) {
   try {
@@ -29,12 +29,21 @@ async function rememberRecordedAction(url, action) {
   } catch (_) { /* cosmetic: only affects what a reopened popup shows */ }
 }
 
+async function readAllowance() {
+  try {
+    const response = await sendMessageToBackground({ type: 'APPLY_GATE_ALLOWANCE' });
+    return response?.allowance || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /**
- * Apply Gate on the page the user is looking at (premium). Reads the active tab once per popup
- * open; shows nothing unless the page reads like a job posting, so an ordinary tab never sprouts
- * a "check this job" card.
+ * Apply Gate on the page the user is looking at. Premium checks any posting; a free user gets one
+ * check per rolling week (founder decision, 2026-09-26). Reads the active tab once per popup open and
+ * shows nothing unless the page reads like a job posting, so an ordinary tab never sprouts a card.
  */
-export function useApplyGateCheck(enabled) {
+export function useApplyGateCheck(enabled, { premium = false } = {}) {
   const [state, setState] = useState(HIDDEN);
 
   useEffect(() => {
@@ -56,14 +65,20 @@ export function useApplyGateCheck(enabled) {
         setState(HIDDEN);
         return;
       }
-      const cached = await readCachedCheck(posting.url);
+      const [cached, allowance] = await Promise.all([
+        readCachedCheck(posting.url),
+        premium ? Promise.resolve(null) : readAllowance(),
+      ]);
       if (cancelled) return;
-      setState(cached
-        ? { ...HIDDEN, phase: 'result', posting, summary: cached.summary, recorded: cached.recorded || null }
-        : { ...HIDDEN, phase: 'ready', posting });
+      if (cached) {
+        setState({ ...HIDDEN, phase: 'result', posting, summary: cached.summary, recorded: cached.recorded || null, allowance });
+        return;
+      }
+      const usedUp = !premium && allowance && allowance.unlimited !== true && allowance.remaining === 0;
+      setState({ ...HIDDEN, phase: usedUp ? 'used' : 'ready', posting, allowance });
     })();
     return () => { cancelled = true; };
-  }, [enabled]);
+  }, [enabled, premium]);
 
   const check = useCallback(async () => {
     const { posting } = state;
@@ -79,11 +94,20 @@ export function useApplyGateCheck(enabled) {
           jobUrl: posting.url || '',
         },
       });
+      if (response?.weeklyCheckUsed) {
+        setState((current) => ({
+          ...current,
+          phase: 'used',
+          allowance: { ...(current.allowance || {}), remaining: 0, nextAvailableAt: response.nextAvailableAt || null },
+        }));
+        return;
+      }
       const summary = summarizeApplyGateResult(response?.result);
       setState((current) => ({
         ...current,
         phase: summary ? 'result' : 'error',
         summary,
+        allowance: response?.result?.allowance || current.allowance,
         error: summary ? null : 'Apply Gate did not return a call for this page.',
       }));
     } catch (error) {
@@ -104,5 +128,5 @@ export function useApplyGateCheck(enabled) {
     }
   }, [state]);
 
-  return { ...state, check, record };
+  return { ...state, premium, check, record };
 }
