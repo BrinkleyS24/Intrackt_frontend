@@ -80,13 +80,21 @@ export function extractJobPostingFromPage() {
   const description = clean(root ? root.innerText : '').slice(0, MAX_CHARS);
   const heading = clean(document.querySelector('h1') && document.querySelector('h1').innerText);
   const siteName = document.querySelector('meta[property="og:site_name"]');
+  // Greenhouse's current boards publish no structured data and no site name, but title the page
+  // "Job Application for <role> at <Company>" and label the logo "<Company> Logo" (read on a live
+  // posting, 2026-09-25).
+  const titleAt = /\bat\s+([^|–—]+?)\s*$/i.exec(clean(document.title));
+  const logo = document.querySelector('img[alt$=" logo" i]');
+  const company = employer(siteName && siteName.getAttribute('content'))
+    || employer(titleAt && titleAt[1])
+    || employer(logo && logo.getAttribute('alt').replace(/\s+logo$/i, ''));
   // Two posting-shaped section words and enough text to be a posting, not a search page.
   const sectionHits = (description.match(/\b(responsibilities|qualifications|requirements|what you('|’)ll do|about the role|about you|experience with|preferred|benefits)\b/gi) || []).length;
   return {
     source: 'page',
     url: location.href,
     title: (heading || clean(document.title)).slice(0, 200),
-    company: employer(siteName && siteName.getAttribute('content')).slice(0, 200),
+    company: company.slice(0, 200),
     description,
     looksLikeJob: description.length >= 600 && sectionHits >= 2,
   };
