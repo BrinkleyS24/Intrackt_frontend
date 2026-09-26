@@ -89,7 +89,9 @@ const MAIN_TABS = [
   { id: 'applied', label: 'Applied', activeClassName: 'bg-secondary text-foreground border-transparent' },
   { id: 'interviewed', label: 'Interviews', activeClassName: 'bg-warning text-warning-foreground border-transparent' },
   { id: 'offers', label: 'Offers', activeClassName: 'bg-success text-success-foreground border-transparent' },
-  { id: 'rejected', label: 'Rejected', activeClassName: 'bg-destructive text-destructive-foreground border-transparent' },
+  // Same bucket and same word as the Closed tile above it: it also holds roles closed for silence,
+  // which nobody rejected. The chip said "Rejected" while the tile said "Closed" (review, 2026-09-26).
+  { id: 'rejected', label: 'Closed', activeClassName: 'bg-destructive text-destructive-foreground border-transparent' },
 ];
 
 const ListSearchBar = React.memo(function ListSearchBar({ value, onChange, placeholder }) {

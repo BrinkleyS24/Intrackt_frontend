@@ -341,7 +341,9 @@ function EmailList({
             {[
               { id: 'all', label: 'All' },
               { id: 'active', label: 'Active' },
-              { id: 'inactive', label: 'Closed' },
+              // Roles the user closed themselves (withdrew, took another offer). "Closed" alone is the
+              // name of the they-closed-it bucket in the tiles and tabs above.
+              { id: 'inactive', label: 'Closed by you' },
             ].map((tab) => (
               <button
                 key={tab.id}
