@@ -17,8 +17,33 @@
  * leaves a strip of dead space at the bottom of the popup.
  */
 
-import React from 'react';
-import { History } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { History, X } from 'lucide-react';
+
+/**
+ * Dismissal is remembered per plan and window, so the note comes back only when what it says
+ * changes (an upgrade to Premium, or the plan's window itself changing). The popup is small and
+ * the founder found a permanent note too big for what it says (2026-09-27).
+ */
+const DISMISS_KEY = 'applendium:historyNoteDismissedFor';
+
+function readDismissed() {
+  try {
+    const storage = globalThis.chrome?.storage?.local;
+    if (!storage) return Promise.resolve(null);
+    return storage.get([DISMISS_KEY]).then((result) => result?.[DISMISS_KEY] ?? null).catch(() => null);
+  } catch {
+    return Promise.resolve(null);
+  }
+}
+
+function writeDismissed(value) {
+  try {
+    globalThis.chrome?.storage?.local?.set({ [DISMISS_KEY]: value })?.catch?.(() => {});
+  } catch {
+    // Not remembered this time; the note simply reappears next open.
+  }
+}
 
 /**
  * Formats an ISO date as "May 2, 2026", or returns null if it isn't a usable date.
@@ -34,8 +59,18 @@ function formatImportStart(isoDate) {
 }
 
 function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
+  // undefined = still reading storage; render nothing rather than flash the note.
+  const [dismissedFor, setDismissedFor] = useState(undefined);
+  useEffect(() => {
+    let active = true;
+    readDismissed().then((value) => { if (active) setDismissedFor(value); });
+    return () => { active = false; };
+  }, []);
+
   const windowDays = Number(coverage?.historyWindowDays);
   if (!Number.isFinite(windowDays) || windowDays <= 0) return null;
+  const noteKey = `${userPlan || 'free'}:${windowDays}`;
+  if (dismissedFor === undefined || dismissedFor === noteKey) return null;
 
   // Mid-import the list is short for a completely different reason. Asserting a history
   // boundary while we are still filling it in would explain the wrong absence, so stay
@@ -80,6 +115,18 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
           </>
         )}
       </div>
+      <button
+        type="button"
+        data-testid="history-coverage-dismiss"
+        aria-label="Hide this note"
+        onClick={() => {
+          setDismissedFor(noteKey);
+          writeDismissed(noteKey);
+        }}
+        className="-mr-1 -mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition hover:bg-white/[0.06] hover:text-foreground"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
     </div>
   );
 }

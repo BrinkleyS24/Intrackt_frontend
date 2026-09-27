@@ -760,17 +760,6 @@ function App() {
     interviewed: filterConversationGroups(pipelineBuckets.interviewed.filter((group) => group.closedByChoice), normalizedListSearchQuery, dateRange),
   }), [pipelineBuckets, dateRange, filterConversationGroups, normalizedListSearchQuery]);
 
-  // How much of the Closed tile is "they never replied" rather than "they said no".
-  // Silence-closes route into the rejected bucket (derivePipelineStatus), so without this
-  // split the tile reads as a rejection count the user never actually received — and the
-  // close-out tooltip already promises silence "won't count against your stats".
-  const silenceClosedCount = useMemo(
-    () => allViewCategoryGroups.rejected.filter(
-      (group) => (group.emails || []).some((email) => email?.manualCloseKind === 'silence'),
-    ).length,
-    [allViewCategoryGroups],
-  );
-
   const allViewLiveSummary = useMemo(
     () => ({
       counts: {
@@ -1094,13 +1083,12 @@ function App() {
               })}
             </div>
 
-            {allApplicationsFilter !== 'all' || silenceClosedCount > 0 ? (
-              <div className="flex items-center justify-between gap-2 px-0.5 text-[11px] leading-snug text-muted-foreground">
-                <span>
-                  {silenceClosedCount > 0
-                    ? `${silenceClosedCount} of the ${stats.rejected} closed had no reply — not a rejection.`
-                    : ''}
-                </span>
+            {/* No "N of the closed had no reply — not a rejection" line here any more. To the person
+                searching, being ghosted is a rejection (founder, 2026-09-27), and the Closed tile
+                already counts both. The distinction still lives where it changes a number, e.g.
+                rejection speed, which can only be timed on an actual rejection. */}
+            {allApplicationsFilter !== 'all' ? (
+              <div className="flex items-center justify-end gap-2 px-0.5 text-[11px] leading-snug text-muted-foreground">
                 {allApplicationsFilter !== 'all' ? (
                   <button
                     type="button"

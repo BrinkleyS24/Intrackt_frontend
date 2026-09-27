@@ -92,9 +92,13 @@ test('renders the free-plan inbox and opens a thread preview', async ({}, testIn
   await expect(frame.getByText('Application Journey')).toBeVisible();
   await expect(frame.getByRole('heading', { name: /Senior Product Manager/i })).toBeVisible();
   await expect(frame.getByRole('button', { name: 'Reply' })).toHaveCount(0);
+  // The "Applendium detected" chips only restated the badge and the fields beside them.
+  await expect(frame.getByText('Applendium detected')).toHaveCount(0);
 
   await frame.getByTestId('popup-header-back').click();
   await expect(frame.getByTestId('refresh-button')).toBeVisible();
+  // Being ghosted is a rejection to the person searching; the popup no longer argues otherwise.
+  await expect(frame.getByText(/had no reply/)).toHaveCount(0);
 
   // The history note states the plan's window and what Premium adds, from the backend's
   // numbers (it used to hard-code "Premium imports 90 days", no gain once free reached 90).
@@ -106,6 +110,14 @@ test('renders the free-plan inbox and opens a thread preview', async ({}, testIn
     path: testInfo.outputPath('lab-free-rich.png'),
     fullPage: true,
   });
+
+  // It can be dismissed, and stays dismissed the next time the popup opens (2026-09-27).
+  await frame.getByTestId('history-coverage-dismiss').click();
+  await expect(coverageNote).toHaveCount(0);
+  const reopened = await activateScenario(page, 'free-rich');
+  await expect(reopened.getByTestId('refresh-button')).toBeVisible();
+  await expect(reopened.getByTestId('quota-status-notice')).toBeVisible();
+  await expect(reopened.getByTestId('history-coverage-note')).toHaveCount(0);
 
   await page.close();
 });

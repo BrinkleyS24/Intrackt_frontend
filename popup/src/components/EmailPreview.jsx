@@ -837,19 +837,6 @@ export default function EmailPreview({
   const displaySubject = safeTextValue(email.subject, '(No subject)');
   const displayFrom = safeTextValue(email.from, '');
 
-  // What Applendium auto-detected for this thread — real signals from the
-  // classification, not decoration. Mirrors the landing hero's "detected" chips.
-  const detectedSignals = (() => {
-    const out = [];
-    const statusLabel = presentationStatusKey === 'interviewed' ? 'Interview' : getCategoryTitle(presentationStatusKey);
-    out.push(`${statusLabel} detected`);
-    if (safeTextValue(email.company_name, '')) out.push('Company identified');
-    if (safeTextValue(email.position, '')) out.push('Role identified');
-    if (threadArr.length > 1) out.push(`${threadArr.length} emails linked`);
-    else if (journeyStages.length > 0) out.push('Linked to your pipeline');
-    return out;
-  })();
-
   return (
     <>
       <style
@@ -908,26 +895,9 @@ export default function EmailPreview({
           </div>
         </div>
 
-        {detectedSignals.length > 0 && (
-          <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
-            <p className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
-              <ShieldCheck className="h-3 w-3 text-accent" />
-              Applendium detected
-            </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {detectedSignals.map((signal) => (
-                <span
-                  key={signal}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-success/25 bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success"
-                >
-                  <span className="h-1 w-1 rounded-full bg-success" />
-                  {signal}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
+        {/* The "Applendium detected" chips were removed (founder, 2026-09-27): every one restated
+            what is already on screen — "Closed detected" beside a Closed badge, company and role
+            identified right above their own values. */}
         {threadArr.length > 1 && (
           <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2">
             <div className="flex items-center justify-between gap-3">
