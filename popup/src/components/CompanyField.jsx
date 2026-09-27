@@ -21,7 +21,6 @@ const CompanyField = ({ email, userEmail, onUpdate, fieldName = 'company' }) => 
 
   const fieldValue = email?.[fieldKey] || `Unknown ${placeholder}`;
   const isCorrected = email?.[correctedKey] === true;
-  const extractionMethod = email?.extraction_method || 'rules';
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -143,19 +142,13 @@ const CompanyField = ({ email, userEmail, onUpdate, fieldName = 'company' }) => 
             {isCorrected && (
               <span
                 className="inline-flex items-center rounded-full border border-success/25 bg-success/15 px-2 py-0.5 text-[10px] font-medium text-success flex-shrink-0"
-                title={`Corrected by user (was auto-extracted by ${extractionMethod})`}
+                title="You corrected this, so Applendium keeps your value"
               >
-                User
+                You edited
               </span>
             )}
-            {!isCorrected && extractionMethod && (
-              <span
-                className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.06] px-2 py-0.5 text-[10px] font-medium text-muted-foreground flex-shrink-0"
-                title={`Auto-extracted by ${extractionMethod}`}
-              >
-                Auto
-              </span>
-            )}
+            {/* No "Auto" pill for the ordinary case (2026-09-27): it was jargon on every field, and a
+                value is only worth marking when it is the person's own correction. */}
           </div>
         </div>
       )}

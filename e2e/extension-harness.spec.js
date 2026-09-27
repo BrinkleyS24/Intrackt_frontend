@@ -90,7 +90,22 @@ test('renders the free-plan inbox and opens a thread preview', async ({}, testIn
   await northstarThread.click();
   await expect(frame.getByTestId('email-preview')).toBeVisible();
   await expect(frame.getByText('Application Journey')).toBeVisible();
-  await expect(frame.getByRole('heading', { name: /Senior Product Manager/i })).toBeVisible();
+  // Which application this is leads; the subject reads as the email's title under it (2026-09-27).
+  await expect(frame.getByRole('heading', { name: 'Northstar Labs' })).toBeVisible();
+  await expect(frame.getByTestId('email-preview-header')).toContainText('Application received: Senior Product Manager');
+  // The email itself comes before the journey, not ~900px under it.
+  const order = await frame.getByTestId('email-preview').evaluate((root) => {
+    const text = root.innerText;
+    return { message: text.indexOf('Thanks for applying'), journey: text.indexOf('Application Journey') };
+  });
+  expect(order.message).toBeGreaterThan(-1);
+  expect(order.message).toBeLessThan(order.journey);
+  // Editing company and role is there when asked for, and no field carries an "Auto" pill.
+  await expect(frame.getByTestId('email-preview-details')).toHaveCount(0);
+  await frame.getByTestId('email-preview-edit-details').click();
+  await expect(frame.getByTestId('email-preview-details')).toContainText('Northstar Labs');
+  await expect(frame.getByText('Auto', { exact: true })).toHaveCount(0);
+  await expect(frame.getByText(/merged into this stage|duplicate same-stage/)).toHaveCount(0);
   await expect(frame.getByRole('button', { name: 'Reply' })).toHaveCount(0);
   // The "Applendium detected" chips only restated the badge and the fields beside them.
   await expect(frame.getByText('Applendium detected')).toHaveCount(0);

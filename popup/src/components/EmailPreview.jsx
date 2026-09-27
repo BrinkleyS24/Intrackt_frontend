@@ -376,7 +376,8 @@ export default function EmailPreview({
     ? email.threadMessages
     : [email];
 
-  const [activeIdx, setActiveIdx] = useState(0);
+  // Company/role editing is behind "Edit company or role" instead of always open (2026-09-27).
+  const [showDetails, setShowDetails] = useState(false);
   const [expandedMessages, setExpandedMessages] = useState({});
   const toggleMessageExpanded = (key) =>
     setExpandedMessages((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -489,7 +490,7 @@ export default function EmailPreview({
   }, []);
 
   useEffect(() => {
-    setActiveIdx(0);
+    setShowDetails(false);
   }, [email, threadArr]);
 
   useEffect(() => {
@@ -641,14 +642,6 @@ export default function EmailPreview({
       setShowClosePanel(false);
     }
   }, [isEffectivelyClosed, showClosePanel]);
-
-  const scrollToIdx = (idx) => {
-    const el = document.getElementById(`msg-${idx}`);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setActiveIdx(idx);
-    }
-  };
 
   const renderSingleMessage = (message, collapsed = false) => {
     const clampClass = collapsed ? 'max-h-[150px] overflow-hidden' : '';
@@ -874,145 +867,144 @@ export default function EmailPreview({
         }}
       />
 
-      <div data-testid="email-preview" className="space-y-4 px-4 py-4">
-        <div>
-          <h2
-            className={cn(
-              'text-[28px] font-semibold leading-tight',
-              shouldDisplayClosed ? 'text-muted-foreground line-through' : 'text-foreground'
-            )}
-          >
-            {displaySubject}
-          </h2>
-          {displayFrom ? <p className="mt-2 text-sm text-muted-foreground">{displayFrom}</p> : null}
-          <div className="mt-3 flex items-center gap-2">
-            <span className={statusClassName}>
+      <div data-testid="email-preview" className="space-y-3 px-4 py-4">
+        {/* Layout, 2026-09-27 (founder review): which application this is, then the email itself,
+            then what to do about it. The email used to sit ~900px down, under a 28px struck-through
+            subject, a company/role box shown twice and the journey card. */}
+        <div data-testid="email-preview-header">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h2 className="truncate text-[18px] font-semibold leading-snug text-foreground">
+                {safeTextValue(email.company_name, '') || 'Company not found yet'}
+              </h2>
+              {safeTextValue(email.position, '') ? (
+                <p className="truncate text-[13px] text-muted-foreground">{email.position}</p>
+              ) : null}
+            </div>
+            <span className={cn(statusClassName, 'mt-1 shrink-0')}>
               {presentationStatusKey === 'interviewed' ? 'Interview' : getCategoryTitle(presentationStatusKey)}
             </span>
-            <span className="text-[11px] text-muted-foreground">
-              {[email.company_name, email.position].filter(Boolean).join(' · ') || 'Application details pending'}
-            </span>
           </div>
+          {/* The subject reads as the email's title, not the page's; the status badge already says
+              when a role is closed, so it is no longer struck through. */}
+          <p className="mt-2 line-clamp-2 text-[13px] leading-snug text-foreground/85" title={displaySubject}>
+            {displaySubject}
+          </p>
+          {displayFrom ? (
+            <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={displayFrom}>
+              {displayFrom.replace(/\s*<[^>]*>\s*/g, '').replace(/^"|"$/g, '').trim() || displayFrom}
+              {formatShortDate(email.date) ? ` · ${formatShortDate(email.date)}` : ''}
+            </p>
+          ) : null}
         </div>
 
-        {/* The "Applendium detected" chips were removed (founder, 2026-09-27): every one restated
-            what is already on screen — "Closed detected" beside a Closed badge, company and role
-            identified right above their own values. */}
-        {threadArr.length > 1 && (
-          <div className="rounded-xl border border-white/[0.07] bg-white/[0.03] px-3 py-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-[11px] text-muted-foreground">
-                {threadArr.length} message{threadArr.length === 1 ? '' : 's'} in thread
-              </div>
-              <div className="flex items-center gap-2">
-                <InlineButton variant="outline" className="px-2 py-1 text-[11px]" onClick={() => scrollToIdx(Math.max(0, activeIdx - 1))}>
-                  Prev
-                </InlineButton>
-                <InlineButton variant="outline" className="px-2 py-1 text-[11px]" onClick={() => scrollToIdx(Math.min(threadArr.length - 1, activeIdx + 1))}>
-                  Next
-                </InlineButton>
-              </div>
-            </div>
+        {email?.applicationId && !isEffectivelyClosed && typeof staleDays === 'number' && staleDays >= 60 && (
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs text-foreground">
+            <div>No activity for {staleDays} days. If you heard back off-email, you can close this role.</div>
+            <InlineButton variant="outline" className="border-warning/30 bg-card/80" onClick={() => openClosePanel('stale')}>
+              Close
+            </InlineButton>
           </div>
         )}
 
         <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <Building2 className="h-4 w-4" />
-                Company
-              </div>
-              {onUpdateCompanyName ? (
-                <CompanyField email={email} userEmail={userEmail} onUpdate={onUpdateCompanyName} />
-              ) : (
-                <div className="text-sm text-foreground">{email.company_name || 'Not extracted'}</div>
-              )}
+          <div className="mb-3 flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5" />
+              <span>{threadArr.length} message{threadArr.length === 1 ? '' : 's'}</span>
             </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <Briefcase className="h-4 w-4" />
-                Position
-              </div>
-              {onUpdatePosition ? (
-                <CompanyField email={email} userEmail={userEmail} onUpdate={onUpdatePosition} fieldName="position" />
-              ) : (
-                <div className="text-sm text-foreground">{email.position || 'Not extracted'}</div>
-              )}
-            </div>
+            <span>{formatLongDate(email.date)}</span>
           </div>
-        </div>
 
-        <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <TrendingUp className="h-4 w-4 text-accent" />
-              Application Journey
-            </h3>
-            <span className="text-[10px] text-accent">
-              {loadingLifecycle ? 'Loading...' : `${journeyStages.length} stage${journeyStages.length === 1 ? '' : 's'}`}
-            </span>
-          </div>
-          {journeyStages.length === 0 ? (
-            <p className="mt-3 text-xs text-muted-foreground">No journey yet. Refresh to link this email to an application.</p>
-          ) : (
-            <div className="mt-3 space-y-3">
-              {journeyStages.map((stage, idx) => {
-                const stageKey = normalizeApplicationStatusKey(stage.category);
-                const stageClassName = STATUS_CLASSES[stageKey] || STATUS_CLASSES.applied;
+          <div className="space-y-4">
+            {threadArr.map((message, idx) => {
+              const messageKey = message.id || `${message.thread_id || message.threadId || 'msg'}-${idx}`;
+              // Collapse long bodies; measured on the cleaned text so junk removal counts.
+              const isLong = getCleanMessageText(message).length > 520;
+              const isExpanded = Boolean(expandedMessages[messageKey]);
+              const collapsed = isLong && !isExpanded;
 
-                return (
-                  <div key={stage.emailId || `${stage.category}-${idx}`} className="flex items-start gap-3">
-                    <div className="mt-1 h-2.5 w-2.5 rounded-full bg-accent" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <span className={stageClassName}>{getCategoryTitle(stageKey)}</span>
-                          <p className="mt-1 text-[11px] text-muted-foreground">{getJourneyDescription(stage.category)}</p>
-                          {stage.eventCount > 1 ? (
-                            <p className="mt-1 text-[11px] text-muted-foreground">
-                              {stage.eventCount} similar emails merged into this stage
-                            </p>
-                          ) : null}
-                        </div>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatShortDate(stage.lastDate || stage.date)}</span>
-                      </div>
-                      {safeTextValue(stage.subject, '') ? (
-                        <p className="mt-1 break-words text-[11px] text-foreground/80">
-                          {stage.eventCount > 1 ? `Latest: ${safeTextValue(stage.subject, '')}` : safeTextValue(stage.subject, '')}
-                        </p>
-                      ) : null}
+              return (
+                <div key={messageKey} id={`msg-${idx}`} className="space-y-2">
+                  {idx > 0 && (
+                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                      <div className="h-px flex-1 bg-border" />
+                      Older message
+                      <div className="h-px flex-1 bg-border" />
                     </div>
+                  )}
+                  <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+                    <span className="truncate">{(message.from || 'Unknown sender').replace(/\s*<[^>]*>\s*/g, '').replace(/^"|"$/g, '').trim() || 'Unknown sender'}</span>
+                    <span className="shrink-0">{formatLongDate(message.date)}</span>
                   </div>
-                );
-              })}
-
-              {mergedJourneyStageCount > 0 && rawJourneyData.source === 'application' && (
-                <p className="text-[10px] text-muted-foreground">
-                  Merged {mergedJourneyStageCount} duplicate same-stage email{mergedJourneyStageCount === 1 ? '' : 's'} for clarity.
-                </p>
-              )}
-
-              {rawJourneyData.source === 'fallback' && (
-                <div className="space-y-2 pt-1">
-                  <p className="text-[10px] text-muted-foreground">
-                    Showing local stages. Full journey appears after this email is linked across categories.
-                  </p>
-                  <InlineButton variant="outline" onClick={handleLinkAcrossCategories} disabled={loadingLifecycle}>
-                    Link across categories
-                  </InlineButton>
+                  {renderSingleMessage(message, collapsed)}
+                  {isLong && (
+                    <button
+                      type="button"
+                      onClick={() => toggleMessageExpanded(messageKey)}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-accent transition-colors hover:text-accent/80"
+                    >
+                      {isExpanded ? 'Show less' : 'Show full message'}
+                      <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', isExpanded && 'rotate-180')} />
+                    </button>
+                  )}
                 </div>
-              )}
-
-              {showRepairAction && (
-                <InlineButton variant="outline" onClick={handleRepairApplicationLinks} disabled={loadingLifecycle}>
-                  {repairActionLabel}
-                </InlineButton>
-              )}
-            </div>
-          )}
+              );
+            })}
+          </div>
         </div>
+
+        {userPlan !== 'premium' && (presentationStatusKey === 'applied' || presentationStatusKey === 'interviewed') && onOpenPremiumPage && (
+          <div className="rounded-2xl border border-accent/20 bg-accent/5 p-3 shadow-sm">
+            <div className="flex items-center gap-2 text-[11px] font-semibold text-accent">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              Your next move on this {presentationStatusKey === 'interviewed' ? 'interview' : 'application'}
+            </div>
+            <div className="mt-2 flex items-center gap-2 rounded-xl border border-white/[0.07] bg-background/50 px-3 py-2">
+              <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <div className="h-2.5 w-3/4 rounded bg-muted-foreground/20" />
+                <div className="mt-1.5 h-2 w-1/2 rounded bg-muted-foreground/15" />
+              </div>
+            </div>
+            <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
+              {presentationStatusKey === 'interviewed'
+                ? 'When to follow up, what to send, and how similar interviews have played out. Premium maps your next step.'
+                : 'When to follow up, whether to keep chasing, and how similar applications have played out. Premium maps your next step.'}
+            </p>
+            <button
+              onClick={onOpenPremiumPage}
+              className="mt-2.5 w-full rounded-xl bg-accent px-3 py-2 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
+              type="button"
+            >
+              Unlock with Premium →
+            </button>
+          </div>
+        )}
+
+        {userPlan === 'premium' && (presentationStatusKey === 'applied' || presentationStatusKey === 'interviewed') && onOpenPremiumPage && (
+          <button
+            onClick={onOpenPremiumPage}
+            data-testid="premium-next-move"
+            type="button"
+            className="flex w-full items-center justify-between gap-2 rounded-2xl border border-accent/20 bg-accent/5 px-3 py-2.5 text-left shadow-sm transition hover:bg-accent/10"
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-accent" />
+              <span className="min-w-0">
+                <span className="block text-[11px] font-semibold text-foreground">
+                  Your next move on this {presentationStatusKey === 'interviewed' ? 'interview' : 'application'}
+                </span>
+                <span className="block text-[10px] leading-4 text-muted-foreground">
+                  {presentationStatusKey === 'interviewed'
+                    ? 'When to follow up and what to send, based on how similar interviews played out'
+                    : 'When to follow up and whether to keep chasing, based on how similar applications played out'}
+                </span>
+              </span>
+            </span>
+            <span className="shrink-0 text-[11px] font-semibold text-accent">Open →</span>
+          </button>
+        )}
 
         <div className="flex flex-wrap gap-2">
           {isEffectivelyUserClosed && (
@@ -1038,16 +1030,17 @@ export default function EmailPreview({
             <ExternalLink className="h-3.5 w-3.5" />
             Gmail
           </InlineButton>
-        </div>
-
-        {email?.applicationId && !isEffectivelyClosed && typeof staleDays === 'number' && staleDays >= 60 && (
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs text-foreground">
-            <div>No activity for {staleDays} days. If you heard back off-email, you can close this role.</div>
-            <InlineButton variant="outline" className="border-warning/30 bg-card/80" onClick={() => openClosePanel('stale')}>
-              Close
+          {(onUpdateCompanyName || onUpdatePosition) && (
+            <InlineButton
+              variant="outline"
+              data-testid="email-preview-edit-details"
+              onClick={() => setShowDetails((open) => !open)}
+            >
+              <Building2 className="h-3.5 w-3.5" />
+              {showDetails ? 'Done editing' : 'Edit company or role'}
             </InlineButton>
-          </div>
-        )}
+          )}
+        </div>
 
         {showClosePanel && (
           <div className="space-y-3 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
@@ -1103,103 +1096,93 @@ export default function EmailPreview({
           </div>
         )}
 
-        {userPlan !== 'premium' && (presentationStatusKey === 'applied' || presentationStatusKey === 'interviewed') && onOpenPremiumPage && (
-          <div className="rounded-2xl border border-accent/20 bg-accent/5 p-3 shadow-sm">
-            <div className="flex items-center gap-2 text-[11px] font-semibold text-accent">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Your next move on this {presentationStatusKey === 'interviewed' ? 'interview' : 'application'}
-            </div>
-            <div className="mt-2 flex items-center gap-2 rounded-xl border border-white/[0.07] bg-background/50 px-3 py-2">
-              <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="h-2.5 w-3/4 rounded bg-muted-foreground/20" />
-                <div className="mt-1.5 h-2 w-1/2 rounded bg-muted-foreground/15" />
+        {showDetails && (
+          <div data-testid="email-preview-details" className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <Building2 className="h-4 w-4" />
+                Company
               </div>
+              {onUpdateCompanyName ? (
+                <CompanyField email={email} userEmail={userEmail} onUpdate={onUpdateCompanyName} />
+              ) : (
+                <div className="text-sm text-foreground">{email.company_name || 'Not extracted'}</div>
+              )}
             </div>
-            <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
-              {presentationStatusKey === 'interviewed'
-                ? 'When to follow up, what to send, and how similar interviews have played out. Premium maps your next step.'
-                : 'When to follow up, whether to keep chasing, and how similar applications have played out. Premium maps your next step.'}
-            </p>
-            <button
-              onClick={onOpenPremiumPage}
-              className="mt-2.5 w-full rounded-xl bg-accent px-3 py-2 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
-              type="button"
-            >
-              Unlock with Premium →
-            </button>
-          </div>
-        )}
 
-        {userPlan === 'premium' && (presentationStatusKey === 'applied' || presentationStatusKey === 'interviewed') && onOpenPremiumPage && (
-          <button
-            onClick={onOpenPremiumPage}
-            data-testid="premium-next-move"
-            type="button"
-            className="flex w-full items-center justify-between gap-2 rounded-2xl border border-accent/20 bg-accent/5 px-3 py-2.5 text-left shadow-sm transition hover:bg-accent/10"
-          >
-            <span className="flex min-w-0 items-center gap-2">
-              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-accent" />
-              <span className="min-w-0">
-                <span className="block text-[11px] font-semibold text-foreground">
-                  Your next move on this {presentationStatusKey === 'interviewed' ? 'interview' : 'application'}
-                </span>
-                <span className="block text-[10px] leading-4 text-muted-foreground">
-                  {presentationStatusKey === 'interviewed'
-                    ? 'When to follow up and what to send, based on how similar interviews played out'
-                    : 'When to follow up and whether to keep chasing, based on how similar applications played out'}
-                </span>
-              </span>
-            </span>
-            <span className="shrink-0 text-[11px] font-semibold text-accent">Open →</span>
-          </button>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <Briefcase className="h-4 w-4" />
+                Position
+              </div>
+              {onUpdatePosition ? (
+                <CompanyField email={email} userEmail={userEmail} onUpdate={onUpdatePosition} fieldName="position" />
+              ) : (
+                <div className="text-sm text-foreground">{email.position || 'Not extracted'}</div>
+              )}
+            </div>
+          </div>
+          </div>
         )}
 
         <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
-          <div className="mb-3 flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
-            <div className="flex items-center gap-1.5">
-              <Clock className="h-3.5 w-3.5" />
-              <span>{threadArr.length} message{threadArr.length === 1 ? '' : 's'}</span>
-            </div>
-            <span>{formatLongDate(email.date)}</span>
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <TrendingUp className="h-4 w-4 text-accent" />
+              Application Journey
+            </h3>
+            <span className="text-[10px] text-accent">
+              {loadingLifecycle ? 'Loading...' : `${journeyStages.length} stage${journeyStages.length === 1 ? '' : 's'}`}
+            </span>
           </div>
+          {journeyStages.length === 0 ? (
+            <p className="mt-3 text-xs text-muted-foreground">No journey yet. Refresh to link this email to an application.</p>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {journeyStages.map((stage, idx) => {
+                const stageKey = normalizeApplicationStatusKey(stage.category);
+                const stageClassName = STATUS_CLASSES[stageKey] || STATUS_CLASSES.applied;
 
-          <div className="space-y-4">
-            {threadArr.map((message, idx) => {
-              const messageKey = message.id || `${message.thread_id || message.threadId || 'msg'}-${idx}`;
-              // Collapse long bodies; measured on the cleaned text so junk removal counts.
-              const isLong = getCleanMessageText(message).length > 520;
-              const isExpanded = Boolean(expandedMessages[messageKey]);
-              const collapsed = isLong && !isExpanded;
-
-              return (
-                <div key={messageKey} id={`msg-${idx}`} className="space-y-2">
-                  {idx > 0 && (
-                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-                      <div className="h-px flex-1 bg-border" />
-                      Older message
-                      <div className="h-px flex-1 bg-border" />
+                return (
+                  <div key={stage.emailId || `${stage.category}-${idx}`} className="flex items-start gap-3">
+                    <div className="mt-1 h-2.5 w-2.5 rounded-full bg-accent" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className={stageClassName}>{getCategoryTitle(stageKey)}</span>
+                          <p className="mt-1 text-[11px] text-muted-foreground">{getJourneyDescription(stage.category)}</p>
+                        </div>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatShortDate(stage.lastDate || stage.date)}</span>
+                      </div>
+                      {safeTextValue(stage.subject, '') ? (
+                        <p className="mt-1 break-words text-[11px] text-foreground/80">
+                          {safeTextValue(stage.subject, '')}
+                        </p>
+                      ) : null}
                     </div>
-                  )}
-                  <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
-                    <span className="truncate">{(message.from || 'Unknown sender').replace(/\s*<[^>]*>\s*/g, '').replace(/^"|"$/g, '').trim() || 'Unknown sender'}</span>
-                    <span className="shrink-0">{formatLongDate(message.date)}</span>
                   </div>
-                  {renderSingleMessage(message, collapsed)}
-                  {isLong && (
-                    <button
-                      type="button"
-                      onClick={() => toggleMessageExpanded(messageKey)}
-                      className="inline-flex items-center gap-1 text-[11px] font-medium text-accent transition-colors hover:text-accent/80"
-                    >
-                      {isExpanded ? 'Show less' : 'Show full message'}
-                      <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', isExpanded && 'rotate-180')} />
-                    </button>
-                  )}
+                );
+              })}
+
+              {rawJourneyData.source === 'fallback' && (
+                <div className="space-y-2 pt-1">
+                  <p className="text-[10px] text-muted-foreground">
+                    Showing local stages. Full journey appears after this email is linked across categories.
+                  </p>
+                  <InlineButton variant="outline" onClick={handleLinkAcrossCategories} disabled={loadingLifecycle}>
+                    Link across categories
+                  </InlineButton>
                 </div>
-              );
-            })}
-          </div>
+              )}
+
+              {showRepairAction && (
+                <InlineButton variant="outline" onClick={handleRepairApplicationLinks} disabled={loadingLifecycle}>
+                  {repairActionLabel}
+                </InlineButton>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </>
