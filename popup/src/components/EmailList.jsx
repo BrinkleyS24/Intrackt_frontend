@@ -482,7 +482,10 @@ function EmailList({
 
               const companyName = safeTextValue(email.company_name, '').trim();
               const cardTitle = companyName || displaySubject;
-              const cardSubtitle = safePosition || displaySender;
+              // The subtitle slot reads as the role. A bare ATS address ("nyp@myworkday.com") is not
+              // one, so with no position and no sender name the line is left out rather than filled.
+              const isBareAddress = /^[^\s@]+@[^\s@]+$/.test(displaySender);
+              const cardSubtitle = safePosition || (isBareAddress ? '' : displaySender);
               // The latest email, as the event that moved this application. Only when the title is the
               // company; otherwise the subject already is the title.
               const latestEventLine = companyName ? displaySubject : null;
@@ -548,9 +551,11 @@ function EmailList({
                       >
                         {cardTitle}
                       </div>
-                      <div className="popup-line-clamp-1 mt-0.5 text-[12px] text-muted-foreground">
-                        {cardSubtitle}
-                      </div>
+                      {cardSubtitle ? (
+                        <div className="popup-line-clamp-1 mt-0.5 text-[12px] text-muted-foreground">
+                          {cardSubtitle}
+                        </div>
+                      ) : null}
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       {isUnread && <span className="h-2 w-2 rounded-full bg-accent" />}
