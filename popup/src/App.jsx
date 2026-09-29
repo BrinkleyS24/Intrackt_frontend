@@ -73,6 +73,10 @@ const normalizeStoredCategory = (category) => {
   return normalized;
 };
 
+// Mirrors REAPPLICATION_GAP_DAYS in backend services/applicationService.js, the free quota's
+// rolling window (applications counted by latest_email_date).
+const QUOTA_WINDOW_DAYS = 30;
+
 const isPreviewCandidateEmail = (email) => {
   const resolutionState = (email?.resolution_state || '').toString().toLowerCase();
   const syncSource = (email?.sync_source || '').toString().toLowerCase();
@@ -179,7 +183,7 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
     <div data-testid="quota-status-notice" className="px-1">
       <div className="flex items-center justify-between text-[11px] tabular-nums text-muted-foreground">
         <span>
-          <span className={`font-semibold ${accentTextClassName}`}>{Math.min(quota.used, quota.total)}/{quota.total}</span> tracked
+          <span className={`font-semibold ${accentTextClassName}`}>{Math.min(quota.used, quota.total)}/{quota.total}</span> active in the last {QUOTA_WINDOW_DAYS} days
         </span>
         <span className={`font-semibold ${accentTextClassName}`}>{clampedPercentage}%</span>
       </div>
@@ -198,10 +202,13 @@ function QuotaHeaderBadge({ quota, label, warningLevel }) {
     return null;
   }
 
-  const summary = `${Math.min(quota.used, quota.total)} of ${quota.total} tracked applications used on your free plan.`;
+  // The quota counts applications with mail in the last QUOTA_WINDOW_DAYS, not everything
+  // tracked. Unqualified, "0/500" sat beside "122 tracked applications" and read as a
+  // contradiction (founder screenshot, 2026-09-29).
+  const summary = `${Math.min(quota.used, quota.total)} of ${quota.total} applications active in the last ${QUOTA_WINDOW_DAYS} days on your free plan.`;
   const detail = quota.isAtLimit
     ? 'Existing tracked applications still sync, but new applications pause until your limit resets.'
-    : 'This count is based on tracked applications, not total emails.';
+    : 'Older applications stay tracked and do not count toward this limit.';
   const tooltipId = 'quota-header-tooltip';
 
   return (
