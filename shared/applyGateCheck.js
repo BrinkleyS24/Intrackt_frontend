@@ -65,27 +65,57 @@ export function extractJobPostingFromPage() {
     };
   }
 
-  const root = document.querySelector([
+  // Most specific first, and tried ONE AT A TIME. A single combined querySelector returns the
+  // first match in DOCUMENT order, so on a search page with a job pane (Indeed's home feed) the
+  // page-wide <main> won over #jobDescriptionText and the "description" was every listing on the
+  // page at once (founder's report, 2026-09-29).
+  const ROOT_SELECTORS = [
+    '#jobDescriptionText',
     '[data-automation-id="jobPostingDescription"]',
     '.jobs-description',
     '#job-details',
-    '#jobDescriptionText',
     '.job-description',
     '[class*="job-description"]',
     '[class*="jobDescription"]',
     'main',
     'article',
     '[role="main"]',
-  ].join(', ')) || document.body;
+  ];
+  let root = null;
+  let broadRoot = true;
+  for (const [index, selector] of ROOT_SELECTORS.entries()) {
+    root = document.querySelector(selector);
+    if (root) { broadRoot = index >= ROOT_SELECTORS.length - 3; break; }
+  }
+  if (!root) root = document.body;
   const description = clean(root ? root.innerText : '').slice(0, MAX_CHARS);
-  const heading = clean(document.querySelector('h1') && document.querySelector('h1').innerText);
+  const textOf = (el) => clean(el && el.innerText).replace(/\s*-\s*job post\s*$/i, '');
+  // The title belongs to the pane the description sits in, not to the page. Indeed's feed greets
+  // the user in the page's first <h1> ("Welcome, Samantha") while the selected job's title is an
+  // <h2> beside the description. Walk up from the description to the nearest container that has
+  // a heading ahead of it; only a page-wide root falls back to the page's own <h1>.
+  const paneHeading = () => {
+    const named = document.querySelector('[data-testid="jobsearch-JobInfoHeader-title"], .jobsearch-JobInfoHeader-title');
+    if (named && textOf(named)) return textOf(named);
+    if (broadRoot) return '';
+    let node = root.parentElement;
+    for (let depth = 0; node && node !== document.body && depth < 8; depth += 1, node = node.parentElement) {
+      const heading = [...node.querySelectorAll('h1, h2')]
+        .find((h) => !root.contains(h) && (h.compareDocumentPosition(root) & Node.DOCUMENT_POSITION_FOLLOWING) && textOf(h));
+      if (heading) return textOf(heading);
+    }
+    return '';
+  };
+  const heading = paneHeading() || textOf(document.querySelector('h1'));
   const siteName = document.querySelector('meta[property="og:site_name"]');
   // Greenhouse's current boards publish no structured data and no site name, but title the page
   // "Job Application for <role> at <Company>" and label the logo "<Company> Logo" (read on a live
   // posting, 2026-09-25).
   const titleAt = /\bat\s+([^|–—]+?)\s*$/i.exec(clean(document.title));
   const logo = document.querySelector('img[alt$=" logo" i]');
-  const company = employer(siteName && siteName.getAttribute('content'))
+  const namedCompany = document.querySelector('[data-testid="inlineHeader-companyName"], [data-company-name="true"]');
+  const company = employer(textOf(namedCompany))
+    || employer(siteName && siteName.getAttribute('content'))
     || employer(titleAt && titleAt[1])
     || employer(logo && logo.getAttribute('alt').replace(/\s+logo$/i, ''));
   // Two posting-shaped section words and enough text to be a posting, not a search page.
