@@ -1,33 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
 import {
-  APPLY_GATE_LAST_CHECK_KEY,
-  APPLY_GATE_LAST_CHECK_TTL_MS,
-  samePostingUrl,
   summarizeApplyGateResult,
 } from '../../../shared/applyGateCheck.js';
 
 const HIDDEN = { phase: 'hidden', posting: null, summary: null, error: null, recorded: null, recording: false, allowance: null };
-
-async function readCachedCheck(url) {
-  try {
-    const cached = (await chrome.storage?.local?.get([APPLY_GATE_LAST_CHECK_KEY]))?.[APPLY_GATE_LAST_CHECK_KEY];
-    if (!cached?.summary || !samePostingUrl(cached.url, url)) return null;
-    if (Date.now() - (cached.at || 0) > APPLY_GATE_LAST_CHECK_TTL_MS) return null;
-    return cached;
-  } catch (_) {
-    return null;
-  }
-}
-
-async function rememberRecordedAction(url, action) {
-  try {
-    const cached = (await chrome.storage.local.get([APPLY_GATE_LAST_CHECK_KEY]))?.[APPLY_GATE_LAST_CHECK_KEY];
-    if (cached && samePostingUrl(cached.url, url)) {
-      await chrome.storage.local.set({ [APPLY_GATE_LAST_CHECK_KEY]: { ...cached, recorded: action } });
-    }
-  } catch (_) { /* cosmetic: only affects what a reopened popup shows */ }
-}
 
 async function readAllowance() {
   try {
@@ -43,15 +20,24 @@ async function readAllowance() {
  * check per rolling week (founder decision, 2026-09-26). Reads the active tab once per popup open and
  * shows nothing unless the page reads like a job posting, so an ordinary tab never sprouts a card.
  */
-export function useApplyGateCheck(enabled, { premium = false } = {}) {
+export function useApplyGateCheck(enabled, { premium = false, accountId = null } = {}) {
   const [state, setState] = useState(HIDDEN);
+  const activeAccount = useRef(accountId);
+  activeAccount.current = accountId;
+  const mounted = useRef(true);
+  const checking = useRef(false);
+  const generation = useRef(0);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
 
   useEffect(() => {
+    generation.current += 1;
+    checking.current = false;
     if (!enabled) {
       setState(HIDDEN);
       return undefined;
     }
     let cancelled = false;
+    setState(HIDDEN);
     (async () => {
       let posting = null;
       try {
@@ -65,35 +51,65 @@ export function useApplyGateCheck(enabled, { premium = false } = {}) {
         setState(HIDDEN);
         return;
       }
-      const [cached, allowance] = await Promise.all([
-        readCachedCheck(posting.url),
+      let context;
+      let allowance;
+      try {
+        [context, allowance] = await Promise.all([
+        sendMessageToBackground({ type: 'APPLY_GATE_CONTEXT', url: posting.url }),
         premium ? Promise.resolve(null) : readAllowance(),
       ]);
-      if (cancelled) return;
+      } catch (error) {
+        if (!cancelled) setState({ ...HIDDEN, phase: 'error', posting, error: error.message });
+        return;
+      }
+      if (cancelled || context?.accountId !== activeAccount.current) return;
+      const { cached, selection } = context;
       if (cached) {
-        setState({ ...HIDDEN, phase: 'result', posting, summary: cached.summary, recorded: cached.recorded || null, allowance });
+        setState({ ...HIDDEN, phase: 'result', posting, summary: cached.summary, recorded: cached.recorded || null, allowance, selection, stale: cached.stale });
+        return;
+      }
+      if (!selection?.resumeDocument) {
+        setState({ ...HIDDEN, phase: 'result', posting, allowance, selection, summary: { kind: selection?.selectionRequired ? 'needs_resume_selection' : 'needs_resume', message: selection?.selectionRequired ? 'Choose a readable default résumé. This check was not used.' : 'Add and choose a default résumé before checking this role.' } });
         return;
       }
       const usedUp = !premium && allowance && allowance.unlimited !== true && allowance.remaining === 0;
-      setState({ ...HIDDEN, phase: usedUp ? 'used' : 'ready', posting, allowance });
+      setState({ ...HIDDEN, phase: usedUp ? 'used' : 'ready', posting, allowance, selection });
     })();
-    return () => { cancelled = true; };
-  }, [enabled, premium]);
+    return () => { cancelled = true; generation.current += 1; };
+  }, [enabled, premium, accountId]);
 
   const check = useCallback(async () => {
     const { posting } = state;
-    if (!posting) return;
+    if (!posting || checking.current) return;
+    const owner = accountId;
+    const requestGeneration = generation.current;
+    checking.current = true;
     setState((current) => ({ ...current, phase: 'checking', error: null }));
     try {
+      const context = await sendMessageToBackground({ type: 'APPLY_GATE_CONTEXT', url: posting.url });
+      if (!mounted.current || generation.current !== requestGeneration || activeAccount.current !== owner || context.accountId !== owner) return;
+      const doc = context.selection?.resumeDocument;
+      if (!doc) {
+        setState((current) => ({ ...current, phase: 'result', selection: context.selection, summary: { kind: 'needs_resume_selection', message: 'Choose a readable default résumé. This check was not used.' } }));
+        return;
+      }
+      const previous = state.selection?.resumeDocument;
+      if (!previous || previous.variantId !== doc.variantId || previous.fingerprint !== doc.fingerprint) {
+        setState((current) => ({ ...current, phase: 'ready', selection: context.selection, error: 'Your default changed. Review the résumé shown before checking.' }));
+        return;
+      }
       const response = await sendMessageToBackground({
         type: 'APPLY_GATE_ANALYZE',
         payload: {
+          variantId: doc.variantId,
+          expectedResumeFingerprint: doc.fingerprint,
           jobTitle: posting.title || '',
           companyName: posting.company || '',
           jobDescription: posting.description || '',
           jobUrl: posting.url || '',
         },
       });
+      if (!mounted.current || generation.current !== requestGeneration || activeAccount.current !== owner) return;
       if (response?.weeklyCheckUsed) {
         setState((current) => ({
           ...current,
@@ -106,27 +122,32 @@ export function useApplyGateCheck(enabled, { premium = false } = {}) {
       setState((current) => ({
         ...current,
         phase: summary ? 'result' : 'error',
-        summary,
+        summary, stale: false, recorded: null,
         allowance: response?.result?.allowance || current.allowance,
         error: summary ? null : 'Apply Gate did not return a call for this page.',
       }));
     } catch (error) {
+      if (!mounted.current || generation.current !== requestGeneration || activeAccount.current !== owner) return;
       setState((current) => ({ ...current, phase: 'error', error: error?.message || 'The check did not finish.' }));
+    } finally {
+      if (generation.current === requestGeneration) checking.current = false;
     }
-  }, [state]);
+  }, [state, accountId]);
 
   const record = useCallback(async (action) => {
     const verdictId = state.summary?.id;
     if (!verdictId) return;
+    const requestGeneration = generation.current;
     setState((current) => ({ ...current, recording: true, error: null }));
     try {
       await sendMessageToBackground({ type: 'APPLY_GATE_ACTION', verdictId, action });
-      await rememberRecordedAction(state.posting?.url, action);
+      if (!mounted.current || generation.current !== requestGeneration || activeAccount.current !== accountId) return;
       setState((current) => ({ ...current, recording: false, recorded: action }));
     } catch (error) {
+      if (!mounted.current || generation.current !== requestGeneration || activeAccount.current !== accountId) return;
       setState((current) => ({ ...current, recording: false, error: 'That did not save. Try again, or record it on the web.' }));
     }
-  }, [state]);
+  }, [state, accountId]);
 
   return { ...state, premium, check, record };
 }

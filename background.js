@@ -29,8 +29,11 @@ import {
   APPLY_GATE_LAST_CHECK_KEY,
   extractJobPostingFromPage,
   summarizeApplyGateResult,
+  scopedCachedCheck,
+  createCheckCoordinator,
 } from './shared/applyGateCheck.js';
 
+const coordinateApplyGateCheck = createCheckCoordinator();
 const FIREBASE_AUTH_AVAILABLE = firebaseConfigIsComplete;
 
 // Initialize Firebase App in the background script when config is available.
@@ -256,6 +259,10 @@ function validateIncomingMessage(message) {
     // Limits mirror the backend's ApplyGateAnalyzeBodySchema so a bad payload fails here, not there.
     case 'APPLY_GATE_ANALYZE': {
       if (!isPlainObject(message.payload)) return { valid: false, error: 'Invalid Apply Gate payload.' };
+      const variantId = message.payload.variantId;
+      const fingerprint = message.payload.expectedResumeFingerprint;
+      if (variantId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(variantId)) return { valid: false, error: 'Invalid résumé selection.' };
+      if (fingerprint != null && !/^[a-f0-9]{12}$/.test(fingerprint)) return { valid: false, error: 'Invalid résumé version.' };
       const jobTitle = validateOptionalString(message.payload.jobTitle, { maxLength: 200, allowEmpty: true });
       const companyName = validateOptionalString(message.payload.companyName, { maxLength: 200, allowEmpty: true });
       const jobDescription = validateOptionalString(message.payload.jobDescription, { maxLength: 100000, allowEmpty: true });
@@ -275,10 +282,16 @@ function validateIncomingMessage(message) {
             companyName: companyName.value || '',
             jobDescription: jobDescription.value || '',
             jobUrl: jobUrl.value || '',
+            ...(variantId ? { variantId } : {}),
+            ...(fingerprint ? { expectedResumeFingerprint: fingerprint } : {}),
           },
         },
       };
     }
+
+    case 'APPLY_GATE_CONTEXT':
+      if (typeof message.url !== 'string' || message.url.length > 2000) return { valid: false, error: 'Invalid posting URL.' };
+      return { valid: true, message: normalized };
 
     case 'APPLY_GATE_ALLOWANCE':
       return { valid: true, message: normalized };
@@ -2015,6 +2028,15 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
       return true;
     }
 
+    case 'APPLY_GATE_CONTEXT': {
+      const scenario = getExtensionTestScenario(testingState.state?.scenarioId);
+      const stored = await chrome.storage.local.get(['userId']);
+      const resumeDocument = scenario?.applyGate?.selection?.resumeDocument
+        || (scenario?.applyGate ? { variantId: '00000000-0000-4000-8000-000000000001', source: 'default', name: 'QA résumé', fingerprint: 'abc123def456', characters: 2400 } : null);
+      sendResponse({ success: true, accountId: stored.userId, selection: { resumeDocument }, cached: null });
+      return true;
+    }
+
     case 'APPLY_GATE_ACTION': {
       sendResponse({ success: true });
       return true;
@@ -2279,6 +2301,7 @@ async function apiFetch(endpoint, options = {}) {
     query,
     timeoutMs = DEFAULT_API_TIMEOUT_MS,
     signal,
+    expectedUserId,
     ...fetchOptions
   } = options;
 
@@ -2289,6 +2312,7 @@ async function apiFetch(endpoint, options = {}) {
   await backendBaseUrlReadyPromise;
 
   const user = auth.currentUser;
+  if (expectedUserId && user?.uid !== expectedUserId) throw new Error('Your account changed. Reopen the popup.');
   const headers = {
     'Content-Type': 'application/json',
     ...fetchOptions.headers,
@@ -3592,7 +3616,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case 'LOGOUT':
         try {
           if (!FIREBASE_AUTH_AVAILABLE) {
-            await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions', EMAILS_CACHE_META_KEY]);
+            await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions', EMAILS_CACHE_META_KEY, APPLY_GATE_LAST_CHECK_KEY]);
             sendResponse({ success: true, authUnavailable: true });
             break;
           }
@@ -3708,6 +3732,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
+      case 'APPLY_GATE_CONTEXT':
+        try {
+          const owner = currentUserId;
+          if (!owner) throw new Error('Not authenticated');
+          const selection = await apiFetch('/api/resumes/selection', { method: 'GET', expectedUserId: owner });
+          if (auth.currentUser?.uid !== owner) throw new Error('Your account changed. Reopen the popup.');
+          const stored = (await chrome.storage.local.get([APPLY_GATE_LAST_CHECK_KEY]))?.[APPLY_GATE_LAST_CHECK_KEY];
+          if (auth.currentUser?.uid !== owner) throw new Error('Your account changed. Reopen the popup.');
+          const cached = scopedCachedCheck(stored, { accountId: owner, url: msg.url, resumeDocument: selection.resumeDocument });
+          sendResponse({ success: true, accountId: owner, selection, cached });
+        } catch (error) { sendResponse({ success: false, error: error.message }); }
+        break;
+
       case 'APPLY_GATE_ANALYZE':
         try {
           if (!currentUserId || !currentUserEmail) {
@@ -3715,17 +3752,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             break;
           }
           // A check waits on the model; the 30s default cut real ones off mid-analysis.
-          const result = await apiFetch(CONFIG_ENDPOINTS.APPLY_GATE_ANALYZE, {
+          const owner = currentUserId;
+          const requestKey = JSON.stringify([owner, msg.payload]);
+          const result = await coordinateApplyGateCheck(requestKey, () => apiFetch(CONFIG_ENDPOINTS.APPLY_GATE_ANALYZE, {
+            expectedUserId: owner,
             method: 'POST',
             body: JSON.stringify(msg.payload),
             timeoutMs: APPLY_GATE_TIMEOUT_MS,
-          });
+          }));
+          if (auth.currentUser?.uid !== owner) throw new Error('Your account changed. Reopen the popup.');
           // Cached so reopening the popup on the same posting shows the call instead of re-running
           // it — and so a check that finishes after the popup closed is not lost.
-          if (result?.success) {
+          if (result?.success && !result.insufficientProfile) {
             try {
               await chrome.storage.local.set({
-                [APPLY_GATE_LAST_CHECK_KEY]: { url: msg.payload.jobUrl || '', at: Date.now(), summary: summarizeApplyGateResult(result) },
+                [APPLY_GATE_LAST_CHECK_KEY]: { accountId: owner, url: msg.payload.jobUrl || '', at: Date.now(), summary: summarizeApplyGateResult(result) },
               });
             } catch (_) { /* the popup still gets the result below */ }
           }
@@ -3760,10 +3801,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             sendResponse({ success: false, error: 'Not authenticated' });
             break;
           }
+          const owner = currentUserId;
           await apiFetch(`${CONFIG_ENDPOINTS.APPLY_GATE_ACTION}/${encodeURIComponent(msg.verdictId)}/action`, {
+            expectedUserId: owner,
             method: 'PATCH',
             body: JSON.stringify({ action: msg.action }),
           });
+          if (owner !== auth.currentUser?.uid) throw new Error('Your account changed.');
+          const saved = (await chrome.storage.local.get([APPLY_GATE_LAST_CHECK_KEY]))?.[APPLY_GATE_LAST_CHECK_KEY];
+          if (saved?.accountId === owner && saved.summary?.id === msg.verdictId) await chrome.storage.local.set({ [APPLY_GATE_LAST_CHECK_KEY]: { ...saved, recorded: msg.action } });
           sendResponse({ success: true });
         } catch (error) {
           sendResponse({ success: false, error: error.message });
@@ -5020,7 +5066,7 @@ setPersistence(auth, indexedDBLocalPersistence)
 	        }
 	      } else {
 	        console.log("✅ Applendium Background: Auth State Changed - User logged out.");
-	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions', EMAILS_CACHE_META_KEY]); // Clear all cached data on logout
+	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions', EMAILS_CACHE_META_KEY, APPLY_GATE_LAST_CHECK_KEY]); // Clear all cached data on logout
 	        safeRuntimeSendMessage({ type: 'AUTH_READY', success: true, loggedOut: true });
 	        broadcastAuthStateToContentScripts(false, null);
 	      }
@@ -5046,7 +5092,7 @@ setPersistence(auth, indexedDBLocalPersistence)
 	        }
 	      } else {
 	        console.log("Applendium Background: Auth State Changed (without persistence) - User logged out.");
-	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions', EMAILS_CACHE_META_KEY]);
+	        await chrome.storage.local.remove(['userEmail', 'userName', 'userId', 'userPlan', 'appliedEmails', 'interviewedEmails', 'offersEmails', 'rejectedEmails', 'quotaData', 'followUpSuggestions', EMAILS_CACHE_META_KEY, APPLY_GATE_LAST_CHECK_KEY]);
 	        safeRuntimeSendMessage({ type: 'AUTH_READY', success: true, loggedOut: true });
 	        broadcastAuthStateToContentScripts(false, null);
 	      }

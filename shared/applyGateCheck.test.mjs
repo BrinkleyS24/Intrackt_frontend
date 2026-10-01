@@ -18,6 +18,9 @@ const {
   describeRecordedAction,
   samePostingUrl,
   describeNextFreeCheck,
+  describeCheckedResume,
+  scopedCachedCheck,
+  createCheckCoordinator,
 } = await import(`data:text/javascript,${encodeURIComponent(source)}`);
 
 const displayResult = (action, overrides = {}) => ({
@@ -70,6 +73,29 @@ test('recorded decisions say what happens next', () => {
   assert.match(describeRecordedAction('skipped'), /skipped/);
 });
 
+test('résumé attribution comes from the recorded source, never a guessed default', () => {
+  for (const source of ['chosen', 'legacy', 'seeded_from_legacy', null]) {
+    const summary = summarizeApplyGateResult(displayResult('APPLY', { resumeDocument: { source, variantId: 'v1' } }));
+    assert.equal(summary.usedDefaultResume, false);
+    assert.doesNotMatch(describeCheckedResume(summary), /default résumé/);
+  }
+  const stored = summarizeApplyGateResult(displayResult('APPLY', {
+    resumeDocument: null,
+    explanation: { resume_document: { source: 'legacy', variantId: null } },
+  }));
+  assert.match(describeCheckedResume(stored), /saved on your profile/);
+  assert.match(describeCheckedResume({ usedDefaultResume: true }), /not identified/);
+  assert.match(describeCheckedResume(summarizeApplyGateResult(displayResult('APPLY'))), /default résumé at the time/);
+});
+
+test('a missing default asks for a choice without inventing a verdict', () => {
+  const summary = summarizeApplyGateResult({ insufficientProfile: true, resumeSelectionRequired: true,
+    insufficientProfileMessage: 'Choose a résumé. This check was not used.' });
+  assert.equal(summary.kind, 'needs_resume_selection');
+  assert.equal(summary.message, 'Choose a résumé. This check was not used.');
+  assert.equal(summary.decision, undefined);
+});
+
 test('the same posting is recognised through tracking parameters, a different job is not', () => {
   assert.equal(samePostingUrl('https://boards.greenhouse.io/acme/jobs/123?gh_src=abc#app', 'https://boards.greenhouse.io/acme/jobs/123'), true);
   assert.equal(samePostingUrl('https://www.linkedin.com/jobs/view/1?trk=x&refId=y', 'https://www.linkedin.com/jobs/view/1/'), true);
@@ -83,4 +109,35 @@ test("says when the next free check opens in words, not a timestamp", () => {
   assert.equal(describeNextFreeCheck(new Date(2026, 8, 27, 9, 0).toISOString(), now), "tomorrow");
   assert.match(describeNextFreeCheck(new Date(2026, 9, 1, 9, 0).toISOString(), now), /Oct 1/);
   assert.equal(describeNextFreeCheck(null, now), "next week");
+});
+
+test('cached checks are isolated by account and become stale when the document changes', () => {
+  const doc = { variantId: 'v1', fingerprint: 'abc123def456' };
+  const cached = { accountId: 'u1', url: 'https://example.com/jobs/1', at: 1000, summary: { kind: 'verdict', resumeDocument: doc } };
+  const context = { accountId: 'u1', url: cached.url, resumeDocument: doc, now: 2000 };
+  assert.equal(scopedCachedCheck(cached, context).stale, false);
+  assert.equal(scopedCachedCheck(cached, { ...context, accountId: 'u2' }), null);
+  assert.equal(scopedCachedCheck({ ...cached, accountId: undefined }, context), null);
+  for (const changed of [null, { ...doc, variantId: 'v2' }, { ...doc, fingerprint: 'edited' }]) {
+    assert.equal(scopedCachedCheck(cached, { ...context, resumeDocument: changed }).stale, true);
+  }
+  assert.equal(scopedCachedCheck(cached, { ...context, now: 100000000 }), null);
+  assert.equal(scopedCachedCheck(cached, { ...context, now: 500 }), null);
+});
+
+test('duplicate running checks share a call, failures release the slot, accounts remain separate', async () => {
+  const run = createCheckCoordinator();
+  let count = 0;
+  let release;
+  const task = () => { count++; return new Promise(resolve => { release = resolve; }); };
+  const first = run('u1/job/v1', task);
+  const second = run('u1/job/v1', task);
+  await Promise.resolve();
+  assert.equal(first, second);
+  assert.equal(count, 1);
+  assert.equal(await run('u2/job/v1', () => 'separate'), 'separate');
+  release('done');
+  assert.equal(await first, 'done');
+  await assert.rejects(run('u1/job/v1', () => { throw new Error('timeout'); }), /timeout/);
+  assert.equal(await run('u1/job/v1', () => 'retry'), 'retry');
 });

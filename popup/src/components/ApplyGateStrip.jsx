@@ -1,6 +1,6 @@
 import React from 'react';
 import { Loader2, ScanSearch } from 'lucide-react';
-import { describeNextFreeCheck, describeRecordedAction } from '../../../shared/applyGateCheck.js';
+import { describeNextFreeCheck, describeRecordedAction, describeCheckedResume } from '../../../shared/applyGateCheck.js';
 
 const TONE_CHIP = {
   positive: 'bg-success/10 text-success',
@@ -31,7 +31,7 @@ const PRIMARY_BUTTON = 'shrink-0 rounded-lg bg-accent px-2.5 py-1 text-[11px] fo
  * gets one check per rolling week, and the strip says so plainly before and after it is used.
  */
 export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage }) {
-  const { phase, posting, summary, error, recorded, recording, premium, allowance } = check;
+  const { phase, posting, summary, error, recorded, recording, premium, allowance, selection, stale } = check;
   if (phase === 'hidden') return null;
 
   const shell = 'mb-2 rounded-xl border border-accent/25 bg-accent/5 px-3 py-2.5';
@@ -47,6 +47,8 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
       <div data-testid="apply-gate-strip" className={shell}>
         <Eyebrow>{premium ? 'Apply Gate · this page' : 'Apply Gate · your free check this week'}</Eyebrow>
         <div className="popup-line-clamp-2 mt-1 text-[12px] font-semibold leading-4 text-foreground">{roleLine(posting)}</div>
+        <p className="mt-1 text-[11px] text-muted-foreground">Résumé: {selection?.resumeDocument?.name || 'Your selected default'}</p>
+        {error ? <p role="status" className="text-[11px] text-muted-foreground">{error}</p> : null}
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-[11px] leading-4 text-muted-foreground">
             {premium
@@ -117,20 +119,24 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
     );
   }
 
-  if (summary?.kind === 'needs_resume') {
+  if (summary?.kind === 'needs_resume' || summary?.kind === 'needs_resume_selection') {
+    const needsSelection = summary.kind === 'needs_resume_selection';
     return (
       <div data-testid="apply-gate-strip" className={shell}>
         <Eyebrow>Apply Gate · this page</Eyebrow>
-        <div className="mt-1 text-[12px] font-semibold leading-4 text-foreground">Add your résumé to check this role</div>
+        <div className="mt-1 text-[12px] font-semibold leading-4 text-foreground">{needsSelection ? 'Choose a résumé to check this role' : 'Add your résumé to check this role'}</div>
         <div className="mt-1 text-[11px] leading-4 text-muted-foreground">{summary.message}</div>
-        <div className="mt-2 flex justify-end">
+        <div className="mt-2 flex justify-end gap-2">
+          <button type="button" onClick={check.check} className="text-[11px] font-medium text-muted-foreground transition hover:text-foreground">
+            Try again
+          </button>
           <button
             type="button"
-            onClick={() => onOpenWebPath(premium ? '/resumes' : '/settings#resume')}
+            onClick={() => onOpenWebPath('/resumes')}
             data-testid="apply-gate-add-resume"
             className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
           >
-            Add your résumé →
+            {needsSelection ? 'Choose a résumé →' : 'Add your résumé →'}
           </button>
         </div>
       </div>
@@ -141,6 +147,11 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
 
   return (
     <div data-testid="apply-gate-strip" className={shell}>
+      {stale ? <div role="status" className="mb-2 text-[11px] text-muted-foreground">
+        Previous check. Your default résumé has changed or is unavailable.
+        {selection?.resumeDocument?.name ? ` Current default: ${selection.resumeDocument.name}.` : ' Choose a default in Résumés.'}
+        <button type="button" onClick={check.check} className="ml-2 underline">Review and re-check</button>
+      </div> : null}
       <div className="flex items-center justify-between gap-2">
         <Eyebrow>Apply Gate · {roleLine(posting) || 'this page'}</Eyebrow>
       </div>
@@ -159,9 +170,15 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
       {summary.reasons.length ? (
         <ul className="mt-1.5 space-y-0.5 text-[11px] leading-4 text-foreground/85">
           {summary.reasons.map((reason) => (
-            <li key={reason} className="popup-line-clamp-2 pl-2.5 -indent-2.5">• {reason}</li>
+            <li key={reason} className="pl-2.5 -indent-2.5">• {reason}</li>
           ))}
         </ul>
+      ) : null}
+
+      {summary.warning ? (
+        <div data-testid="apply-gate-warning" className="mt-2 rounded-lg border border-warning/25 bg-warning/5 px-2 py-1.5 text-[11px] leading-4 text-foreground">
+          <span className="font-semibold">{summary.warning.label}: </span>{summary.warning.text}
+        </div>
       ) : null}
 
       {recorded ? (
@@ -191,7 +208,7 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
       {premium ? (
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-accent/15 pt-1.5">
           <span className="text-[11px] text-muted-foreground">
-            {summary.usedDefaultResume ? 'Checked against your default résumé' : 'Checked against your saved résumé'}
+            {describeCheckedResume(summary)}
           </span>
           <button
             type="button"

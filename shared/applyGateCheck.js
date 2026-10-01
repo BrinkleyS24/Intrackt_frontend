@@ -180,23 +180,26 @@ export function summarizeApplyGateResult(result) {
   if (!result || typeof result !== 'object') return null;
   if (result.insufficientProfile) {
     return {
-      kind: 'needs_resume',
+      kind: result.resumeSelectionRequired ? 'needs_resume_selection' : 'needs_resume',
       message: String(result.insufficientProfileMessage || '').trim()
         || 'Apply Gate needs your résumé to check a role against it.',
     };
   }
   const explanation = result.explanation || {};
-  const display = explanation.display_decision || null;
-  const decision = (display && DECISIONS[display.action]) || decisionFromLegacy(result.verdict, explanation.decision);
+  const presentation = explanation.presentation?.version === 1 ? explanation.presentation : null;
+  const display = presentation?.decision || explanation.display_decision || null;
+  const baseDecision = (display && DECISIONS[display.action]) || decisionFromLegacy(result.verdict, explanation.decision);
+  const decision = presentation && baseDecision ? { ...baseDecision, label: display.label } : baseDecision;
   if (!decision) return { kind: 'unavailable' };
 
   const headline = String((display && display.headline) || '').trim() || decision.label;
   const subtext = String((display && display.subtext) || explanation.primary_reason || '').trim();
-  const reasons = (Array.isArray(result.reasons) ? result.reasons : [])
+  const reasons = presentation ? presentation.bullets.map((point) => point.text) : (Array.isArray(result.reasons) ? result.reasons : [])
     .map((reason) => String(reason || '').trim())
     .filter((reason) => reason && reason !== subtext && reason !== headline)
     .slice(0, 3);
-  const resumeSource = result.resumeDocument && result.resumeDocument.source;
+  const resumeDocument = result.resumeDocument || explanation.resume_document || null;
+  const resumeSource = resumeDocument?.source;
 
   return {
     kind: 'verdict',
@@ -205,10 +208,47 @@ export function summarizeApplyGateResult(result) {
     headline,
     subtext,
     reasons,
+    warning: presentation?.warning || null,
+    presentationVersion: presentation?.version || null,
     actions: ACTIONS[decision.key],
     jobTitle: result.jobTitle || null,
     companyName: result.companyName || null,
-    usedDefaultResume: !resumeSource || resumeSource === 'default' || resumeSource === 'seeded_from_legacy',
+    resumeDocument,
+    usedDefaultResume: resumeSource === 'default',
+  };
+}
+
+/** Cached summaries without provenance cannot establish which résumé was used. */
+export function describeCheckedResume(summary) {
+  if (summary?.resumeDocument?.name) return `Checked against: ${summary.resumeDocument.name}`;
+  switch (summary?.resumeDocument?.source) {
+    case 'default': return 'Checked against the default résumé at the time';
+    case 'chosen': return 'Checked against your selected résumé';
+    case 'legacy':
+    case 'seeded_from_legacy': return 'Checked against the résumé saved on your profile';
+    default: return 'Saved check · résumé not identified';
+  }
+}
+
+/** Only same-account verdicts may be displayed; document changes are explicit stale reads. */
+export function scopedCachedCheck(cached, { accountId, url, resumeDocument, now = Date.now() }) {
+  if (!accountId || cached?.accountId !== accountId || cached?.summary?.kind !== 'verdict'
+    || !samePostingUrl(cached.url, url) || !Number.isFinite(cached.at)
+    || now - cached.at > APPLY_GATE_LAST_CHECK_TTL_MS || cached.at > now) return null;
+  const used = cached.summary.resumeDocument;
+  const current = Boolean(used?.variantId && resumeDocument?.variantId === used.variantId
+    && used.fingerprint && resumeDocument.fingerprint === used.fingerprint);
+  return { ...cached, stale: !current };
+}
+
+/** Duplicate clicks/reopened popups share a running request, not a second paid call. */
+export function createCheckCoordinator() {
+  const running = new Map();
+  return (key, run) => {
+    if (running.has(key)) return running.get(key);
+    const task = Promise.resolve().then(run).finally(() => running.delete(key));
+    running.set(key, task);
+    return task;
   };
 }
 

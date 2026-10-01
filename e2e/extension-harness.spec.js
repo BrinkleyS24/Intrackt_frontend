@@ -1,7 +1,7 @@
 const path = require('node:path');
 const { chromium, expect, test } = require('@playwright/test');
 
-const extensionPath = path.resolve(__dirname, '..', 'popup', 'dist');
+const extensionPath = process.env.EXTENSION_DIST_DIR || path.resolve(__dirname, '..', 'popup', 'dist');
 
 let context;
 let extensionId;
@@ -269,7 +269,7 @@ test('premium members check the job they are looking at and decide from the popu
   await expect(strip).toContainText('Add the CI/CD work you have done before sending this one.');
   await expect(strip).toContainText('no CI/CD pipeline work');
   await expect(strip).not.toContainText('A fourth reason');
-  await expect(strip).toContainText('Checked against your default résumé');
+  await expect(strip).toContainText('Checked against the default résumé at the time');
   await page.screenshot({ path: testInfo.outputPath('lab-apply-gate-verdict.png'), fullPage: true });
 
   // Same buttons as the web page, and the choice is recorded.

@@ -302,7 +302,7 @@ function App() {
   // line), so it is fetched once here. Premium members have the full coach in the web app.
   const searchRead = useSearchRead(Boolean(isLoggedIn && userPlan && userPlan !== 'premium'));
   // Everyone signed in: Premium checks any posting, free gets one check a week (2026-09-26).
-  const applyGateCheck = useApplyGateCheck(Boolean(isLoggedIn && userPlan), { premium: userPlan === 'premium' });
+  const applyGateCheck = useApplyGateCheck(Boolean(isLoggedIn && userPlan), { premium: userPlan === 'premium', accountId: userId });
 
   // Read the last-open timestamp for the "new since last visit" divider, then
   // rotate it to now. The read value drives the whole session; a quick reopen
