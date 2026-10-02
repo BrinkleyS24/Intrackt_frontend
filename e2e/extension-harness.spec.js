@@ -85,7 +85,7 @@ test('renders the free-plan inbox and opens a thread preview', async ({}, testIn
   const frame = await activateScenario(page, 'free-rich');
   const northstarThread = frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Northstar Labs' }).first();
 
-  await expect(frame.getByTestId('quota-status-notice')).toContainText('82/100 tracked');
+  await expect(frame.getByTestId('quota-status-notice')).toContainText('82/100 active in the last 30 days');
   await expect(northstarThread).toBeVisible();
   await northstarThread.click();
   await expect(frame.getByTestId('email-preview')).toBeVisible();

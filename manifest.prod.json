@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Applendium: Job Application Tracker for Gmail",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "description": "Automatic job application tracker for Gmail. Sorts applied, interview, offer, and rejected emails. No spreadsheets, no data entry.",
   "icons": {
     "16": "icons/icon16.png",
@@ -25,7 +25,7 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://applendium-backend-965515515114.us-central1.run.app/*",
+    "https://applendium-backend-277330820484.us-central1.run.app/*",
     "https://applendium.com/*",
     "https://www.applendium.com/*",
     "https://www.googleapis.com/*",
@@ -59,6 +59,6 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://applendium-backend-965515515114.us-central1.run.app https://*.googleapis.com https://www.googleapis.com https://accounts.google.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com;"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://applendium-backend-277330820484.us-central1.run.app https://*.googleapis.com https://www.googleapis.com https://accounts.google.com https://securetoken.googleapis.com https://identitytoolkit.googleapis.com;"
   }
 }

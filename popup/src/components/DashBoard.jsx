@@ -823,7 +823,7 @@ function Dashboard({
       }
 
       // Prefer the background script's backend base URL (supports localhost override for development).
-      let backendBaseUrl = CONFIG?.ENDPOINTS?.BACKEND_BASE_URL || 'https://applendium-backend-965515515114.us-central1.run.app';
+      let backendBaseUrl = CONFIG?.ENDPOINTS?.BACKEND_BASE_URL || 'https://applendium-backend-277330820484.us-central1.run.app';
       try {
         const backendResp = await chrome.runtime.sendMessage({ type: 'GET_BACKEND_BASE_URL' });
         if (backendResp?.success && typeof backendResp.backendBaseUrl === 'string' && backendResp.backendBaseUrl.trim()) {
