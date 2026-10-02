@@ -72,6 +72,15 @@ function assertNoRemoteHostedCodeReferences(bundleDir) {
   }
 }
 
+function assertNoInlineScripts(bundleDir) {
+  for (const filePath of collectFiles(bundleDir, new Set(['.html']))) {
+    const html = fs.readFileSync(filePath, 'utf8');
+    for (const tag of html.match(/<script\b[^>]*>/gi) || []) {
+      assert(/\bsrc\s*=/.test(tag), `Inline script is blocked by extension CSP in ${path.relative(projectRoot, filePath)}.`);
+    }
+  }
+}
+
 const packageJson = readJson('package.json');
 const devManifest = readJson('manifest.json');
 const prodManifest = readJson('manifest.prod.json');
@@ -95,6 +104,7 @@ assertNoLocalhostEntries(builtManifest.host_permissions, 'built manifest host_pe
 assertNoLocalhostEntries((builtManifest.content_scripts || []).flatMap((item) => item.matches || []), 'built manifest content_scripts');
 assertNoLocalhostInCsp(builtManifest.content_security_policy?.extension_pages || '', 'built manifest CSP');
 assertNoRemoteHostedCodeReferences(distDir);
+assertNoInlineScripts(distDir);
 
 console.log('Production extension bundle verified successfully.');
 console.log(`Version: ${builtManifest.version}`);

@@ -39,10 +39,11 @@ npm run test:e2e
 - `EXTENSION_MANIFEST_KEY_PROD` or `EXTENSION_MANIFEST_KEY`
 - optionally `EXTENSION_EXPECTED_ID_PROD` to assert the exact extension ID during smoke
 
-4. Run both smoke passes:
+4. Run the browser smoke checks:
 
 ```powershell
 npm run test:e2e
+npm run smoke:prod:preauth
 npm run smoke:prod
 npm run smoke:prod:chrome
 ```

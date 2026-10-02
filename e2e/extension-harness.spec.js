@@ -1,4 +1,5 @@
 const path = require('node:path');
+const fs = require('node:fs');
 const { chromium, expect, test } = require('@playwright/test');
 
 const extensionPath = process.env.EXTENSION_DIST_DIR || path.resolve(__dirname, '..', 'popup', 'dist');
@@ -134,6 +135,22 @@ test('renders the free-plan inbox and opens a thread preview', async ({}, testIn
   await expect(reopened.getByTestId('quota-status-notice')).toBeVisible();
   await expect(reopened.getByTestId('history-coverage-note')).toHaveCount(0);
 
+  await page.close();
+});
+
+test('loads the packaged PDF chunks without an inline import map', async () => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'free-rich');
+  await frame.getByTestId('report-button').click();
+  await expect(frame.getByTestId('report-modal')).toBeVisible();
+  await frame.getByTestId('report-start-date').fill('2026-03-01');
+  await frame.getByTestId('report-end-date').fill('2026-05-01');
+  await expect(frame.getByTestId('report-download-button')).toBeEnabled();
+  const downloadPromise = page.waitForEvent('download');
+  await frame.getByTestId('report-download-button').click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/\.pdf$/i);
+  expect(fs.readFileSync(await download.path()).subarray(0, 4).toString()).toBe('%PDF');
   await page.close();
 });
 
