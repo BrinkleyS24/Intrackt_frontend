@@ -162,7 +162,7 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
             <span className="tabular-nums">Limit reached · {Math.min(quota.used, quota.total)}/{quota.total}</span>
           </span>
           <button
-            onClick={onOpenPremiumPage}
+            onClick={() => onOpenPremiumPage('ext_quota')}
             data-testid="quota-premium-status-button"
             className="shrink-0 rounded-full border border-destructive/25 px-2.5 py-1 text-[11px] font-semibold text-destructive transition hover:bg-destructive/10"
             type="button"

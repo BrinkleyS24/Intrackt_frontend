@@ -106,7 +106,7 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
             {' '}
             <button
               type="button"
-              onClick={onUpgrade}
+              onClick={() => onUpgrade?.('ext_history_window')}
               className="font-medium text-foreground underline underline-offset-2 transition hover:opacity-80"
             >
               Premium imports {premiumDays} days

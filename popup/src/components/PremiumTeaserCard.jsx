@@ -219,7 +219,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
       </div>
 
       <button
-        onClick={onOpenPremiumPage}
+        onClick={() => onOpenPremiumPage('ext_teaser')}
         className="mt-3 w-full rounded-xl bg-accent px-3 py-2 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
         type="button"
       >
