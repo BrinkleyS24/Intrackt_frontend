@@ -221,8 +221,9 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
         </div>
       ) : (
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-accent/15 pt-1.5">
-          <span data-testid="apply-gate-free-used-note" className="text-[11px] leading-4 text-muted-foreground">
-            That was this week's free check. The next one opens {nextFree}.
+          <span className="text-[11px] leading-4 text-muted-foreground">
+            <span data-testid="apply-gate-checked-resume" className="block">{describeCheckedResume(summary)}</span>
+            <span data-testid="apply-gate-free-used-note">That was this week's free check. The next one opens {nextFree}.</span>
           </span>
           {seePremium}
         </div>

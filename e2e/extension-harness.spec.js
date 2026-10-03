@@ -369,6 +369,8 @@ test('free users see one real read of their own search the moment the popup open
   await frame.getByTestId('apply-gate-check').click();
   await expect(frame.getByTestId('apply-gate-decision')).toHaveText('Apply');
   await expect(frame.getByTestId('apply-gate-free-used-note')).toContainText("That was this week's free check");
+  // Free results name the résumé they were checked against, the same as Premium.
+  await expect(frame.getByTestId('apply-gate-checked-resume')).toContainText('Checked against');
   await expect(frame.getByTestId('apply-gate-see-premium')).toBeVisible();
   // The Premium-only full read is not offered to a free user.
   await expect(frame.getByTestId('apply-gate-full-read')).toHaveCount(0);
