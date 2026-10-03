@@ -752,6 +752,17 @@ const SCENARIOS = {
   },
 };
 
+SCENARIOS['unlinked-outcome'] = {
+  ...SCENARIOS['free-rich'],
+  id: 'unlinked-outcome',
+  label: 'Unlinked outcome',
+  description: 'A rejection without an application link must disclose that its history may be incomplete.',
+  categorizedEmails: {
+    ...freeRichCategorizedEmails,
+    rejected: freeRichCategorizedEmails.rejected.map((email) => ({ ...email, applicationId: null, application_id: null })),
+  },
+};
+
 export const DEFAULT_EXTENSION_TEST_SCENARIO_ID = 'free-rich';
 
 export function listExtensionTestScenarios() {

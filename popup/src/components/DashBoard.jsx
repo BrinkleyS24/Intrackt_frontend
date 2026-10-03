@@ -51,11 +51,11 @@ function generateDynamicInsight(suggestion) {
   const days = suggestion.daysAgo || 0;
 
   const defaultInsights = {
-    follow_up: "A timely follow-up is one of the easiest ways to get a stalled application moving.",
+    follow_up: "Check the latest conversation before deciding whether a follow-up would help.",
     thank_you: "Thank-you notes after interviews reinforce positive impressions.",
     status_check: "Status checks keep your application top-of-mind professionally.",
     research: "Gather market data to negotiate confidently.",
-    networking: "Personalized connection requests get accepted far more often than generic ones.",
+    networking: "Explain why you are reaching out and make the request specific to this person.",
     portfolio: "Add your latest project showcasing the skills mentioned in recent job postings you've applied to."
   };
 
@@ -1752,101 +1752,13 @@ function Dashboard({
                             </div>
                           </div>
 
-                          {/* Diagnostic Insights */}
+                          {/* Counts describe tracked activity; they cannot establish a cause. */}
                           <div className="p-3 rounded-lg bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700">
-                            <h5 className="text-sm font-semibold text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-                              <Target className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                              Diagnostic Insights
-                            </h5>
+                            <h5 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">What these counts tell you</h5>
                             <div className="space-y-2 text-xs text-gray-700 dark:text-gray-300">
-                              {applications === 0 && (
-                                <p className="text-gray-500 dark:text-gray-400">
-                                  Start applying to jobs to see your funnel take shape!
-                                </p>
-                              )}
-                              
-                              {applications > 0 && interviews === 0 && (
-                                <>
-                                  <p className="flex items-start gap-2">
-                                    <span className="text-orange-600 dark:text-orange-400">•</span>
-                                    <span><strong>Top-of-funnel issue:</strong> {applications} applications but no interviews yet. This suggests a resume/application optimization opportunity.</span>
-                                  </p>
-                                  <p className="flex items-start gap-2 ml-5 text-gray-600 dark:text-gray-400">
-                                    Consider: Tailoring your resume to job descriptions, using relevant keywords, and ensuring ATS compatibility.
-                                  </p>
-                                </>
-                              )}
-                              
-                              {applications > 0 && interviews > 0 && appToInterview < 10 && (
-                                <>
-                                  <p className="flex items-start gap-2">
-                                    <span className="text-red-600 dark:text-red-400">•</span>
-                                    <span><strong>Low application-to-interview rate ({appToInterview}%):</strong> Many job searches land in the ~10–20% range, but it varies by role and market. Your application materials may need refinement.</span>
-                                  </p>
-                                  <p className="flex items-start gap-2 ml-5 text-gray-600 dark:text-gray-400">
-                                    Focus: Resume optimization, targeted applications, keyword matching.
-                                  </p>
-                                </>
-                              )}
-                              
-                              {appToInterview >= 10 && appToInterview < 20 && (
-                                <p className="flex items-start gap-2">
-                                  <span className="text-yellow-600 dark:text-yellow-400">•</span>
-                                  <span><strong>Average application-to-interview rate ({appToInterview}%):</strong> You're in the typical range. Small improvements to targeting could boost this further.</span>
-                                </p>
-                              )}
-                              
-                              {appToInterview >= 20 && (
-                                <p className="flex items-start gap-2">
-                                  <span className="text-green-600 dark:text-green-400">•</span>
-                                  <span><strong>Strong application-to-interview rate ({appToInterview}%):</strong> Your resume and targeting are working well! Keep this momentum.</span>
-                                </p>
-                              )}
-                              
-                              {interviews > 0 && offers === 0 && (
-                                <>
-                                  <p className="flex items-start gap-2">
-                                    <span className="text-orange-600 dark:text-orange-400">•</span>
-                                    <span><strong>Bottom-of-funnel issue:</strong> Getting interviews but no offers yet suggests interview performance opportunity.</span>
-                                  </p>
-                                  <p className="flex items-start gap-2 ml-5 text-gray-600 dark:text-gray-400">
-                                    Consider: Mock interviews, technical practice, behavioral question prep, and post-interview follow-ups.
-                                  </p>
-                                </>
-                              )}
-                              
-                              {interviews > 0 && offers > 0 && interviewToOffer < 15 && (
-                                <>
-                                  <p className="flex items-start gap-2">
-                                    <span className="text-yellow-600 dark:text-yellow-400">🟡</span>
-                                    <span><strong>Interview-to-offer rate ({interviewToOffer}%):</strong> Below typical range (15-30%). Focus on interview skills.</span>
-                                  </p>
-                                  <p className="flex items-start gap-2 ml-5 text-gray-600 dark:text-gray-400">
-                                    💡 Focus: Interview preparation, clear communication, technical skills demonstration.
-                                  </p>
-                                </>
-                              )}
-                              
-                              {interviewToOffer >= 15 && interviewToOffer < 30 && (
-                                <p className="flex items-start gap-2">
-                                  <span className="text-green-600 dark:text-green-400">✅</span>
-                                  <span><strong>Good interview-to-offer rate ({interviewToOffer}%):</strong> You're converting interviews effectively. Keep practicing!</span>
-                                </p>
-                              )}
-                              
-                              {interviewToOffer >= 30 && (
-                                <p className="flex items-start gap-2">
-                                  <span className="text-green-600 dark:text-green-400">🎉</span>
-                                  <span><strong>Excellent interview-to-offer rate ({interviewToOffer}%):</strong> You're closing interviews at a strong rate!</span>
-                                </p>
-                              )}
-                              
-                              {offers > 0 && (
-                                <p className="flex items-start gap-2">
-                                  <span className="text-purple-600 dark:text-purple-400">🎊</span>
-                                  <span><strong>Overall success rate: {overallConversion}%</strong> — You've turned {offers} of {applications} applications into offers. Great work!</span>
-                                </p>
-                              )}
+                              <p>{applications} applications, {interviews} interview records, and {offers} offers are visible in this view.</p>
+                              <p>Recent applications may still be waiting for a response. Messages without a linked application and outcomes shared outside email can leave gaps.</p>
+                              <p>These counts alone do not show whether your résumé or interview performance needs work. Review the application history before changing your approach.</p>
                             </div>
                           </div>
                         </>
@@ -2411,44 +2323,15 @@ function Dashboard({
                       return (
                         <div className="space-y-4">
                           {patterns.map((pattern) => {
-                            // Generate pattern observations
-                            let patternObservation = '';
-                            let alternativeExplanations = [];
-                            
-                            if (pattern.interviewRate > 100) {
-                              patternObservation = `High interview activity (${pattern.interviewRate}% rate = multiple rounds per application), but ${pattern.offers === 0 ? 'no offers yet' : `only ${pattern.offerRate}% offer rate`}`;
-                              alternativeExplanations = [
-                                'Getting past initial screening successfully',
-                                'May need to improve technical interview performance',
-                                'Could be targeting roles slightly above current skill level',
-                                'Sample too small to distinguish from random variation'
-                              ];
-                            } else if (pattern.interviewRate >= 20) {
-                              patternObservation = `Good initial screening (${pattern.interviewRate}% interview rate)${pattern.offers === 0 ? ', but no offers yet' : `, ${pattern.offerRate}% offer rate`}`;
-                              alternativeExplanations = [
-                                'Resume effectively signals fit for these roles',
-                                'Application materials align with job requirements',
-                                pattern.offers === 0 ? 'May need more applications to see offer patterns' : 'Converting interviews to offers',
-                                'Could be in competitive applicant pools'
-                              ];
-                            } else if (pattern.interviewRate < 10) {
-                              patternObservation = `Low interview rate (${pattern.interviewRate}%)${pattern.offers > 0 ? `, but ${pattern.offers} offer(s) received` : ''}`;
-                              alternativeExplanations = [
-                                'Resume may not highlight relevant skills for these roles',
-                                'Could be applying to highly competitive positions',
-                                'Application materials might need optimization',
-                                'Sample too small to determine if pattern is real'
-                              ];
-                            } else {
-                              patternObservation = `Moderate activity: ${pattern.interviewRate}% interview rate, ${pattern.offerRate}% offer rate`;
-                              alternativeExplanations = [
-                                'Standard response rate for this role type',
-                                'Need more data to identify clear patterns',
-                                'Results consistent with competitive job market',
-                                'May see clearer trends with more applications'
-                              ];
-                            }
-                            
+                            // Activity rates are descriptive, not a hiring benchmark or a diagnosis.
+                            const patternObservation = 'Recorded activity for this group of roles';
+                            const alternativeExplanations = [
+                              'Check that related emails are linked to the same application.',
+                              'Recent applications may not have an outcome yet.',
+                              'Outcomes shared by phone or outside Gmail may be missing.',
+                              'These records alone cannot explain an employer’s decision.'
+                            ];
+
                             return (
                               <div key={pattern.category} className="p-4 border border-gray-200 dark:border-zinc-600 rounded-lg bg-white dark:bg-zinc-800">
                                 <div className="flex items-start justify-between mb-3">

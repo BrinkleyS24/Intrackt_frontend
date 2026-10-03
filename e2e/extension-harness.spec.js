@@ -81,6 +81,17 @@ test('allows a mocked login transition from logged-out into the free inbox', asy
   await page.close();
 });
 
+test('makes an unlinked outcome visible without pretending the history is complete', async () => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'unlinked-outcome');
+  await frame.getByTestId('main-tab-rejected').click();
+  await frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'River Finance' }).first().click();
+  await expect(frame.getByTestId('application-link-warning')).toContainText('not linked to an application');
+  await frame.getByRole('button', { name: 'Review company and role' }).click();
+  await expect(frame.getByTestId('email-preview-details')).toBeVisible();
+  await page.close();
+});
+
 test('renders the free-plan inbox and opens a thread preview', async ({}, testInfo) => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'free-rich');

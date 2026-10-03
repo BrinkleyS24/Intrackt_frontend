@@ -384,6 +384,10 @@ export default function EmailPreview({
   const [lifecycle, setLifecycle] = useState(null);
   const [applicationSummary, setApplicationSummary] = useState(null);
   const [loadingLifecycle, setLoadingLifecycle] = useState(false);
+  const [lifecycleError, setLifecycleError] = useState(false);
+  const linkingRef = React.useRef(false);
+  const activeEmailRef = React.useRef(email?.id);
+  activeEmailRef.current = email?.id;
   const [closingApplication, setClosingApplication] = useState(false);
   const [reopeningApplication, setReopeningApplication] = useState(false);
   const [showClosePanel, setShowClosePanel] = useState(false);
@@ -448,11 +452,18 @@ export default function EmailPreview({
       if (isCurrent()) {
         setLifecycle(null);
         setApplicationSummary(null);
+        setLifecycleError(false);
+        setLoadingLifecycle(false);
       }
       return { success: false, skipped: true };
     }
 
-    if (isCurrent()) setLoadingLifecycle(true);
+    if (isCurrent()) {
+      setLoadingLifecycle(true);
+      setLifecycleError(false);
+      setLifecycle(null);
+      setApplicationSummary(null);
+    }
     try {
       const response = await sendMessageToBackground({
         type: 'FETCH_APPLICATION_LIFECYCLE',
@@ -468,6 +479,7 @@ export default function EmailPreview({
       } else {
         setLifecycle(null);
         setApplicationSummary(null);
+        setLifecycleError(true);
       }
 
       return response;
@@ -478,6 +490,7 @@ export default function EmailPreview({
       if (isCurrent()) {
         setLifecycle(null);
         setApplicationSummary(null);
+        setLifecycleError(true);
       }
       console.warn(
         `[EmailPreview] Lifecycle fetch failed for application ${applicationId}; showing local stages.`,
@@ -495,6 +508,7 @@ export default function EmailPreview({
 
   useEffect(() => {
     loadLifecycle(email?.applicationId, email?.id);
+    return () => { latestLifecycleRequestRef.current += 1; };
   }, [email?.applicationId, email?.id, loadLifecycle]);
 
   const rawJourneyData = useMemo(() => {
@@ -687,26 +701,36 @@ export default function EmailPreview({
   };
 
   const handleLinkAcrossCategories = async () => {
+    if (linkingRef.current) return;
     if (!email?.id) {
       showNotification('Cannot link: missing email id', 'error');
       return;
     }
+    const ownerEmailId = email.id;
+    linkingRef.current = true;
     try {
       setLoadingLifecycle(true);
       const resp = await sendMessageToBackground({ type: 'LINK_APPLICATION_ROLE', emailId: email.id });
-      if (resp?.success) {
-        const linkedApplicationId = email?.applicationId || resp?.applicationId || resp?.linkedApplicationId;
+      if (activeEmailRef.current !== ownerEmailId) return;
+      if (resp?.success && !(Number(resp.failed) > 0) && Number(resp.relinked) > 0) {
+        const linkedApplicationId = resp?.applicationId || resp?.linkedApplicationId || email?.applicationId;
         if (linkedApplicationId) {
-          await loadLifecycle(linkedApplicationId, email?.id);
+          const refreshed = await loadLifecycle(linkedApplicationId, email?.id);
+          if (activeEmailRef.current !== ownerEmailId) return;
+          if (!refreshed?.success) {
+            showNotification('Links updated, but the history could not load. Retry to check the result.', 'error');
+            return;
+          }
         }
         showNotification('Linking complete. Refreshing...', 'success');
       } else {
-        showNotification(resp?.error || 'Failed to link across categories', 'error');
+        showNotification(resp?.error || 'Some application links could not be confirmed. Review the company and role, then retry.', 'error');
       }
     } catch (err) {
-      showNotification(err?.message || 'Failed to link across categories', 'error');
+      if (activeEmailRef.current === ownerEmailId) showNotification(err?.message || 'Failed to link across categories', 'error');
     } finally {
-      setLoadingLifecycle(false);
+      linkingRef.current = false;
+      if (activeEmailRef.current === ownerEmailId) setLoadingLifecycle(false);
     }
   };
 
@@ -897,6 +921,22 @@ export default function EmailPreview({
             </p>
           ) : null}
         </div>
+
+        {['applied', 'interviewed', 'offers', 'closed'].includes(presentationStatusKey) && !loadingLifecycle && (
+          lifecycleError ? (
+            <div role="alert" className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-xs text-foreground">
+              The application history could not load. The messages below may show only part of this application.
+              <InlineButton variant="outline" className="mt-2" onClick={() => loadLifecycle(email?.applicationId, email?.id)}>Retry history</InlineButton>
+            </div>
+          ) : !email?.applicationId && !applicationSummary?.id ? (
+            <div data-testid="application-link-warning" className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-xs text-foreground">
+              This email is not linked to an application. Related interview, offer, or rejection messages may be missing from this history.
+              {(onUpdateCompanyName || onUpdatePosition) ? (
+                <InlineButton variant="outline" className="mt-2" onClick={() => setShowDetails(true)}>Review company and role</InlineButton>
+              ) : null}
+            </div>
+          ) : null
+        )}
 
         {email?.applicationId && !isEffectivelyClosed && typeof staleDays === 'number' && staleDays >= 60 && (
           <div className="flex items-center justify-between gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs text-foreground">
