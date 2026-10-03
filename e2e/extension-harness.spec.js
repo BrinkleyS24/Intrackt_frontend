@@ -403,3 +403,28 @@ test('a free user without enough data sees honest progress instead of a blur', a
   await expect(frame.getByTestId('apply-gate-check')).toHaveCount(0);
   await page.close();
 });
+
+test('off a job page, a user with no résumé is told Apply Gate needs one, and can wave it off', async () => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'empty-inbox');
+
+  const nudge = frame.getByTestId('apply-gate-resume-nudge');
+  await expect(nudge).toContainText('Add your résumé so Apply Gate can check jobs.');
+  await expect(frame.getByTestId('apply-gate-resume-nudge-add')).toBeVisible();
+  // Not on a posting, so there is no check to offer.
+  await expect(frame.getByTestId('apply-gate-check')).toHaveCount(0);
+
+  await frame.getByTestId('apply-gate-resume-nudge-dismiss').click();
+  await expect(nudge).toHaveCount(0);
+  const reopened = await activateScenario(page, 'empty-inbox');
+  await expect(reopened.getByTestId('apply-gate-resume-nudge')).toHaveCount(0);
+  await page.close();
+});
+
+test('a user who already has a résumé never sees the résumé nudge', async () => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'sync-stuck');
+  await expect(frame.getByTestId('sync-stuck-warning').or(frame.locator('body'))).toBeVisible();
+  await expect(frame.getByTestId('apply-gate-resume-nudge')).toHaveCount(0);
+  await page.close();
+});

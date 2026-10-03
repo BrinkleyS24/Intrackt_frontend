@@ -727,6 +727,8 @@ const SCENARIOS = {
     id: 'empty-inbox',
     label: 'Empty Inbox',
     description: 'Logged-in state with no tracked applications yet.',
+    // A brand-new user has not added a résumé either.
+    resumeSelection: { resumeDocument: null, selectionRequired: false },
     auth: {
       email: 'qa.empty@applendium.dev',
       name: 'Empty Inbox QA',

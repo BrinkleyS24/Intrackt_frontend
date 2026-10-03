@@ -48,7 +48,19 @@ export function useApplyGateCheck(enabled, { premium = false, accountId = null }
       }
       if (cancelled) return;
       if (!posting?.looksLikeJob || !(posting.description || posting.title)) {
-        setState(HIDDEN);
+        // Off a job page the only useful thing to say is that Apply Gate has no résumé to
+        // check against — otherwise users find out only once they open a posting.
+        try {
+          const context = await sendMessageToBackground({ type: 'APPLY_GATE_CONTEXT', url: '' });
+          if (cancelled || context?.accountId !== activeAccount.current) return;
+          if (context?.selection && !context.selection.resumeDocument) {
+            setState({ ...HIDDEN, phase: 'nudge', selection: context.selection });
+            return;
+          }
+        } catch (_) {
+          // A failed lookup is not evidence of a missing résumé; stay quiet.
+        }
+        if (!cancelled) setState(HIDDEN);
         return;
       }
       let context;

@@ -2031,8 +2031,12 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
     case 'APPLY_GATE_CONTEXT': {
       const scenario = getExtensionTestScenario(testingState.state?.scenarioId);
       const stored = await chrome.storage.local.get(['userId']);
-      const resumeDocument = scenario?.applyGate?.selection?.resumeDocument
-        || (scenario?.applyGate ? { variantId: '00000000-0000-4000-8000-000000000001', source: 'default', name: 'QA résumé', fingerprint: 'abc123def456', characters: 2400 } : null);
+      // Every scenario has a default résumé unless it says otherwise (resumeSelection), so the
+      // off-job-page résumé nudge only appears where a test asks for it.
+      const resumeDocument = scenario && 'resumeSelection' in scenario
+        ? scenario.resumeSelection?.resumeDocument || null
+        : scenario?.applyGate?.selection?.resumeDocument
+          || { variantId: '00000000-0000-4000-8000-000000000001', source: 'default', name: 'QA résumé', fingerprint: 'abc123def456', characters: 2400 };
       sendResponse({ success: true, accountId: stored.userId, selection: { resumeDocument }, cached: null });
       return true;
     }

@@ -420,7 +420,11 @@ function EmailList({
       {renderHeader()}
 
       {filteredThreadGroups.length === 0 ? (
-        renderEmptyState()
+        <>
+          {/* A brand-new user has no rows yet but still needs Apply Gate on the job they are viewing. */}
+          {headerSlot ? <div className="px-3 pt-3">{headerSlot}</div> : null}
+          {renderEmptyState()}
+        </>
       ) : (
         <div className="flex-1 overflow-y-auto popup-scrollbar px-3 py-3">
           {/* Scrolls with the rows rather than pinning: it is seen on open and then gets out of

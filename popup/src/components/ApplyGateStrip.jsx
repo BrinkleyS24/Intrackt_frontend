@@ -22,7 +22,45 @@ function roleLine(posting) {
   return [posting?.title, posting?.company].filter(Boolean).join(' · ');
 }
 
-const PRIMARY_BUTTON = 'shrink-0 rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90';
+const NUDGE_DISMISS_KEY = 'applendium.resumeNudgeDismissedAt';
+const NUDGE_QUIET_MS = 14 * 24 * 60 * 60 * 1000;
+
+function readNudgeDismissed() {
+  try {
+    const at = Number(window.localStorage.getItem(NUDGE_DISMISS_KEY));
+    return Number.isFinite(at) && at > 0 && Date.now() - at < NUDGE_QUIET_MS;
+  } catch (_) {
+    return false;
+  }
+}
+
+/** One line for users with no résumé, shown when the popup is not on a job page. */
+function ResumeNudge({ selection, onOpenWebPath }) {
+  const [dismissed, setDismissed] = React.useState(readNudgeDismissed);
+  if (dismissed) return null;
+  const needsChoice = Boolean(selection?.selectionRequired);
+  const dismiss = () => {
+    try { window.localStorage.setItem(NUDGE_DISMISS_KEY, String(Date.now())); } catch (_) { /* hide for this visit only */ }
+    setDismissed(true);
+  };
+  return (
+    <div data-testid="apply-gate-resume-nudge" className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-accent/25 bg-accent/5 px-3 py-2">
+      <span className="min-w-0 text-[11px] leading-4 text-foreground">
+        {needsChoice ? 'Choose a default résumé so Apply Gate can check jobs.' : 'Add your résumé so Apply Gate can check jobs.'}
+      </span>
+      <span className="flex shrink-0 items-center gap-2">
+        <button type="button" onClick={dismiss} data-testid="apply-gate-resume-nudge-dismiss" className="text-[11px] font-medium text-muted-foreground transition hover:text-foreground">
+          Not now
+        </button>
+        <button type="button" onClick={() => onOpenWebPath('/resumes')} data-testid="apply-gate-resume-nudge-add" className="text-[11px] font-semibold text-accent transition hover:text-accent/80">
+          {needsChoice ? 'Choose →' : 'Add →'}
+        </button>
+      </span>
+    </div>
+  );
+}
+
+const PRIMARY_BUTTON ='shrink-0 rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90';
 
 /**
  * Apply Gate on the posting in the current tab. Same slot and size as the free SearchReadStrip: one
@@ -33,6 +71,7 @@ const PRIMARY_BUTTON = 'shrink-0 rounded-lg bg-accent px-2.5 py-1 text-[11px] fo
 export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage }) {
   const { phase, posting, summary, error, recorded, recording, premium, allowance, selection, stale } = check;
   if (phase === 'hidden') return null;
+  if (phase === 'nudge') return <ResumeNudge selection={selection} onOpenWebPath={onOpenWebPath} />;
 
   const shell = 'mb-2 rounded-xl border border-accent/25 bg-accent/5 px-3 py-2.5';
   const nextFree = describeNextFreeCheck(allowance?.nextAvailableAt);
