@@ -765,6 +765,20 @@ SCENARIOS['unlinked-outcome'] = {
   },
 };
 
+// The free inbox, with its older history stuck: the import failed every attempt and is
+// waiting a week for its next round. Not on a job page, so Apply Gate stays out of the way.
+SCENARIOS['history-import-retrying'] = {
+  ...deepClone(SCENARIOS['free-rich']),
+  id: 'history-import-retrying',
+  label: 'History Import Retrying',
+  description: 'Free inbox whose older-history import failed and will retry on a set date.',
+  applyGate: undefined,
+  dataCompleteness: {
+    ...deepClone(SCENARIOS['free-rich'].dataCompleteness),
+    historyImport: { state: 'retrying', nextRetryAt: '2026-10-10T12:00:00.000Z' },
+  },
+};
+
 export const DEFAULT_EXTENSION_TEST_SCENARIO_ID = 'free-rich';
 
 export function listExtensionTestScenarios() {

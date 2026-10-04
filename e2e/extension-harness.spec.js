@@ -428,3 +428,17 @@ test('a user who already has a résumé never sees the résumé nudge', async ()
   await expect(frame.getByTestId('apply-gate-resume-nudge')).toHaveCount(0);
   await page.close();
 });
+
+test('a stalled history import says older applications may be missing and when the next try is', async () => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'history-import-retrying');
+
+  const gap = frame.getByTestId('history-import-gap');
+  await gap.scrollIntoViewIfNeeded();
+  await expect(gap).toContainText('earlier applications may be missing');
+  await expect(gap).toContainText("We'll try again automatically on Oct 10, 2026");
+  // The plan-window sentence is replaced, not stacked under it.
+  await expect(frame.getByTestId('history-coverage-note')).not.toContainText('your plan imports the last');
+  await page.close();
+});
+

@@ -58,6 +58,28 @@ function formatImportStart(isoDate) {
   return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/**
+ * When older history is not fully in, say that instead of the plan boundary — otherwise the
+ * missing months read as "the tracker missed them". The backend decides the state
+ * (describeHistoryImport); nothing is shown for an older backend that does not send it.
+ */
+function describeImportGap(historyImport) {
+  const state = historyImport?.state;
+  if (state === 'importing') {
+    return 'Still importing your older email. Earlier applications will appear over the next few hours.';
+  }
+  if (state === 'retrying') {
+    const next = formatImportStart(historyImport?.nextRetryAt);
+    return next
+      ? `Importing your older email hit a problem, so earlier applications may be missing. We'll try again automatically on ${next}.`
+      : "Importing your older email hit a problem, so earlier applications may be missing. We'll try again automatically tonight.";
+  }
+  if (state === 'stopped') {
+    return "We couldn't import your older email, so earlier applications may be missing. We've been alerted and are looking into it.";
+  }
+  return null;
+}
+
 function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
   // undefined = still reading storage; render nothing rather than flash the note.
   const [dismissedFor, setDismissedFor] = useState(undefined);
@@ -69,7 +91,12 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
 
   const windowDays = Number(coverage?.historyWindowDays);
   if (!Number.isFinite(windowDays) || windowDays <= 0) return null;
-  const noteKey = `${userPlan || 'free'}:${windowDays}`;
+  const importGap = describeImportGap(coverage?.historyImport);
+  // An import notice has its own key, per state and date, so hiding the plan note never hides
+  // it and a change (retrying -> stopped) shows again even after the last one was hidden.
+  const noteKey = importGap
+    ? `import:${coverage.historyImport.state}:${coverage.historyImport.nextRetryAt || ''}`
+    : `${userPlan || 'free'}:${windowDays}`;
   if (dismissedFor === undefined || dismissedFor === noteKey) return null;
 
   // Mid-import the list is short for a completely different reason. Asserting a history
@@ -95,6 +122,7 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
     >
       <History className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       <div className="text-[11px] leading-4 text-muted-foreground">
+        {importGap ? <span data-testid="history-import-gap">{importGap}</span> : (<>
         <span>
           {importStart
             ? `Tracking your email from ${importStart} — your plan imports the last ${windowDays} days.`
@@ -114,6 +142,7 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
             <span>.</span>
           </>
         )}
+        </>)}
       </div>
       <button
         type="button"
