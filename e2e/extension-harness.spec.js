@@ -60,6 +60,96 @@ test.afterAll(async () => {
   await context?.close();
 });
 
+async function prepareManualForm(page) {
+  const frame=await activateScenario(page,'free-rich');
+  await page.evaluate(async()=>{const {userId}=await chrome.storage.local.get('userId');await chrome.storage.local.remove(`manualApplicationDraft:${userId}`);});
+  await frame.getByTestId('add-application-button').click();
+  await expect(frame.getByTestId('manual-application-form')).toBeVisible();
+  await expect(frame.getByLabel('Company',{exact:true})).toBeEnabled();
+  await frame.getByLabel('Company',{exact:true}).fill('Cedar Research');
+  await frame.getByLabel('Role',{exact:true}).fill('Research Assistant');
+  return frame;
+}
+
+test('tracks an application without an email and safely removes a mistaken manual entry',async()=>{
+  const page=await openLabPage();const frame=await prepareManualForm(page);
+  await frame.getByRole('button',{name:'Save application',exact:true}).click();
+  const card=frame.getByTestId('manual-application-card').filter({hasText:'Cedar Research'});
+  await expect(card).toBeVisible();await expect(card).toContainText('Added by you');
+  await expect(card).toContainText('Waiting for a matching email');
+  await frame.getByTestId('main-tab-applied').click();await expect(card).toBeVisible();
+  await card.getByRole('button',{name:'Remove entry'}).click();await card.getByRole('button',{name:'Confirm removal'}).click();
+  await expect(card).toHaveCount(0);await page.close();
+});
+
+test('reopens an unconfirmed save and retries the same intent without a second application',async()=>{
+  const page=await openLabPage();let frame=await prepareManualForm(page);
+  await page.evaluate(async()=>{const key='applendiumExtensionTestStateV1';const data=await chrome.storage.local.get(key);await chrome.storage.local.set({[key]:{...data[key],simulatedFailures:{manualSave:'lose_response'}}});});
+  await frame.getByRole('button',{name:'Save application',exact:true}).click();
+  await expect(frame.getByRole('button',{name:'Retry save safely'})).toBeVisible();
+  await expect(frame.getByLabel('Company',{exact:true})).toBeDisabled();
+  const before=await page.evaluate(async()=>{const {userId}=await chrome.storage.local.get('userId');const key=`manualApplicationDraft:${userId}`;return (await chrome.storage.local.get(key))[key].requestId;});
+  await frame.getByRole('button',{name:'Back',exact:true}).click();await frame.getByTestId('add-application-button').click();
+  await expect(frame.getByRole('button',{name:'Retry save safely'})).toBeEnabled();
+  await frame.getByRole('button',{name:'Retry save safely'}).click();
+  await expect(frame.getByTestId('manual-application-card').filter({hasText:'Cedar Research'})).toHaveCount(1);
+  const receipts=await page.evaluate(async()=>{const data=await chrome.storage.local.get('applendiumExtensionTestStateV1');return data.applendiumExtensionTestStateV1.manualReceipts;});
+  expect(Object.keys(receipts)).toEqual([before]);await page.close();
+});
+
+test('warns about a duplicate and requires an explicit separate-application choice',async()=>{
+  const page=await openLabPage();const frame=await prepareManualForm(page);
+  await frame.getByRole('button',{name:'Save application',exact:true}).click();
+  await expect(frame.getByTestId('manual-application-card')).toHaveCount(1);
+  await frame.getByTestId('add-application-button').click();
+  await frame.getByLabel('Company',{exact:true}).fill('Cedar Research');await frame.getByLabel('Role',{exact:true}).fill('Research Assistant');
+  await frame.getByRole('button',{name:'Save application',exact:true}).click();
+  await expect(frame.getByRole('alert')).toContainText('already tracked');
+  await frame.getByLabel('This is a separate application').check();
+  await frame.getByRole('button',{name:'Save application',exact:true}).click();
+  await expect(frame.getByTestId('manual-application-card')).toHaveCount(2);await page.close();
+});
+
+test('an account change during saved-draft cleanup cannot publish the previous account result', async () => {
+  const page = await openLabPage();
+  const frame = await prepareManualForm(page);
+  const popup = page.frames().find((item) => item.url().includes('/popup/public/index.html'));
+  await popup.evaluate(() => {
+    const remove = chrome.storage.local.remove.bind(chrome.storage.local);
+    chrome.storage.local.remove = (keys) => {
+      if (!String(keys).startsWith('manualApplicationDraft:')) return remove(keys);
+      return new Promise((resolve) => {
+        window.manualCleanupPending = true;
+        window.releaseManualCleanup = async () => { await remove(keys); resolve(); };
+      });
+    };
+    const sendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
+    // The replacement account has no manual entries. Do not let the lab's
+    // single-account fixture act as another account's server response.
+    chrome.runtime.sendMessage = (message) => message.type === 'LIST_MANUAL_APPLICATIONS'
+      ? Promise.resolve({ success: true, applications: [], nextCursor: null, creationEnabled: true })
+      : sendMessage(message);
+  });
+  await frame.getByRole('button', { name: 'Save application', exact: true }).click();
+  await expect.poll(() => popup.evaluate(() => window.manualCleanupPending)).toBe(true);
+  await popup.evaluate(() => chrome.storage.local.set({ userId: 'account-after-save' }));
+  await expect(frame.getByTestId('manual-application-form')).toHaveCount(0);
+  await popup.evaluate(() => window.releaseManualCleanup());
+  await expect(frame.getByTestId('manual-application-card').filter({ hasText: 'Cedar Research' })).toHaveCount(0);
+  await expect(frame.getByText(/Application saved\./)).toHaveCount(0);
+  await page.close();
+});
+
+test('manual list failures remain visible while email tracking still renders',async()=>{
+  const page=await openLabPage();const frame=await activateScenario(page,'free-rich');
+  await page.evaluate(async()=>{const key='applendiumExtensionTestStateV1';const data=await chrome.storage.local.get(key);await chrome.storage.local.set({[key]:{...data[key],simulatedFailures:{manualList:true}}});});
+  await frame.getByTestId('refresh-button').click();
+  await expect(frame.getByTestId('manual-list-error')).toBeVisible();
+  await frame.locator('[data-testid="email-thread-card"]').first().waitFor();
+  const response=await page.evaluate(async()=>{const {userId}=await chrome.storage.local.get('userId');return chrome.runtime.sendMessage({type:'LIST_MANUAL_APPLICATIONS',ownerUid:userId});});
+  expect(response.success).toBe(false);await page.close();
+});
+
 test('allows a mocked login transition from logged-out into the free inbox', async ({}, testInfo) => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'logged-out');
@@ -439,6 +529,21 @@ test('a stalled history import says older applications may be missing and when t
   await expect(gap).toContainText("We'll try again automatically on Oct 10, 2026");
   // The plan-window sentence is replaced, not stacked under it.
   await expect(frame.getByTestId('history-coverage-note')).not.toContainText('your plan imports the last');
+  await page.close();
+});
+
+test('with manual creation switched off on the server, the popup offers no Add application button', async () => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'free-rich');
+  await expect(frame.getByTestId('add-application-button')).toBeVisible();
+  await page.evaluate(async () => {
+    const key = 'applendiumExtensionTestStateV1';
+    const data = await chrome.storage.local.get(key);
+    await chrome.storage.local.set({ [key]: { ...data[key], simulatedFailures: { manualCreationDisabled: true } } });
+  });
+  await frame.getByTestId('refresh-button').click();
+  await expect(frame.getByTestId('add-application-button')).toHaveCount(0);
+  await frame.locator('[data-testid="email-thread-card"]').first().waitFor();
   await page.close();
 });
 

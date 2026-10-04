@@ -9,6 +9,7 @@ import { cn } from '../utils/cn';
 import { formatDate, getCategoryTitle } from '../utils/uiHelpers';
 import { countUniqueThreads, getApplicationKey, groupEmailsByThread } from '../utils/grouping';
 import Pagination from './Pagination';
+import ManualApplicationCard from './ManualApplicationCard';
 import { CONFIG } from '../utils/constants';
 import {
   deriveEmailPresentationState,
@@ -432,6 +433,7 @@ function EmailList({
           {headerSlot}
           <div key={`${category}-${activeFilter}`} className="space-y-2">
             {paginatedThreadGroups.map((group, index) => {
+              if (group.manualApplication) return <ManualApplicationCard key={group.threadId} application={group.manualApplication} onRemove={group.onRemoveManual} />;
               const email = (group.latestEmail || group.earliestEmail) || {};
               const conversationPresentation = compact
                 ? deriveConversationPresentationState(group)

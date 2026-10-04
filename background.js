@@ -236,6 +236,17 @@ function validateIncomingMessage(message) {
   const normalized = { ...message, type };
 
   switch (type) {
+    case 'LIST_MANUAL_APPLICATIONS':
+    case 'CREATE_MANUAL_APPLICATION':
+    case 'REMOVE_MANUAL_APPLICATION': {
+      const ownerUid = validateOptionalString(message.ownerUid, { maxLength: 128 });
+      if (!ownerUid.valid || !ownerUid.value) return { valid: false, error: 'Reopen the popup to confirm your account.' };
+      if (type === 'CREATE_MANUAL_APPLICATION') {
+        if (!isPlainObject(message.application)) return { valid: false, error: 'Application details are required.' };
+        if (JSON.stringify(message.application).length > 6000) return { valid: false, error: 'Application details are too long.' };
+      }
+      return { valid: true, message: { ...normalized, ownerUid: ownerUid.value } };
+    }
     case 'SET_BACKEND_BASE_URL': {
       if (message.backendBaseUrl == null || message.backendBaseUrl === '') return { valid: true, message: normalized };
       const backendBaseUrl = validateOptionalString(message.backendBaseUrl, { maxLength: 500 });
@@ -2002,6 +2013,42 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
       return true;
     }
 
+    case 'LIST_MANUAL_APPLICATIONS':
+    case 'CREATE_MANUAL_APPLICATION':
+    case 'REMOVE_MANUAL_APPLICATION': {
+      const stored = await chrome.storage.local.get(['userId', EXTENSION_TEST_APPLICATIONS_KEY, EXTENSION_TEST_STATE_KEY]);
+      if (msg.ownerUid !== stored.userId) {
+        sendResponse({ success: false, code: 'account_changed', error: 'Your account changed. Reopen the popup.' });
+        return true;
+      }
+      const state = stored[EXTENSION_TEST_STATE_KEY] || {};
+      const applications = stored[EXTENSION_TEST_APPLICATIONS_KEY] || {};
+      if (msg.type === 'LIST_MANUAL_APPLICATIONS') {
+        const failed = state.simulatedFailures?.manualList;
+        sendResponse(failed ? { success: false, error: 'Added applications unavailable.' } : { success: true, creationEnabled: !state.simulatedFailures?.manualCreationDisabled, applications: Object.values(applications).filter((app) => app.application_source === 'manual'), nextCursor: null });
+        return true;
+      }
+      if (msg.type === 'REMOVE_MANUAL_APPLICATION') {
+        const app = applications[msg.applicationId];
+        if (!app || app.application_source !== 'manual') sendResponse({ success: false, error: 'Manual application not found.' });
+        else if (app.linkedEmailCount) sendResponse({ success: false, error: 'This application has linked emails.' });
+        else { delete applications[msg.applicationId]; await chrome.storage.local.set({ [EXTENSION_TEST_APPLICATIONS_KEY]: applications }); sendResponse({ success: true }); }
+        return true;
+      }
+      const input = msg.application;
+      const receipts = state.manualReceipts || {};
+      const replay = receipts[input.requestId];
+      if (replay) { sendResponse({ success: true, application: applications[replay], replayed: true }); return true; }
+      const duplicate = Object.values(applications).find((app) => app.normalized_company_name?.trim().toLowerCase() === input.company?.trim().toLowerCase() && app.position?.trim().toLowerCase() === input.position?.trim().toLowerCase());
+      if (duplicate && !input.separate) { sendResponse({ success: false, code: 'duplicate', error: 'A similar application is already tracked.', application: duplicate }); return true; }
+      const id = 900001 + Object.keys(applications).length;
+      const application = { id, normalized_company_name: input.company.trim(), position: input.position.trim(), current_status: 'applied', is_closed: false, user_closed_at: null, application_source: 'manual', manual_applied_at: `${input.appliedDate}T12:00:00Z`, first_email_date: `${input.appliedDate}T12:00:00Z`, latest_email_date: `${input.appliedDate}T12:00:00Z`, job_url: input.jobUrl || null, linkedEmailCount: 0 };
+      const lostResponse = state.simulatedFailures?.manualSave === 'lose_response';
+      receipts[input.requestId] = id;
+      await chrome.storage.local.set({ [EXTENSION_TEST_APPLICATIONS_KEY]: { ...applications, [id]: application }, [EXTENSION_TEST_STATE_KEY]: { ...state, manualReceipts: receipts, simulatedFailures: { ...state.simulatedFailures, manualSave: null } } });
+      sendResponse(lostResponse ? { success: false, code: 'unconfirmed', error: 'The save could not be confirmed.' } : { success: true, application });
+      return true;
+    }
     case 'FETCH_QUOTA_DATA': {
       const stored = await chrome.storage.local.get(['quotaData']);
       sendResponse({
@@ -4403,6 +4450,32 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
 
+      case 'LIST_MANUAL_APPLICATIONS':
+      case 'CREATE_MANUAL_APPLICATION':
+      case 'REMOVE_MANUAL_APPLICATION': {
+        if (!isExtensionPageSenderUrl(sender?.url || '')) {
+          sendResponse({ success: false, code: 'forbidden_sender', error: 'Open the extension to manage applications.' });
+          break;
+        }
+        try {
+          const creating = msg.type === 'CREATE_MANUAL_APPLICATION';
+          const removing = msg.type === 'REMOVE_MANUAL_APPLICATION';
+          if (!msg.ownerUid) throw new Error('Reopen the popup to confirm your account.');
+          if (removing && !/^[1-9]\d{0,18}$/.test(String(msg.applicationId))) throw new Error('Invalid application.');
+          const result = await apiFetch(`/api/applications/manual${removing ? `/${msg.applicationId}` : ''}`, {
+            method: removing ? 'DELETE' : creating ? 'POST' : 'GET', expectedUserId: msg.ownerUid,
+            ...(creating ? { body: msg.application } : msg.before ? { query: { before: msg.before } } : {}),
+          });
+          if ((creating || removing) && result.success) {
+            try { await refreshStoredEmailsCache(); }
+            catch { result.refreshWarning = true; }
+          }
+          sendResponse(result);
+        } catch (error) {
+          sendResponse({ ...(error.payload || {}), success: false, error: error.payload?.error || error.message, code: error.payload?.code || 'unconfirmed' });
+        }
+        break;
+      }
       case 'FETCH_APPLICATION_LIFECYCLE':
         try {
           const { applicationId, emailId } = msg;

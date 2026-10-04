@@ -31,6 +31,8 @@ import { useSearchRead } from './hooks/useSearchRead';
 import ApplyGateStrip from './components/ApplyGateStrip';
 import { useApplyGateCheck } from './hooks/useApplyGateCheck';
 import HistoryCoverageNote from './components/HistoryCoverageNote';
+import ManualApplicationForm from './components/ManualApplicationForm';
+import { useManualApplications } from './hooks/useManualApplications';
 import { AlertTriangle, ArrowLeft, CalendarDays, Check, FileDown, LogOut, RefreshCw, Search, Shield, X } from 'lucide-react';
 
 // Brand mark shared with the web app (frontend/web/public/logo-transparent.png),
@@ -264,6 +266,7 @@ function App() {
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [isMisclassificationModalOpen, setIsMisclassificationModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [showManualForm, setShowManualForm] = useState(false);
   const [emailToMisclassify, setEmailToMisclassify] = useState(null);
   const [categoryBeforePreview, setCategoryBeforePreview] = useState('all');
   const [allApplicationsFilter, setAllApplicationsFilter] = useState('all');
@@ -350,6 +353,8 @@ function App() {
     resolveReviewEmail,
     applicationCount,
   } = useEmails(userEmail, userId, CONFIG);
+  const manual = useManualApplications(userId);
+  useEffect(() => { setShowManualForm(false); }, [userId]);
 
   // Needs Review: track in-flight classifications so buttons disable during the round-trip.
   const [reviewBusyIds, setReviewBusyIds] = useState(() => new Set());
@@ -672,6 +677,8 @@ function App() {
         latest?.body,
         latest?.html_body,
         group?.preview,
+        group?.manualApplication?.normalized_company_name,
+        group?.manualApplication?.position,
       ])
         .map((value) => value.toString().toLowerCase())
         .join(' ');
@@ -714,15 +721,33 @@ function App() {
   // Applied/Interviewed. Buckets are mutually exclusive, so the counts read as a
   // funnel instead of double-counting one role across several stages.
   const pipelineRoleGroups = useMemo(
-    () =>
-      mergeGroupsByApplication(groupEmailsByThread(finalRelevantEmails), getApplicationKey).map((group) => ({
+    () => {
+      const emailGroups = mergeGroupsByApplication(groupEmailsByThread(finalRelevantEmails), getApplicationKey).map((group) => ({
         ...group,
         pipelineStatus: deriveGroupPipelineStatus(group.emails),
         // Withdrew / accepted elsewhere: keeps its stage tab but is parked under
         // that tab's Closed sub-filter and excluded from the active counts.
         closedByChoice: deriveGroupClosedByChoice(group.emails),
-      })),
-    [finalRelevantEmails]
+      }));
+      const linkedIds = new Set(finalRelevantEmails
+        .filter((email) => email.applicationId != null)
+        .map((email) => String(email.applicationId)));
+      const manualGroups = manual.applications
+        .filter((application) => !linkedIds.has(String(application.id)))
+        .map((application) => ({
+          threadId: `manual:${application.id}`,
+          manualApplication: application,
+          onRemoveManual: manual.remove,
+          date: application.latest_email_date,
+          emails: [],
+          messageCount: 0,
+          unreadCount: 0,
+          pipelineStatus: application.current_status === 'offered' ? 'offers' : application.current_status,
+          closedByChoice: Boolean(application.user_closed_at),
+        }));
+      return [...emailGroups, ...manualGroups].sort((a, b) => Date.parse(b.date || 0) - Date.parse(a.date || 0));
+    },
+    [finalRelevantEmails, manual.applications, manual.remove]
   );
 
   const pipelineBuckets = useMemo(() => {
@@ -1010,7 +1035,31 @@ function App() {
     return `${count} ${count === 1 ? 'tracked application' : 'tracked applications'}`;
   }, [allApplicationsFilter, allViewHeadlineSummary, canonicalTotal, countFilteredConversations, selectedCategory]);
 
+  // Hidden until the backend says creation is on (MANUAL_APPLICATIONS_ENABLED), so a user
+  // never fills in the form only to be told saving is unavailable.
+  const renderAddApplicationButton = () => (manual.creationEnabled ? (
+    <button
+      type="button"
+      data-testid="add-application-button"
+      aria-label="Add application"
+      title="Add an application you applied to without a confirmation email"
+      onClick={() => setShowManualForm(true)}
+      className="shrink-0 rounded-lg border border-accent/30 px-2 py-2 text-[11px] font-semibold text-accent transition hover:bg-accent/10"
+    >
+      {/* Short label: the full one squeezed the search box to "Search companie". */}
+      + Add
+    </button>
+  ) : null);
+
   const renderMainContent = () => {
+    if (showManualForm) return <ManualApplicationForm key={userId} userId={userId} onClose={() => setShowManualForm(false)} onSaved={(application, result) => {
+      manual.acceptSaved(application);
+      setShowManualForm(false);
+      showNotification(result.refreshWarning ? 'Application saved. The list refresh failed; try Refresh shortly.' : !result.draftCleared ? 'Application saved. Your saved draft remains on this device; retrying it will not add a duplicate.' : 'Application saved. Matching emails can update it later.', result.refreshWarning || !result.draftCleared ? 'warning' : 'success');
+      manual.refresh();
+      fetchStoredEmails();
+      fetchQuotaData();
+    }} />;
     if (selectedCategory === 'emailPreview') {
       return (
         <div className="popup-view-enter">
@@ -1113,28 +1162,33 @@ function App() {
             ) : null}
 
             <div className="space-y-2">
-              <ListSearchBar
-                value={listSearchQuery}
-                onChange={setListSearchQuery}
-                placeholder="Search companies, roles..."
-                trailing={
-                  <button
-                    onClick={() => setShowDateFilter((current) => !current)}
-                    title="Filter by date"
-                    aria-label="Filter by date"
-                    aria-expanded={showDateFilter}
-                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors ${
-                      dateRange !== 'all'
-                        ? 'bg-accent/15 text-accent'
-                        : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'
-                    }`}
-                    type="button"
-                  >
-                    <CalendarDays className="h-3.5 w-3.5" />
-                    {dateRange !== 'all' ? dateRange : null}
-                  </button>
-                }
-              />
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <ListSearchBar
+                    value={listSearchQuery}
+                    onChange={setListSearchQuery}
+                    placeholder="Search companies, roles..."
+                    trailing={
+                      <button
+                        onClick={() => setShowDateFilter((current) => !current)}
+                        title="Filter by date"
+                        aria-label="Filter by date"
+                        aria-expanded={showDateFilter}
+                        className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                          dateRange !== 'all'
+                            ? 'bg-accent/15 text-accent'
+                            : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'
+                        }`}
+                        type="button"
+                      >
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        {dateRange !== 'all' ? dateRange : null}
+                      </button>
+                    }
+                  />
+                </div>
+                {renderAddApplicationButton()}
+              </div>
 
               {showDateFilter && (
                 <div className="flex items-center gap-1">
@@ -1488,6 +1542,15 @@ function App() {
       )}
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden popup-scrollbar">
+        {!showManualForm && selectedCategory !== 'emailPreview' && (
+          (manual.creationEnabled && selectedCategory !== 'all' && selectedCategory !== 'home') || manual.error || manual.nextCursor
+        ) && (
+          <div className="border-b border-white/10 px-3 py-2 text-xs">
+            {selectedCategory !== 'all' && selectedCategory !== 'home' && renderAddApplicationButton()}
+            {manual.error && <p role="alert" data-testid="manual-list-error" className="mt-2 text-warning">{manual.error} <button type="button" onClick={() => manual.refresh()} className="underline">Retry</button></p>}
+            {manual.nextCursor && <button type="button" disabled={manual.loading} onClick={() => manual.refresh(manual.nextCursor)} className="ml-3 text-muted-foreground underline">Load more added applications</button>}
+          </div>
+        )}
         {renderMainContent()}
       </div>
 
