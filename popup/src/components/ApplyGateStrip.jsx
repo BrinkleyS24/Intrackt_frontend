@@ -1,6 +1,6 @@
 import React from 'react';
 import { Loader2, ScanSearch } from 'lucide-react';
-import { describeNextFreeCheck, describeRecordedAction, describeCheckedResume } from '../../../shared/applyGateCheck.js';
+import { describeNextFreeCheck, describeRecordedAction, describeCheckedResume, DECISION_QUESTION } from '../../../shared/applyGateCheck.js';
 
 const TONE_CHIP = {
   positive: 'bg-success/10 text-success',
@@ -68,7 +68,7 @@ const PRIMARY_BUTTON ='shrink-0 rounded-lg bg-accent px-2.5 py-1 text-[11px] fon
  * page would show — so deciding happens where the job is. Premium checks any posting; a free user
  * gets one check per rolling week, and the strip says so plainly before and after it is used.
  */
-export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage }) {
+export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage, onTrackApplication }) {
   const { phase, posting, summary, error, recorded, recording, premium, allowance, selection, stale } = check;
   if (phase === 'hidden') return null;
   if (phase === 'nudge') return <ResumeNudge selection={selection} onOpenWebPath={onOpenWebPath} />;
@@ -221,11 +221,32 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
       ) : null}
 
       {recorded ? (
-        <div data-testid="apply-gate-recorded" className="mt-2 text-[11px] font-medium leading-4 text-accent">
-          {describeRecordedAction(recorded)}
+        <div className="mt-2">
+          <div data-testid="apply-gate-recorded" className="text-[11px] font-medium leading-4 text-accent">
+            {describeRecordedAction(recorded)}
+          </div>
+          {/* Applying is the moment to track it: no confirmation email may ever arrive, and the
+              posting already names the company, role and link. Opens the normal Add form, so
+              the user still reviews and saves it, and duplicates are caught there. */}
+          {recorded === 'applied' && onTrackApplication ? (
+            <button
+              type="button"
+              data-testid="apply-gate-track-application"
+              onClick={() => onTrackApplication({
+                company: summary.companyName || posting?.company || '',
+                position: summary.jobTitle || posting?.title || '',
+                jobUrl: posting?.url || '',
+              })}
+              className="mt-1 text-[11px] font-semibold text-foreground underline underline-offset-2 transition hover:opacity-80"
+            >
+              Track this application →
+            </button>
+          ) : null}
         </div>
       ) : summary.id ? (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        <div className="mt-2">
+        <p data-testid="apply-gate-question" className="mb-1.5 text-[11px] leading-4 text-muted-foreground">{DECISION_QUESTION}</p>
+        <div className="flex flex-wrap items-center gap-1.5">
           {summary.actions.map((option) => (
             <button
               key={option.action}
@@ -240,6 +261,7 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
               {option.label}
             </button>
           ))}
+        </div>
         </div>
       ) : null}
       {error ? <div className="mt-1.5 text-[11px] text-destructive">{error}</div> : null}

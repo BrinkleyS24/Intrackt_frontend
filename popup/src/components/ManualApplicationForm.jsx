@@ -6,7 +6,8 @@ const localToday = () => {
 };
 const newDraft = () => ({ requestId: crypto.randomUUID(), company: '', position: '', appliedDate: localToday(), jobUrl: '', separate: false, uncertain: false });
 const fieldClass = 'mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground';
-export default function ManualApplicationForm({ userId, onSaved, onClose }) {
+const clip = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
+export default function ManualApplicationForm({ userId, onSaved, onClose, initialValues = null }) {
   const [draft, setDraft] = useState(newDraft);
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -17,12 +18,24 @@ export default function ManualApplicationForm({ userId, onSaved, onClose }) {
   const busy = useRef(false);
   const writes = useRef(Promise.resolve());
   const storageKey = `manualApplicationDraft:${userId}`;
+  // Read once: details handed over by Apply Gate's "Track this application".
+  const prefill = useRef(initialValues);
   useEffect(() => {
     mounted.current = true;
     chrome.storage.local.get(storageKey).then((saved) => {
       if (!mounted.current) return;
       const value = saved[storageKey];
-      if (value?.requestId && typeof value.company === 'string' && typeof value.position === 'string') setDraft(value);
+      const hasSaved = Boolean(value?.requestId && typeof value.company === 'string' && typeof value.position === 'string');
+      const given = prefill.current;
+      // An unconfirmed save must replay with its exact details, or a retry could add the same
+      // application twice; it wins over a prefill. Any other leftover draft yields to the
+      // posting the user just chose to track.
+      if (hasSaved && (value.uncertain || !given)) setDraft(value);
+      else if (given) {
+        const next = { ...newDraft(), company: clip(given.company, 200), position: clip(given.position, 200), jobUrl: clip(given.jobUrl, 2048) };
+        setDraft(next);
+        persist(next).catch(() => {});
+      }
       setReady(true);
     }).catch(() => { if (mounted.current) setError('Your saved draft could not be loaded. Reopen this form before saving.'); });
     return () => { mounted.current = false; };

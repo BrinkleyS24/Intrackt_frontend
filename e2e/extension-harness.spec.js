@@ -390,11 +390,35 @@ test('premium members check the job they are looking at and decide from the popu
   await expect(strip).toContainText('Checked against the default résumé at the time');
   await page.screenshot({ path: testInfo.outputPath('lab-apply-gate-verdict.png'), fullPage: true });
 
-  // Same buttons as the web page, and the choice is recorded.
-  await expect(frame.getByTestId('apply-gate-action-fixed')).toHaveText("I'll fix first");
+  // Same buttons as the web page, asked as a question, and the choice is recorded.
+  await expect(frame.getByTestId('apply-gate-question')).toContainText('Are you applying?');
+  await expect(frame.getByTestId('apply-gate-action-fixed')).toHaveText('Fixing résumé first');
   await frame.getByTestId('apply-gate-action-fixed').click();
-  await expect(frame.getByTestId('apply-gate-recorded')).toContainText('fixing first');
+  await expect(frame.getByTestId('apply-gate-recorded')).toContainText('fixing your résumé first');
+  // Only "I'm applying" offers to track the application.
+  await expect(frame.getByTestId('apply-gate-track-application')).toHaveCount(0);
 
+  await page.close();
+});
+
+test(`answering "I'm applying" offers to track it, prefilled from the posting`, async () => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'premium-rich');
+  await page.evaluate(async () => { const { userId } = await chrome.storage.local.get('userId'); await chrome.storage.local.remove(`manualApplicationDraft:${userId}`); });
+  await frame.getByTestId('apply-gate-check').click();
+  await expect(frame.getByTestId('apply-gate-action-applied')).toHaveText('Applying anyway');
+  await frame.getByTestId('apply-gate-action-applied').click();
+  await expect(frame.getByTestId('apply-gate-recorded')).toContainText("you're applying");
+
+  await frame.getByTestId('apply-gate-track-application').click();
+  await expect(frame.getByTestId('manual-application-form')).toBeVisible();
+  await expect(frame.getByLabel('Company', { exact: true })).toHaveValue('Signal Labs');
+  await expect(frame.getByLabel('Role', { exact: true })).toHaveValue('Senior QA Automation Engineer');
+  await expect(frame.getByLabel('Posting link (optional)', { exact: true })).toHaveValue('https://boards.greenhouse.io/signallabs/jobs/4242');
+  // Still the normal form: the user saves it, nothing is added behind their back.
+  await frame.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(frame.getByTestId('manual-application-form')).toHaveCount(0);
+  // "+ Add" afterwards starts from the posting draft that was kept, not a stale one.
   await page.close();
 });
 

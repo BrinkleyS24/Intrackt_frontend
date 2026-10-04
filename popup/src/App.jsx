@@ -267,6 +267,8 @@ function App() {
   const [isMisclassificationModalOpen, setIsMisclassificationModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
+  // Details handed over by Apply Gate's "Track this application" (company, role, posting link).
+  const [manualPrefill, setManualPrefill] = useState(null);
   const [emailToMisclassify, setEmailToMisclassify] = useState(null);
   const [categoryBeforePreview, setCategoryBeforePreview] = useState('all');
   const [allApplicationsFilter, setAllApplicationsFilter] = useState('all');
@@ -354,7 +356,8 @@ function App() {
     applicationCount,
   } = useEmails(userEmail, userId, CONFIG);
   const manual = useManualApplications(userId);
-  useEffect(() => { setShowManualForm(false); }, [userId]);
+  useEffect(() => { setShowManualForm(false); setManualPrefill(null); }, [userId]);
+  const closeManualForm = useCallback(() => { setShowManualForm(false); setManualPrefill(null); }, []);
 
   // Needs Review: track in-flight classifications so buttons disable during the round-trip.
   const [reviewBusyIds, setReviewBusyIds] = useState(() => new Set());
@@ -1043,7 +1046,7 @@ function App() {
       data-testid="add-application-button"
       aria-label="Add application"
       title="Add an application you applied to without a confirmation email"
-      onClick={() => setShowManualForm(true)}
+      onClick={() => { setManualPrefill(null); setShowManualForm(true); }}
       className="shrink-0 rounded-lg border border-accent/30 px-2 py-2 text-[11px] font-semibold text-accent transition hover:bg-accent/10"
     >
       {/* Short label: the full one squeezed the search box to "Search companie". */}
@@ -1052,9 +1055,9 @@ function App() {
   ) : null);
 
   const renderMainContent = () => {
-    if (showManualForm) return <ManualApplicationForm key={userId} userId={userId} onClose={() => setShowManualForm(false)} onSaved={(application, result) => {
+    if (showManualForm) return <ManualApplicationForm key={userId} userId={userId} initialValues={manualPrefill} onClose={closeManualForm} onSaved={(application, result) => {
       manual.acceptSaved(application);
-      setShowManualForm(false);
+      closeManualForm();
       showNotification(result.refreshWarning ? 'Application saved. The list refresh failed; try Refresh shortly.' : !result.draftCleared ? 'Application saved. Your saved draft remains on this device; retrying it will not add a duplicate.' : 'Application saved. Matching emails can update it later.', result.refreshWarning || !result.draftCleared ? 'warning' : 'success');
       manual.refresh();
       fetchStoredEmails();
@@ -1254,7 +1257,12 @@ function App() {
             newSinceTimestamp={newSinceTimestamp}
             headerSlot={
               <>
-                <ApplyGateStrip check={applyGateCheck} onOpenWebPath={openWebAppPath} onOpenPremiumPage={openPremiumStatusPage} />
+                <ApplyGateStrip
+                  check={applyGateCheck}
+                  onOpenWebPath={openWebAppPath}
+                  onOpenPremiumPage={openPremiumStatusPage}
+                  onTrackApplication={manual.creationEnabled ? (prefill) => { setManualPrefill(prefill); setShowManualForm(true); } : undefined}
+                />
                 <SearchReadStrip read={searchRead.read} onOpenPremiumPage={openPremiumStatusPage} />
               </>
             }

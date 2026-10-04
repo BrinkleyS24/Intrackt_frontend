@@ -16,6 +16,7 @@ const source = readFileSync(join(here, 'applyGateCheck.js'), 'utf8');
 const {
   summarizeApplyGateResult,
   describeRecordedAction,
+  DECISION_QUESTION,
   samePostingUrl,
   describeNextFreeCheck,
   describeCheckedResume,
@@ -42,12 +43,12 @@ test('the popup shows the same call and buttons the web page shows', () => {
   assert.equal(summary.decision.label, 'Fix first');
   assert.equal(summary.headline, 'Headline for FIX_THEN_APPLY');
   assert.equal(summary.subtext, 'Why, in one line.');
-  assert.deepEqual(summary.actions.map((a) => a.label), ["I'll fix first", 'Apply anyway', 'Skip role']);
+  assert.deepEqual(summary.actions.map((a) => a.label), ['Fixing résumé first', 'Applying anyway', 'Not applying']);
   assert.equal(summary.reasons.length, 3, 'a popup holds three reasons, not a wall');
   assert.equal(summary.usedDefaultResume, true);
 
-  assert.deepEqual(summarizeApplyGateResult(displayResult('SKIP')).actions.map((a) => a.label), ['Skip this role', 'Apply anyway']);
-  assert.deepEqual(summarizeApplyGateResult(displayResult('APPLY')).actions.map((a) => a.label), ['Apply now', 'Skip anyway']);
+  assert.deepEqual(summarizeApplyGateResult(displayResult('SKIP')).actions.map((a) => a.label), ['Not applying', 'Applying anyway']);
+  assert.deepEqual(summarizeApplyGateResult(displayResult('APPLY')).actions.map((a) => a.label), ["I'm applying", 'Not applying']);
 });
 
 test('a reason that repeats the subtext is not shown twice', () => {
@@ -70,7 +71,7 @@ test('no résumé means asking for one, never a made-up call', () => {
 
 test('recorded decisions say what happens next', () => {
   assert.match(describeRecordedAction('applied'), /match the reply from your inbox/);
-  assert.match(describeRecordedAction('skipped'), /skipped/);
+  assert.match(describeRecordedAction('skipped'), /not applying/);
 });
 
 test('résumé attribution comes from the recorded source, never a guessed default', () => {
@@ -140,4 +141,14 @@ test('duplicate running checks share a call, failures release the slot, accounts
   assert.equal(await first, 'done');
   await assert.rejects(run('u1/job/v1', () => { throw new Error('timeout'); }), /timeout/);
   assert.equal(await run('u1/job/v1', () => 'retry'), 'retry');
+});
+
+test('the buttons read as answers to "Are you applying?", never as commands', () => {
+  // "Apply now" on a posting read like a button that applies for you; nobody pressed it.
+  for (const key of ['APPLY', 'APPLY_WITH_STRATEGY', 'FIX_THEN_APPLY', 'SKIP']) {
+    const labels = summarizeApplyGateResult(displayResult(key)).actions.map((a) => a.label);
+    for (const label of labels) assert.doesNotMatch(label, /^(Apply now|Apply anyway|Skip)/);
+    assert.equal(labels.filter(Boolean).length, labels.length);
+  }
+  assert.match(DECISION_QUESTION, /^Are you applying\?/);
 });

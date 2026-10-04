@@ -138,24 +138,29 @@ const DECISIONS = {
 };
 
 // The same buttons, in the same order, as the web page's decisionActionsForDisplayDecision.
+// They are answers to "Are you applying?", not commands: on a posting, "Apply now" read as a
+// button that would take you to apply (or apply for you), so people used the site's own Apply
+// button instead and no decision was ever recorded (0 of 5 real checks, 2026-10-04).
+// The recommended answer comes first and is the primary one.
+export const DECISION_QUESTION = 'Are you applying? Your answer helps Apply Gate learn your search.';
 const ACTIONS = {
   apply: [
-    { action: 'applied', label: 'Apply now', primary: true },
-    { action: 'skipped', label: 'Skip anyway' },
+    { action: 'applied', label: "I'm applying", primary: true },
+    { action: 'skipped', label: 'Not applying' },
   ],
   apply_with_care: [
-    { action: 'applied', label: 'Apply, tailored', primary: true },
-    { action: 'fixed', label: 'Fix first' },
-    { action: 'skipped', label: 'Skip role' },
+    { action: 'applied', label: "I'm applying", primary: true },
+    { action: 'fixed', label: 'Fixing résumé first' },
+    { action: 'skipped', label: 'Not applying' },
   ],
   fix_first: [
-    { action: 'fixed', label: "I'll fix first", primary: true },
-    { action: 'applied', label: 'Apply anyway' },
-    { action: 'skipped', label: 'Skip role' },
+    { action: 'fixed', label: 'Fixing résumé first', primary: true },
+    { action: 'applied', label: 'Applying anyway' },
+    { action: 'skipped', label: 'Not applying' },
   ],
   skip: [
-    { action: 'skipped', label: 'Skip this role', primary: true },
-    { action: 'applied', label: 'Apply anyway' },
+    { action: 'skipped', label: 'Not applying', primary: true },
+    { action: 'applied', label: 'Applying anyway' },
   ],
 };
 
@@ -254,9 +259,9 @@ export function createCheckCoordinator() {
 
 /** What the popup says after the user records a decision. */
 export function describeRecordedAction(action) {
-  if (action === 'applied') return 'Saved: you applied. Applendium will match the reply from your inbox.';
-  if (action === 'fixed') return 'Saved: fixing first. Check it again once your résumé is updated.';
-  if (action === 'skipped') return 'Saved: skipped. It counts toward what Apply Gate learns about your search.';
+  if (action === 'applied') return "Saved: you're applying. Applendium will match the reply from your inbox.";
+  if (action === 'fixed') return 'Saved: fixing your résumé first. Check this job again once it is updated.';
+  if (action === 'skipped') return 'Saved: not applying. It counts toward what Apply Gate learns about your search.';
   return 'Saved.';
 }
 
