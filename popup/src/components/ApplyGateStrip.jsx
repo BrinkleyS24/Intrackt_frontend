@@ -34,7 +34,7 @@ function readNudgeDismissed() {
   }
 }
 
-/** One line for users with no résumé, shown when the popup is not on a job page. */
+/** One line for users with no resume, shown when the popup is not on a job page. */
 function ResumeNudge({ selection, onOpenWebPath }) {
   const [dismissed, setDismissed] = React.useState(readNudgeDismissed);
   if (dismissed) return null;
@@ -46,7 +46,7 @@ function ResumeNudge({ selection, onOpenWebPath }) {
   return (
     <div data-testid="apply-gate-resume-nudge" className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-accent/25 bg-accent/5 px-3 py-2">
       <span className="min-w-0 text-[11px] leading-4 text-foreground">
-        {needsChoice ? 'Choose a default résumé so Apply Gate can check jobs.' : 'Add your résumé so Apply Gate can check jobs.'}
+        {needsChoice ? 'Choose a default resume so Apply Gate can check jobs.' : 'Add your resume so Apply Gate can check jobs.'}
       </span>
       <span className="flex shrink-0 items-center gap-2">
         <button type="button" onClick={dismiss} data-testid="apply-gate-resume-nudge-dismiss" className="text-[11px] font-medium text-muted-foreground transition hover:text-foreground">
@@ -86,13 +86,13 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
       <div data-testid="apply-gate-strip" className={shell}>
         <Eyebrow>{premium ? 'Apply Gate · this page' : 'Apply Gate · your free check this week'}</Eyebrow>
         <div className="popup-line-clamp-2 mt-1 text-[12px] font-semibold leading-4 text-foreground">{roleLine(posting)}</div>
-        <p className="mt-1 text-[11px] text-muted-foreground">Résumé: {selection?.resumeDocument?.name || 'Your selected default'}</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">Resume: {selection?.resumeDocument?.name || 'Your selected default'}</p>
         {error ? <p role="status" className="text-[11px] text-muted-foreground">{error}</p> : null}
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className="text-[11px] leading-4 text-muted-foreground">
             {premium
-              ? 'Check it against your résumé before you spend the time.'
-              : 'One free check a week, against your résumé. Premium checks every job.'}
+              ? 'Check it against your resume before you spend the time.'
+              : 'One free check a week, against your resume. Premium checks every job.'}
           </span>
           <button type="button" onClick={check.check} data-testid="apply-gate-check" className={PRIMARY_BUTTON}>
             {premium ? 'Check this job' : 'Use my free check'}
@@ -123,7 +123,7 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
         <Eyebrow>Apply Gate · this page</Eyebrow>
         <div className="mt-1.5 flex items-center gap-2 text-[12px] font-semibold text-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-          Checking {posting?.title || 'this role'} against your résumé…
+          Checking {posting?.title || 'this role'} against your resume…
         </div>
         <div className="mt-1 text-[11px] leading-4 text-muted-foreground">
           Usually under half a minute. You can close this; the call will be here when you reopen it.
@@ -163,7 +163,7 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
     return (
       <div data-testid="apply-gate-strip" className={shell}>
         <Eyebrow>Apply Gate · this page</Eyebrow>
-        <div className="mt-1 text-[12px] font-semibold leading-4 text-foreground">{needsSelection ? 'Choose a résumé to check this role' : 'Add your résumé to check this role'}</div>
+        <div className="mt-1 text-[12px] font-semibold leading-4 text-foreground">{needsSelection ? 'Choose a resume to check this role' : 'Add your resume to check this role'}</div>
         <div className="mt-1 text-[11px] leading-4 text-muted-foreground">{summary.message}</div>
         <div className="mt-2 flex justify-end gap-2">
           <button type="button" onClick={check.check} className="text-[11px] font-medium text-muted-foreground transition hover:text-foreground">
@@ -175,7 +175,7 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
             data-testid="apply-gate-add-resume"
             className="rounded-lg bg-accent px-2.5 py-1 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
           >
-            {needsSelection ? 'Choose a résumé →' : 'Add your résumé →'}
+            {needsSelection ? 'Choose a resume →' : 'Add your resume →'}
           </button>
         </div>
       </div>
@@ -187,8 +187,8 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
   return (
     <div data-testid="apply-gate-strip" className={shell}>
       {stale ? <div role="status" className="mb-2 text-[11px] text-muted-foreground">
-        Previous check. Your default résumé has changed or is unavailable.
-        {selection?.resumeDocument?.name ? ` Current default: ${selection.resumeDocument.name}.` : ' Choose a default in Résumés.'}
+        Previous check. Your default resume has changed or is unavailable.
+        {selection?.resumeDocument?.name ? ` Current default: ${selection.resumeDocument.name}.` : ' Choose a default in Resumes.'}
         <button type="button" onClick={check.check} className="ml-2 underline">Review and re-check</button>
       </div> : null}
       <div className="flex items-center justify-between gap-2">

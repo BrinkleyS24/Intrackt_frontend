@@ -48,7 +48,7 @@ export function useApplyGateCheck(enabled, { premium = false, accountId = null }
       }
       if (cancelled) return;
       if (!posting?.looksLikeJob || !(posting.description || posting.title)) {
-        // Off a job page the only useful thing to say is that Apply Gate has no résumé to
+        // Off a job page the only useful thing to say is that Apply Gate has no resume to
         // check against — otherwise users find out only once they open a posting.
         try {
           const context = await sendMessageToBackground({ type: 'APPLY_GATE_CONTEXT', url: '' });
@@ -58,7 +58,7 @@ export function useApplyGateCheck(enabled, { premium = false, accountId = null }
             return;
           }
         } catch (_) {
-          // A failed lookup is not evidence of a missing résumé; stay quiet.
+          // A failed lookup is not evidence of a missing resume; stay quiet.
         }
         if (!cancelled) setState(HIDDEN);
         return;
@@ -81,7 +81,7 @@ export function useApplyGateCheck(enabled, { premium = false, accountId = null }
         return;
       }
       if (!selection?.resumeDocument) {
-        setState({ ...HIDDEN, phase: 'result', posting, allowance, selection, summary: { kind: selection?.selectionRequired ? 'needs_resume_selection' : 'needs_resume', message: selection?.selectionRequired ? 'Choose a readable default résumé. This check was not used.' : 'Add and choose a default résumé before checking this role.' } });
+        setState({ ...HIDDEN, phase: 'result', posting, allowance, selection, summary: { kind: selection?.selectionRequired ? 'needs_resume_selection' : 'needs_resume', message: selection?.selectionRequired ? 'Choose a readable default resume. This check was not used.' : 'Add and choose a default resume before checking this role.' } });
         return;
       }
       const usedUp = !premium && allowance && allowance.unlimited !== true && allowance.remaining === 0;
@@ -102,12 +102,12 @@ export function useApplyGateCheck(enabled, { premium = false, accountId = null }
       if (!mounted.current || generation.current !== requestGeneration || activeAccount.current !== owner || context.accountId !== owner) return;
       const doc = context.selection?.resumeDocument;
       if (!doc) {
-        setState((current) => ({ ...current, phase: 'result', selection: context.selection, summary: { kind: 'needs_resume_selection', message: 'Choose a readable default résumé. This check was not used.' } }));
+        setState((current) => ({ ...current, phase: 'result', selection: context.selection, summary: { kind: 'needs_resume_selection', message: 'Choose a readable default resume. This check was not used.' } }));
         return;
       }
       const previous = state.selection?.resumeDocument;
       if (!previous || previous.variantId !== doc.variantId || previous.fingerprint !== doc.fingerprint) {
-        setState((current) => ({ ...current, phase: 'ready', selection: context.selection, error: 'Your default changed. Review the résumé shown before checking.' }));
+        setState((current) => ({ ...current, phase: 'ready', selection: context.selection, error: 'Your default changed. Review the resume shown before checking.' }));
         return;
       }
       const response = await sendMessageToBackground({

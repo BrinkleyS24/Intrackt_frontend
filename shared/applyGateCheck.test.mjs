@@ -43,7 +43,7 @@ test('the popup shows the same call and buttons the web page shows', () => {
   assert.equal(summary.decision.label, 'Fix first');
   assert.equal(summary.headline, 'Headline for FIX_THEN_APPLY');
   assert.equal(summary.subtext, 'Why, in one line.');
-  assert.deepEqual(summary.actions.map((a) => a.label), ['Fixing résumé first', 'Applying anyway', 'Not applying']);
+  assert.deepEqual(summary.actions.map((a) => a.label), ['Fixing resume first', 'Applying anyway', 'Not applying']);
   assert.equal(summary.reasons.length, 3, 'a popup holds three reasons, not a wall');
   assert.equal(summary.usedDefaultResume, true);
 
@@ -62,9 +62,9 @@ test('an older response with no display decision falls back to the stored decisi
   assert.equal(summary.headline, 'Skip');
 });
 
-test('no résumé means asking for one, never a made-up call', () => {
-  const summary = summarizeApplyGateResult({ insufficientProfile: true, insufficientProfileMessage: 'Add your résumé first.' });
-  assert.deepEqual(summary, { kind: 'needs_resume', message: 'Add your résumé first.' });
+test('no resume means asking for one, never a made-up call', () => {
+  const summary = summarizeApplyGateResult({ insufficientProfile: true, insufficientProfileMessage: 'Add your resume first.' });
+  assert.deepEqual(summary, { kind: 'needs_resume', message: 'Add your resume first.' });
   assert.equal(summarizeApplyGateResult({ success: true, reasons: [] }).kind, 'unavailable');
   assert.equal(summarizeApplyGateResult(null), null);
 });
@@ -74,11 +74,11 @@ test('recorded decisions say what happens next', () => {
   assert.match(describeRecordedAction('skipped'), /not applying/);
 });
 
-test('résumé attribution comes from the recorded source, never a guessed default', () => {
+test('resume attribution comes from the recorded source, never a guessed default', () => {
   for (const source of ['chosen', 'legacy', 'seeded_from_legacy', null]) {
     const summary = summarizeApplyGateResult(displayResult('APPLY', { resumeDocument: { source, variantId: 'v1' } }));
     assert.equal(summary.usedDefaultResume, false);
-    assert.doesNotMatch(describeCheckedResume(summary), /default résumé/);
+    assert.doesNotMatch(describeCheckedResume(summary), /default resume/);
   }
   const stored = summarizeApplyGateResult(displayResult('APPLY', {
     resumeDocument: null,
@@ -86,14 +86,14 @@ test('résumé attribution comes from the recorded source, never a guessed defau
   }));
   assert.match(describeCheckedResume(stored), /saved on your profile/);
   assert.match(describeCheckedResume({ usedDefaultResume: true }), /not identified/);
-  assert.match(describeCheckedResume(summarizeApplyGateResult(displayResult('APPLY'))), /default résumé at the time/);
+  assert.match(describeCheckedResume(summarizeApplyGateResult(displayResult('APPLY'))), /default resume at the time/);
 });
 
 test('a missing default asks for a choice without inventing a verdict', () => {
   const summary = summarizeApplyGateResult({ insufficientProfile: true, resumeSelectionRequired: true,
-    insufficientProfileMessage: 'Choose a résumé. This check was not used.' });
+    insufficientProfileMessage: 'Choose a resume. This check was not used.' });
   assert.equal(summary.kind, 'needs_resume_selection');
-  assert.equal(summary.message, 'Choose a résumé. This check was not used.');
+  assert.equal(summary.message, 'Choose a resume. This check was not used.');
   assert.equal(summary.decision, undefined);
 });
 

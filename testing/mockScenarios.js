@@ -292,7 +292,7 @@ const SCENARIOS = {
     searchRead: {
       read: {
         kind: 'performance-rejection-velocity-auto_screen',
-        title: 'Your rejections are coming back too fast for anyone to have read the résumé',
+        title: 'Your rejections are coming back too fast for anyone to have read the resume',
         description: '6 of 8 timed rejections arrived within 3 days of applying, averaging 1.4 days. Decisions that fast are consistent with the application form filtering you out — work authorisation, location, salary, or a required-experience question — before a recruiter opens anything.',
         stat: '75% of your timed rejections arrived this way',
         timeframe: 'In the last 90 days',
@@ -535,7 +535,7 @@ const SCENARIOS = {
         jobTitle: 'Senior QA Automation Engineer',
         companyName: 'Signal Labs',
         reasons: [
-          'Your résumé shows Playwright but no CI/CD pipeline work.',
+          'Your resume shows Playwright but no CI/CD pipeline work.',
           'The role asks for 5+ years; your dated history shows 4.',
           'Core overlap: test automation, TypeScript, API testing.',
           'A fourth reason the popup should not show.',
@@ -727,7 +727,7 @@ const SCENARIOS = {
     id: 'empty-inbox',
     label: 'Empty Inbox',
     description: 'Logged-in state with no tracked applications yet.',
-    // A brand-new user has not added a résumé either.
+    // A brand-new user has not added a resume either.
     resumeSelection: { resumeDocument: null, selectionRequired: false },
     auth: {
       email: 'qa.empty@applendium.dev',

@@ -272,8 +272,8 @@ function validateIncomingMessage(message) {
       if (!isPlainObject(message.payload)) return { valid: false, error: 'Invalid Apply Gate payload.' };
       const variantId = message.payload.variantId;
       const fingerprint = message.payload.expectedResumeFingerprint;
-      if (variantId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(variantId)) return { valid: false, error: 'Invalid résumé selection.' };
-      if (fingerprint != null && !/^[a-f0-9]{12}$/.test(fingerprint)) return { valid: false, error: 'Invalid résumé version.' };
+      if (variantId != null && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(variantId)) return { valid: false, error: 'Invalid resume selection.' };
+      if (fingerprint != null && !/^[a-f0-9]{12}$/.test(fingerprint)) return { valid: false, error: 'Invalid resume version.' };
       const jobTitle = validateOptionalString(message.payload.jobTitle, { maxLength: 200, allowEmpty: true });
       const companyName = validateOptionalString(message.payload.companyName, { maxLength: 200, allowEmpty: true });
       const jobDescription = validateOptionalString(message.payload.jobDescription, { maxLength: 100000, allowEmpty: true });
@@ -2078,12 +2078,12 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
     case 'APPLY_GATE_CONTEXT': {
       const scenario = getExtensionTestScenario(testingState.state?.scenarioId);
       const stored = await chrome.storage.local.get(['userId']);
-      // Every scenario has a default résumé unless it says otherwise (resumeSelection), so the
-      // off-job-page résumé nudge only appears where a test asks for it.
+      // Every scenario has a default resume unless it says otherwise (resumeSelection), so the
+      // off-job-page resume nudge only appears where a test asks for it.
       const resumeDocument = scenario && 'resumeSelection' in scenario
         ? scenario.resumeSelection?.resumeDocument || null
         : scenario?.applyGate?.selection?.resumeDocument
-          || { variantId: '00000000-0000-4000-8000-000000000001', source: 'default', name: 'QA résumé', fingerprint: 'abc123def456', characters: 2400 };
+          || { variantId: '00000000-0000-4000-8000-000000000001', source: 'default', name: 'QA resume', fingerprint: 'abc123def456', characters: 2400 };
       sendResponse({ success: true, accountId: stored.userId, selection: { resumeDocument }, cached: null });
       return true;
     }

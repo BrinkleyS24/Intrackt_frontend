@@ -1758,7 +1758,7 @@ function Dashboard({
                             <div className="space-y-2 text-xs text-gray-700 dark:text-gray-300">
                               <p>{applications} applications, {interviews} interview records, and {offers} offers are visible in this view.</p>
                               <p>Recent applications may still be waiting for a response. Messages without a linked application and outcomes shared outside email can leave gaps.</p>
-                              <p>These counts alone do not show whether your résumé or interview performance needs work. Review the application history before changing your approach.</p>
+                              <p>These counts alone do not show whether your resume or interview performance needs work. Review the application history before changing your approach.</p>
                             </div>
                           </div>
                         </>

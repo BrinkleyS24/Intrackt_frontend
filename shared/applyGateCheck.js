@@ -150,11 +150,11 @@ const ACTIONS = {
   ],
   apply_with_care: [
     { action: 'applied', label: "I'm applying", primary: true },
-    { action: 'fixed', label: 'Fixing résumé first' },
+    { action: 'fixed', label: 'Fixing resume first' },
     { action: 'skipped', label: 'Not applying' },
   ],
   fix_first: [
-    { action: 'fixed', label: 'Fixing résumé first', primary: true },
+    { action: 'fixed', label: 'Fixing resume first', primary: true },
     { action: 'applied', label: 'Applying anyway' },
     { action: 'skipped', label: 'Not applying' },
   ],
@@ -187,7 +187,7 @@ export function summarizeApplyGateResult(result) {
     return {
       kind: result.resumeSelectionRequired ? 'needs_resume_selection' : 'needs_resume',
       message: String(result.insufficientProfileMessage || '').trim()
-        || 'Apply Gate needs your résumé to check a role against it.',
+        || 'Apply Gate needs your resume to check a role against it.',
     };
   }
   const explanation = result.explanation || {};
@@ -223,15 +223,15 @@ export function summarizeApplyGateResult(result) {
   };
 }
 
-/** Cached summaries without provenance cannot establish which résumé was used. */
+/** Cached summaries without provenance cannot establish which resume was used. */
 export function describeCheckedResume(summary) {
   if (summary?.resumeDocument?.name) return `Checked against: ${summary.resumeDocument.name}`;
   switch (summary?.resumeDocument?.source) {
-    case 'default': return 'Checked against the default résumé at the time';
-    case 'chosen': return 'Checked against your selected résumé';
+    case 'default': return 'Checked against the default resume at the time';
+    case 'chosen': return 'Checked against your selected resume';
     case 'legacy':
-    case 'seeded_from_legacy': return 'Checked against the résumé saved on your profile';
-    default: return 'Saved check · résumé not identified';
+    case 'seeded_from_legacy': return 'Checked against the resume saved on your profile';
+    default: return 'Saved check · resume not identified';
   }
 }
 
@@ -260,7 +260,7 @@ export function createCheckCoordinator() {
 /** What the popup says after the user records a decision. */
 export function describeRecordedAction(action) {
   if (action === 'applied') return "Saved: you're applying. Applendium will match the reply from your inbox.";
-  if (action === 'fixed') return 'Saved: fixing your résumé first. Check this job again once it is updated.';
+  if (action === 'fixed') return 'Saved: fixing your resume first. Check this job again once it is updated.';
   if (action === 'skipped') return 'Saved: not applying. It counts toward what Apply Gate learns about your search.';
   return 'Saved.';
 }

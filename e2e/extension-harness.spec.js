@@ -387,14 +387,14 @@ test('premium members check the job they are looking at and decide from the popu
   await expect(strip).toContainText('Add the CI/CD work you have done before sending this one.');
   await expect(strip).toContainText('no CI/CD pipeline work');
   await expect(strip).not.toContainText('A fourth reason');
-  await expect(strip).toContainText('Checked against the default résumé at the time');
+  await expect(strip).toContainText('Checked against the default resume at the time');
   await page.screenshot({ path: testInfo.outputPath('lab-apply-gate-verdict.png'), fullPage: true });
 
   // Same buttons as the web page, asked as a question, and the choice is recorded.
   await expect(frame.getByTestId('apply-gate-question')).toContainText('Are you applying?');
-  await expect(frame.getByTestId('apply-gate-action-fixed')).toHaveText('Fixing résumé first');
+  await expect(frame.getByTestId('apply-gate-action-fixed')).toHaveText('Fixing resume first');
   await frame.getByTestId('apply-gate-action-fixed').click();
-  await expect(frame.getByTestId('apply-gate-recorded')).toContainText('fixing your résumé first');
+  await expect(frame.getByTestId('apply-gate-recorded')).toContainText('fixing your resume first');
   // Only "I'm applying" offers to track the application.
   await expect(frame.getByTestId('apply-gate-track-application')).toHaveCount(0);
 
@@ -483,7 +483,7 @@ test('free users see one real read of their own search the moment the popup open
   await frame.getByTestId('apply-gate-check').click();
   await expect(frame.getByTestId('apply-gate-decision')).toHaveText('Apply');
   await expect(frame.getByTestId('apply-gate-free-used-note')).toContainText("That was this week's free check");
-  // Free results name the résumé they were checked against, the same as Premium.
+  // Free results name the resume they were checked against, the same as Premium.
   await expect(frame.getByTestId('apply-gate-checked-resume')).toContainText('Checked against');
   await expect(frame.getByTestId('apply-gate-see-premium')).toBeVisible();
   // The Premium-only full read is not offered to a free user.
@@ -518,12 +518,12 @@ test('a free user without enough data sees honest progress instead of a blur', a
   await page.close();
 });
 
-test('off a job page, a user with no résumé is told Apply Gate needs one, and can wave it off', async () => {
+test('off a job page, a user with no resume is told Apply Gate needs one, and can wave it off', async () => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'empty-inbox');
 
   const nudge = frame.getByTestId('apply-gate-resume-nudge');
-  await expect(nudge).toContainText('Add your résumé so Apply Gate can check jobs.');
+  await expect(nudge).toContainText('Add your resume so Apply Gate can check jobs.');
   await expect(frame.getByTestId('apply-gate-resume-nudge-add')).toBeVisible();
   // Not on a posting, so there is no check to offer.
   await expect(frame.getByTestId('apply-gate-check')).toHaveCount(0);
@@ -535,7 +535,7 @@ test('off a job page, a user with no résumé is told Apply Gate needs one, and 
   await page.close();
 });
 
-test('a user who already has a résumé never sees the résumé nudge', async () => {
+test('a user who already has a resume never sees the resume nudge', async () => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'sync-stuck');
   await expect(frame.getByTestId('sync-stuck-warning').or(frame.locator('body'))).toBeVisible();
