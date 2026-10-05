@@ -20,7 +20,7 @@ import { useEmails } from './hooks/useEmails';
 import { useEmailQuota } from './hooks/useEmailQuota';
 import { getApplicationKey, groupEmailsByThread } from './utils/grouping';
 import { deriveGroupClosedByChoice, deriveGroupPipelineStatus, mergeGroupsByApplication } from '../../shared/applicationDisplayState.js';
-import { getCategoryTitle } from './utils/uiHelpers';
+import { getCategoryTitle, parseEmailDate } from './utils/uiHelpers';
 import { getPremiumDashboardUrl } from './utils/runtimeConfig';
 import { compactSafeTextValues } from './utils/sensitiveContent';
 
@@ -690,8 +690,10 @@ function App() {
       if (!matchesQuery) return false;
       if (!selectedDateRange || selectedDateRange === 'all') return true;
 
-      const dateValue = new Date(group?.date || latest?.date || 0);
-      if (Number.isNaN(dateValue.getTime())) return false;
+      // Email dates are UTC without a zone marker; read them as UTC so "last 7 days" means the
+      // user's last 7 days (2026-10-05).
+      const dateValue = parseEmailDate(group?.date || latest?.date || 0);
+      if (!dateValue) return false;
       const daysAgo = (Date.now() - dateValue.getTime()) / (1000 * 60 * 60 * 24);
 
       if (selectedDateRange === '7d') return daysAgo <= 7;
@@ -748,7 +750,10 @@ function App() {
           pipelineStatus: application.current_status === 'offered' ? 'offers' : application.current_status,
           closedByChoice: Boolean(application.user_closed_at),
         }));
-      return [...emailGroups, ...manualGroups].sort((a, b) => Date.parse(b.date || 0) - Date.parse(a.date || 0));
+      // Manual entries carry a zone and email dates do not, so both go through parseEmailDate or a
+      // manual card sorts hours away from mail sent at the same moment.
+      const ms = (value) => parseEmailDate(value)?.getTime() ?? 0;
+      return [...emailGroups, ...manualGroups].sort((a, b) => ms(b.date) - ms(a.date));
     },
     [finalRelevantEmails, manual.applications, manual.remove]
   );

@@ -52,12 +52,14 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
     // Apply Gate is the hero above, so these name the OTHER destinations rather
     // than repeating it. Labels match the web app sidebar exactly so the card
     // reads as a table of contents for what they already paid for.
+    // The Weekly Summary page was folded into Next Actions on 2026-10-04 (its "This week" card), so
+    // the week is described there and the third destination is the Dashboard.
     const activeFeatures = [
       {
         label: 'Next Actions',
         detail: interviewed > 0
-          ? `What to do next on your ${interviewed} active thread${interviewed === 1 ? '' : 's'}`
-          : 'What to do next on the applications already in flight',
+          ? `What to do next on your ${interviewed} active thread${interviewed === 1 ? '' : 's'}, and how this week went`
+          : 'What to do next on the applications already in flight, and how this week went',
       },
       {
         label: 'Strategy Alerts',
@@ -66,8 +68,8 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
           : 'What is working across your search as it builds up',
       },
       {
-        label: 'Weekly Summary',
-        detail: 'What changed in your search this week, and what to do next week',
+        label: 'Dashboard',
+        detail: 'One read of your whole search, with the evidence and the next step',
       },
     ];
 
@@ -158,11 +160,11 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
       detail: `Spot what's working across your ${total} tracked application${total === 1 ? '' : 's'}`,
     },
     {
-      // Matches the web app sidebar item, which is "Weekly Summary" not "Brief".
-      label: 'Weekly Summary',
+      // Matches the web app sidebar. The Weekly Summary now lives inside Next Actions (2026-10-04).
+      label: 'Next Actions',
       detail: interviewed > 0
-        ? `${interviewed} active thread${interviewed === 1 ? '' : 's'} to review this week`
-        : 'Your weekly search health summary',
+        ? `What to do next on your ${interviewed} active thread${interviewed === 1 ? '' : 's'}, and how your week went`
+        : 'What to do next each day, and how your week went',
     },
   ];
 

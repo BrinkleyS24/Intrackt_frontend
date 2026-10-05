@@ -19,6 +19,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { History, X } from 'lucide-react';
+import { parseEmailDate } from '../utils/uiHelpers';
 
 /**
  * Dismissal is remembered per plan and window, so the note comes back only when what it says
@@ -53,8 +54,10 @@ function writeDismissed(value) {
  */
 function formatImportStart(isoDate) {
   if (!isoDate) return null;
-  const parsed = new Date(isoDate);
-  if (Number.isNaN(parsed.getTime())) return null;
+  // Coverage dates arrive as UTC without a zone marker; parseEmailDate reads them as UTC, so the
+  // day shown is the user's own (2026-10-05: evening times showed the next day).
+  const parsed = parseEmailDate(isoDate);
+  if (!parsed) return null;
   return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
