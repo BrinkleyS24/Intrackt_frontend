@@ -571,3 +571,25 @@ test('with manual creation switched off on the server, the popup offers no Add a
   await page.close();
 });
 
+
+// The page Chrome opens when the extension is removed (background.js refreshUninstallUrl). Chrome
+// opens it in a tab Playwright cannot intercept, so this checks the link the extension registers;
+// removal itself was verified by hand on 2026-10-05 (a local server received the same URL).
+test('the uninstall page carries the version, and the account key only while someone is signed in', async () => {
+  const crypto = require('node:crypto');
+  const page = await openLabPage();
+  const buildInfo = () => page.evaluate(() => chrome.runtime.sendMessage({ type: 'GET_BUILD_INFO' }));
+  const uninstallUrl = async () => (await buildInfo())?.runtime?.uninstallUrl;
+  const site = new URL((await buildInfo()).runtime.premiumDashboardUrlDefault).origin;
+  const version = JSON.parse(fs.readFileSync(path.join(extensionPath, 'manifest.json'), 'utf8')).version;
+
+  await activateScenario(page, 'free-rich');
+  const userId = await page.evaluate(async () => (await chrome.storage.local.get('userId')).userId);
+  expect(userId).toBeTruthy();
+  const key = crypto.createHash('sha256').update(String(userId)).digest('hex').slice(0, 16);
+  await expect.poll(uninstallUrl).toBe(`${site}/goodbye?v=${version}&si=1&uk=${key}`);
+
+  await page.getByTestId('scenario-logged-out').click();
+  await expect.poll(uninstallUrl).toBe(`${site}/goodbye?v=${version}&si=0`);
+  await page.close();
+});

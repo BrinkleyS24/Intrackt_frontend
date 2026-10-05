@@ -25,6 +25,7 @@ import {
   listExtensionTestScenarios,
 } from './testing/mockScenarios.js';
 import { BRIDGE_TRUSTED_ORIGINS, isAllowedBridgePath } from './shared/bridgePaths.js';
+import { activityUserKey, buildUninstallUrl, syncSource } from './shared/activity.js';
 import {
   APPLY_GATE_LAST_CHECK_KEY,
   extractJobPostingFromPage,
@@ -961,6 +962,7 @@ const CONFIG_ENDPOINTS = {
   AUTH_URL: '/api/auth/auth-url',
   AUTH_TOKEN: '/api/auth/token',
   SYNC_EMAILS: '/api/emails',
+  ACTIVITY: '/api/activity', // POST: one usage line per popup open (shared/activity.js)
   FETCH_STORED_EMAILS: '/api/emails/stored-emails', // This endpoint is not used by background script directly for fetching
   REPAIR_APPLICATION_LINKS: '/api/emails/applications/:applicationId/repair-links',
   FOLLOWUP_NEEDED: '/api/emails/followup-needed',
@@ -1205,6 +1207,31 @@ const premiumDashboardUrlReadyPromise = new Promise((resolve) => {
     premiumDashboardUrlReadyResolve();
   }
 })();
+
+// --- Uninstall page ---
+// Chrome opens applendium.com/goodbye when the extension is removed: one optional question, sent
+// with the version, whether someone was signed in and the one-way account key (shared/activity.js).
+// Refreshed whenever the signed-in account changes, so the key always matches who used it last.
+let currentUninstallUrl = null; // reported by GET_BUILD_INFO so the e2e suite can check it
+async function refreshUninstallUrl() {
+  try {
+    if (typeof chrome.runtime?.setUninstallURL !== 'function') return;
+    const { userId } = await chrome.storage.local.get(['userId']);
+    const url = buildUninstallUrl({
+      siteUrl: DEFAULT_PREMIUM_DASHBOARD_URL,
+      version: chrome.runtime.getManifest?.()?.version,
+      userKey: await activityUserKey(userId),
+    });
+    await chrome.runtime.setUninstallURL(url);
+    currentUninstallUrl = url;
+  } catch (error) {
+    try { console.warn('[bg][warn]', 'Could not set the uninstall page:', error?.message || error); } catch (_) {}
+  }
+}
+refreshUninstallUrl();
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === 'local' && changes.userId) refreshUninstallUrl();
+});
 
 // --- Sync de-duplication state ---
 let syncInFlight = false;
@@ -1962,6 +1989,11 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
   }
 
   switch (msg.type) {
+    case 'ACTIVITY_PING':
+      // Lab accounts are fake: answer without reporting a popup open to any backend.
+      sendResponse({ success: true, reported: false });
+      return true;
+
     case 'LOGIN_GOOGLE_OAUTH': {
       const nextScenarioId = testingState.state?.scenarioId === 'logged-out'
         ? DEFAULT_EXTENSION_TEST_SCENARIO_ID
@@ -2578,7 +2610,7 @@ function startPostLoginBackgroundWork(user) {
     }
 
     try {
-      await triggerEmailSync(user.email, user.uid, shouldFull);
+      await triggerEmailSync(user.email, user.uid, shouldFull, 'background');
     } catch (e) {
       console.error('Applendium Background: triggerEmailSync failed after auth state change:', e);
     }
@@ -2910,9 +2942,10 @@ async function sendGmailReply(threadId, to, subject, body, userEmail, userId) { 
  * @param {string} userEmail - The email of the authenticated user.
  * @param {string} userId - The Firebase UID of the user.
  * @param {boolean} fullRefresh - If true, requests a full re-sync from Gmail.
+ * @param {'alarm'|'background'|'popup'} source - Who started it, for the usage log (shared/activity.js).
  * @returns {Promise<Object>} An object containing success status, updated categorized emails, and quota.
  */
-async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
+async function triggerEmailSync(userEmail, userId, fullRefresh = false, source = 'popup') {
   // Ensure userEmail and userId are provided before making the API call
   if (!userEmail || !userId) {
     console.error('❌ Applendium Background: Cannot trigger email sync, userEmail or userId is missing.');
@@ -3019,6 +3052,7 @@ async function triggerEmailSync(userEmail, userId, fullRefresh = false) {
     const response = await apiFetch(CONFIG_ENDPOINTS.SYNC_EMAILS, {
       method: 'POST',
       timeoutMs: LONG_RUNNING_API_TIMEOUT_MS,
+      query: { source: syncSource(source) },
       body: { userEmail, userId, fullRefresh, email: userEmail }
     });
 
@@ -3410,6 +3444,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           premiumDashboardUrl,
           premiumDashboardUrlDefault: DEFAULT_PREMIUM_DASHBOARD_URL,
           premiumDashboardUrlOverridden: premiumDashboardUrl !== DEFAULT_PREMIUM_DASHBOARD_URL,
+          uninstallUrl: currentUninstallUrl,
         },
         testing: buildExtensionTestingStatus(null),
       });
@@ -3758,6 +3793,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         } catch (error) {
           console.error("❌ Applendium Background: Error fetching new emails:", error);
           sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      // The popup was opened by a signed-in user: one usage line (backend /api/activity), so
+      // "installed but not opened" can be told apart from "removed". Best effort, never an error.
+      case 'ACTIVITY_PING':
+        try {
+          await apiFetch(CONFIG_ENDPOINTS.ACTIVITY, { method: 'POST', body: { event: 'popup_open' } });
+          sendResponse({ success: true, reported: true });
+        } catch (error) {
+          bgLogger.warn('Usage ping failed (ignored):', error?.message || error);
+          sendResponse({ success: true, reported: false });
         }
         break;
 
@@ -5133,7 +5180,7 @@ setPersistence(auth, indexedDBLocalPersistence)
 	            }
 
 	            try {
-	              await triggerEmailSync(user.email, user.uid, shouldFull);
+	              await triggerEmailSync(user.email, user.uid, shouldFull, 'background');
 	            } catch (e) {
 	              console.error('Applendium Background: triggerEmailSync failed after auth state change:', e);
 	            }
@@ -5163,7 +5210,7 @@ setPersistence(auth, indexedDBLocalPersistence)
 	        broadcastAuthStateToContentScripts(true, user.email);
 	        // Still try to sync emails even if persistence failed
 	        if (!user.isAnonymous) {
-	          triggerEmailSync(user.email, user.uid, false).catch((e) => {
+	          triggerEmailSync(user.email, user.uid, false, 'background').catch((e) => {
 	            console.error('Applendium Background: triggerEmailSync failed after auth state change (no persistence):', e);
 	          });
 	        }
@@ -5190,7 +5237,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       try {
         const result = await chrome.storage.local.get(['userEmail', 'userId']);
         if (result.userEmail && result.userId) {
-          await triggerEmailSync(result.userEmail, result.userId, false); // No full refresh on alarm
+          await triggerEmailSync(result.userEmail, result.userId, false, 'alarm'); // No full refresh on alarm
         } else {
           console.warn('Applendium: User not logged in or user info missing for alarm sync.');
         }

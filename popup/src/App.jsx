@@ -14,6 +14,7 @@ import ReportModal from './components/ReportModal';
 import ReviewAskCard from './components/ReviewAskCard';
 import GmailReconnectBanner from './components/GmailReconnectBanner';
 import { deriveGmailConnectionState } from './utils/gmailConnection.mjs';
+import { sendMessageToBackground } from './utils/chromeMessaging';
 
 import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
@@ -331,6 +332,15 @@ function App() {
       cancelled = true;
     };
   }, [isLoggedIn]);
+
+  // One usage line per open per account (backend /api/activity via the background): it tells
+  // "installed but not opened" apart from "removed". Fire and forget; the popup never waits on it.
+  const reportedOpenForRef = useRef(null);
+  useEffect(() => {
+    if (!isLoggedIn || !userId || reportedOpenForRef.current === userId) return;
+    reportedOpenForRef.current = userId;
+    sendMessageToBackground({ type: 'ACTIVITY_PING' }, 1).catch(() => {});
+  }, [isLoggedIn, userId]);
 
   const {
     categorizedEmails,
