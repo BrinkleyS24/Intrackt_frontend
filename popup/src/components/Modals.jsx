@@ -78,7 +78,7 @@ export default function Modals({
                 htmlFor="correctCategory"
                 className="mb-2 block text-sm font-medium text-secondary-foreground"
               >
-                Move to:
+                What stage does this email describe?
               </label>
               <select
                 id="correctCategory"
@@ -92,6 +92,9 @@ export default function Modals({
                 <option value="offers">Offers</option>
                 <option value="rejected">Rejected</option>
               </select>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Classify what this message says happened. A later outcome belongs to the email that announced it.
+              </p>
             </div>
 
             <div className="flex justify-end space-x-3">
@@ -107,7 +110,7 @@ export default function Modals({
                 }
                 className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90"
               >
-                Confirm Move
+                Correct Email
               </button>
             </div>
           </div>
