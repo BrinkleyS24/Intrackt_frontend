@@ -23,12 +23,12 @@
   --muted: 75 17% 95%;                 /* #F4F5F1 */
   --muted-foreground: 216 10% 40%;     /* #5C6470 — AA-passing on paper/card; kept over web #79808B */
 
-  --accent: 160 82% 30%;               /* #0E8C63 */
+  --accent: 160 85% 26%;               /* #0A7A55: AA text contrast (5.35:1), was #0E8C63 */
   --accent-foreground: 0 0% 100%;
 
   --destructive: 3 71% 41%;            /* #B3261E */
   --destructive-foreground: 0 0% 100%;
-  --success: 160 82% 30%;              /* #0E8C63 */
+  --success: 160 85% 26%;              /* #0A7A55 */
   --success-foreground: 0 0% 100%;
   --warning: 26 90% 37%;               /* #B45309 */
   --warning-foreground: 26 91% 25%;    /* #7C3A06 */
