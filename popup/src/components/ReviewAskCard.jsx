@@ -82,7 +82,7 @@ export default function ReviewAskCard({ trackedCount, isBusy }) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-[13px] font-semibold text-foreground">Is Applendium earning its keep?</p>
+          <p className="text-[13px] font-semibold text-foreground">Is Applendium™ earning its keep?</p>
           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
             If it&rsquo;s caught something your inbox would have buried, a short review helps other job seekers find it.
           </p>

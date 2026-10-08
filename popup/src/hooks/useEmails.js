@@ -274,7 +274,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       await markEmailAsReadService(emailId);
     } catch (error) {
       if (!isMountedRef.current) return;
-      console.error("❌ Applendium: Failed to mark email as read on the server:", error);
+      console.error("❌ Applendium™: Failed to mark email as read on the server:", error);
       showNotification("Failed to update email read status.", "error");
       // Revert using structural sharing - only restore affected category
       setCategorizedEmails(prev => ({
@@ -326,7 +326,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       }
     } catch (error) {
       if (!isMountedRef.current || requestId !== storedRequestIdRef.current) return;
-      console.error("❌ Applendium: Error fetching stored emails:", error);
+      console.error("❌ Applendium™: Error fetching stored emails:", error);
       showNotification("Failed to load stored emails.", "error");
     } finally {
       // This will remove the main loading overlay, revealing the stored emails.
@@ -410,14 +410,14 @@ export function useEmails(userEmail, userId, CONFIG) {
         // this state anyway: it disappears, and the problem does not.
         if (response.errorCode === 'INVALID_GRANT' || response.requiresReauth) {
           showNotification(
-            '🔐 Applendium lost access to your Gmail. Use Reconnect at the top to restore tracking.',
+            '🔐 Applendium™ lost access to your Gmail. Use Reconnect at the top to restore tracking.',
             'error',
             null,
             15000 // Show for 15 seconds
           );
         } else if (response.errorCode === 'INSUFFICIENT_SCOPES') {
           showNotification(
-            '⚠️ Applendium needs Gmail permission again. Use Reconnect at the top to restore tracking.',
+            '⚠️ Applendium™ needs Gmail permission again. Use Reconnect at the top to restore tracking.',
             'error',
             null,
             10000
@@ -432,7 +432,7 @@ export function useEmails(userEmail, userId, CONFIG) {
       if (!isMountedRef.current || requestId !== syncRequestIdRef.current) {
         return { success: false, error: error?.message || 'Unknown sync error' };
       }
-      console.error("❌ Applendium: Error requesting new email sync:", error);
+      console.error("❌ Applendium™: Error requesting new email sync:", error);
       showNotification(`Failed to request email sync: ${error.message}`, "error");
       setIsSyncing(false);
       return { success: false, error: error.message };
@@ -539,7 +539,7 @@ export function useEmails(userEmail, userId, CONFIG) {
 
     if (!reportPayload.emailId || !reportPayload.threadId || !reportPayload.originalCategory || !reportPayload.correctedCategory) {
       showNotification("Missing critical email data for misclassification report.", "error");
-      console.error("❌ Applendium: Missing critical email data for misclassification report:", reportPayload);
+      console.error("❌ Applendium™: Missing critical email data for misclassification report:", reportPayload);
       return;
     }
 
@@ -568,7 +568,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to report misclassification: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ Applendium: Error reporting misclassification:", error);
+      console.error("❌ Applendium™: Error reporting misclassification:", error);
       showNotification("Error reporting misclassification.", "error");
     } finally {
   setLoadingEmails(false);
@@ -603,7 +603,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to undo misclassification: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ Applendium: Error undoing misclassification:", error);
+      console.error("❌ Applendium™: Error undoing misclassification:", error);
       showNotification("Error undoing misclassification.", "error");
     } finally {
   setLoadingEmails(false);
@@ -637,7 +637,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to send email reply: ${result.error || 'Unknown error'}`, "error");
       }
     } catch (error) {
-      console.error("❌ Applendium: Error sending email reply:", error);
+      console.error("❌ Applendium™: Error sending email reply:", error);
       showNotification("Error sending email reply.", "error");
     } finally {
   setLoadingEmails(false);
@@ -658,7 +658,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         showNotification(`Failed to archive email: ${result.error}`, "error");
       }
     } catch (error) {
-      console.error("❌ Applendium: Error archiving email:", error);
+      console.error("❌ Applendium™: Error archiving email:", error);
       showNotification("Error archiving email.", "error");
     } finally {
   setLoadingEmails(false);
@@ -705,7 +705,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         return { success: false, error: result.error };
       }
     } catch (error) {
-      console.error("❌ Applendium: Error updating company name:", error);
+      console.error("❌ Applendium™: Error updating company name:", error);
       showNotification("Error updating company name.", "error");
       return { success: false, error: error.message };
     }
@@ -751,7 +751,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         return { success: false, error: result.error };
       }
     } catch (error) {
-      console.error("❌ Applendium: Error updating position:", error);
+      console.error("❌ Applendium™: Error updating position:", error);
       showNotification("Error updating position.", "error");
       return { success: false, error: error.message };
     }

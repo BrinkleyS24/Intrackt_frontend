@@ -1,6 +1,6 @@
 /**
  * @file popup/src/components/GmailReconnectBanner.jsx
- * @description Persistent banner shown when Applendium's Gmail authorization is
+ * @description Persistent banner shown when Applendium™'s Gmail authorization is
  * dead and nothing new is being tracked.
  *
  * Deliberately NOT dismissible. Every other signal for this state was easy to

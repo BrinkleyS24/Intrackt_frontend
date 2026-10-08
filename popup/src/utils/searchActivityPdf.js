@@ -1,7 +1,7 @@
 // Renders the Job Search Activity Report PDF. jsPDF is imported dynamically so
 // the popup's startup bundle does not pay for it until a report is downloaded.
 //
-// Design: Applendium paper/ink/green — ink header band, stat tiles, a weekly
+// Design: Applendium™ paper/ink/green — ink header band, stat tiles, a weekly
 // activity bar chart, numbered activity table, reviewer sign-off line. Counts
 // are always printed as text next to any colored element so the document stays
 // legible in black-and-white photocopies.

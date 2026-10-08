@@ -1363,7 +1363,7 @@ function App() {
                 your job search.
               </h1>
               <p className="mx-auto mt-2 max-w-[320px] text-[13px] leading-relaxed text-muted-foreground">
-                Sign in and Applendium turns it into a live pipeline. No spreadsheet, no manual
+                Sign in and Applendium™ turns it into a live pipeline. No spreadsheet, no manual
                 logging.
               </p>
             </div>
@@ -1409,7 +1409,7 @@ function App() {
                   </li>
                   <li>
                     <span className="font-semibold text-accent">2.</span> Click{' '}
-                    <span className="font-medium text-foreground">Go to applendium.com</span>
+                    <span className="font-medium text-foreground">Go to Applendium™</span>
                   </li>
                 </ol>
               </div>
@@ -1463,7 +1463,7 @@ function App() {
     : selectedCategory === 'review'
       ? 'Needs review'
       : (selectedCategory === 'all' || selectedCategory === 'home'
-        ? (extensionVersionLabel || 'Applendium')
+        ? (extensionVersionLabel || 'Applendium™')
         : getCategoryTitle(selectedCategory));
 
   return (
@@ -1486,7 +1486,7 @@ function App() {
           <span className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] bg-background ring-1 ring-white/10">
             <img src={LOGO_URL} alt="" className="h-3.5 w-3.5" />
           </span>
-          <span className="truncate text-sm font-semibold lowercase text-foreground">applendium</span>
+          <span className="truncate text-sm font-semibold lowercase text-foreground">applendium™</span>
           <span data-testid="plan-badge" className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
             {userPlan === 'premium' ? 'Premium' : 'Free'}
           </span>

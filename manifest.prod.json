@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Applendium: Job Application Tracker for Gmail",
+  "name": "Applendium™: Job Application Tracker for Gmail",
   "version": "2.1.7",
   "description": "Automatic job application tracker for Gmail. Sorts applied, interview, offer, and rejected emails. No spreadsheets, no data entry.",
   "icons": {
