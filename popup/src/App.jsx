@@ -1500,7 +1500,7 @@ function App() {
       {isLoadingApp && <LoadingOverlay message="Signing in..." />}
       {showInitialEmailLoading && <LoadingOverlay message="Loading emails..." />}
       <Notification />
-      <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] px-4 py-3">
+      <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.03] gap-2 px-3 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
           {showBackButton && (
             <button
@@ -1532,7 +1532,7 @@ function App() {
             />
           )}
         </div>
-        <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
+        <div className="flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground">
           {selectedCategory === 'all' || selectedCategory === 'home' ? (
             <>
               <span data-testid="sync-status-label" aria-live="polite" className="flex items-center gap-1.5 whitespace-nowrap" title={syncStatusLabel}>
@@ -1569,13 +1569,13 @@ function App() {
               </button>
               {/* Sign out sat flush against Download report; a divider and gap keep a mis-tap
                   from signing the user out (persona report 2026-10-14). */}
-              <span className="ml-1.5 h-3.5 w-px bg-white/10" aria-hidden="true" />
+              <span className="mx-1 h-3.5 w-px bg-white/10" aria-hidden="true" />
               <button
                 onClick={logout}
                 data-testid="sign-out-button"
                 title="Sign out"
                 aria-label="Sign out"
-                className="ml-1.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
                 type="button"
               >
                 <LogOut className="h-3.5 w-3.5" />

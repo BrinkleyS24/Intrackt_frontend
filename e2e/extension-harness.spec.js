@@ -255,6 +255,55 @@ test('loads the packaged PDF chunks without an inline import map', async () => {
   await page.close();
 });
 
+// 2026-10-14 persona report: a manual application added today was missing from the default
+// 30-day report ("0 applications"), the download gave no confirmation, and the manual card
+// printed an ISO date.
+test('the activity report counts a manual application added today and confirms the download', async () => {
+  const page = await openLabPage();
+  const frame = await prepareManualForm(page);
+  await frame.getByRole('button', { name: 'Save application', exact: true }).click();
+  const card = frame.getByTestId('manual-application-card').filter({ hasText: 'Cedar Research' });
+  await expect(card).toBeVisible();
+  await expect(card.getByTestId('manual-application-date')).toContainText('Applied today');
+  await frame.getByTestId('report-button').click();
+  await expect(frame.getByTestId('report-preview')).not.toContainText(/^0 applications/);
+  await expect(frame.getByTestId('report-preview')).toContainText(/[1-9]\d* applications? in this period/);
+  const downloadPromise = page.waitForEvent('download');
+  await frame.getByTestId('report-download-button').click();
+  await downloadPromise;
+  await expect(frame.getByText('Report downloaded. Check your Downloads folder.')).toBeVisible();
+  await card.getByRole('button', { name: 'Remove entry' }).click();
+  await card.getByRole('button', { name: 'Confirm removal' }).click();
+  await page.close();
+});
+
+test('the footer says what it counts while searching, and the list controls are named', async () => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'free-healthy');
+  const footer = frame.getByTestId('footer-summary');
+  await expect(footer).toHaveText(/^\d+ tracked applications?$/);
+  const total = Number((await footer.textContent()).match(/\d+/)[0]);
+  await frame.getByLabel('Search applications by company or role').fill('northstar');
+  await expect(footer).toHaveText(new RegExp(`^Showing 1 of ${total} tracked applications$`));
+  await frame.getByLabel('Search applications by company or role').fill('');
+  // Atlas carries a CLOSED badge; it is counted under Closed, not Applied.
+  await frame.getByTestId('main-tab-rejected').click();
+  await expect(frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Atlas' })).toBeVisible();
+  await frame.getByTestId('main-tab-applied').click();
+  await expect(frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Atlas' })).toHaveCount(0);
+  await expect(footer).toHaveText(/awaiting a reply$/);
+  await page.close();
+});
+
+test('refresh shows visible progress and an up-to-date state', async () => {
+  const page = await openLabPage();
+  const frame = await activateScenario(page, 'free-healthy');
+  await frame.getByTestId('refresh-button').click();
+  await expect(frame.getByTestId('sync-status-label')).toContainText(/syncing\.\.\.|up to date/);
+  await expect(frame.getByTestId('sync-status-label')).toContainText('up to date');
+  await page.close();
+});
+
 test('renders the free-plan limit reached state with premium-status guidance', async ({}, testInfo) => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'free-limit-reached');

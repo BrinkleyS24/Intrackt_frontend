@@ -85,7 +85,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
           </div>
           <button
             onClick={handleDismiss}
-            className="text-muted-foreground transition hover:text-foreground"
+            className="-m-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:text-foreground"
             type="button"
             aria-label="Dismiss"
           >
@@ -180,7 +180,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
         </div>
         <button
           onClick={handleDismiss}
-          className="text-muted-foreground transition hover:text-foreground"
+          className="-m-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:text-foreground"
           type="button"
           aria-label="Dismiss"
         >

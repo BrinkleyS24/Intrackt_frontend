@@ -91,7 +91,7 @@ export default function ReviewAskCard({ trackedCount, isBusy }) {
           onClick={() => answer('dismissed')}
           data-testid="review-ask-dismiss-x"
           aria-label="Dismiss"
-          className="shrink-0 rounded-md p-1 text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
+          className="-m-2 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
           type="button"
         >
           <X className="h-3.5 w-3.5" />
