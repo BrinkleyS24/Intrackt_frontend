@@ -25,6 +25,8 @@
 
   --accent: 160 85% 26%;               /* #0A7A55: AA text contrast (5.35:1), was #0E8C63 */
   --accent-foreground: 0 0% 100%;
+  /* Extension-only: green TEXT (links, "+ Add"). Same as accent on light surfaces. */
+  --accent-text: 160 85% 26%;
 
   --destructive: 3 71% 41%;            /* #B3261E */
   --destructive-foreground: 0 0% 100%;
@@ -61,8 +63,13 @@
   --muted: 220 30% 13%;                 /* #161F2E */
   --muted-foreground: 215 15% 63%;      /* #8C97AB — hero muted ink */
 
-  --accent: 162 84% 29%;                /* #0C8862 — hero CTA green (white-readable) */
+  /* 2026-10-14: white on #0C8862 measured 4.45:1 and 11px green links on the dark card 4.08-4.24:1,
+     both under WCAG AA. One green cannot do both on navy, so buttons get a slightly deeper fill
+     (white 5.0:1; within the token parity tolerance of the web's 29%) and green text gets its own
+     brighter token, the hero green (7.7:1 on the card). */
+  --accent: 162 84% 27%;
   --accent-foreground: 0 0% 100%;
+  --accent-text: 159 62% 46%;           /* #2FBE8F */
 
   --destructive: 348 83% 70%;           /* #F2718C — hero rejected pink */
   --destructive-foreground: 220 49% 9%; /* dark text on the bright pink */

@@ -140,9 +140,20 @@ export function derivePipelineStatus(email) {
   if (email.manualCloseKind === 'silence') return 'rejected';
 
   const appStatus = normalizeApplicationStatusKey(email.applicationStatus);
-  if (appStatus === 'offers' || appStatus === 'rejected' || appStatus === 'interviewed' || appStatus === 'applied') {
-    return appStatus;
+  if (appStatus === 'offers' || appStatus === 'rejected') return appStatus;
+
+  // A linked role that is closed but carries no close kind used to stay in Applied while its card
+  // showed CLOSED, and was missing from the Closed tile (persona report 2026-10-14). The card's
+  // badge comes from deriveEmailPresentationState (isClosed / isUserClosed), so the tab must too:
+  // a user close without a known kind follows the backend default (classifyManualCloseKind(null)
+  // is 'rejection'), and a system close (is_closed without a user close) is the silence case.
+  // Candidate-choice closes keep their stage and are parked by deriveGroupClosedByChoice.
+  if (email.applicationId && email.manualCloseKind !== 'user_choice'
+    && (email.isUserClosed || email.isClosed)) {
+    return 'rejected';
   }
+
+  if (appStatus === 'interviewed' || appStatus === 'applied') return appStatus;
 
   const category = normalizeApplicationStatusKey(email.category);
   if (category === 'offers' || category === 'rejected' || category === 'interviewed') return category;

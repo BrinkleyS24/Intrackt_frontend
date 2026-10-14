@@ -4,14 +4,14 @@ import { describeNextFreeCheck, describeRecordedAction, describeCheckedResume, D
 
 const TONE_CHIP = {
   positive: 'bg-success/10 text-success',
-  brand: 'bg-accent/10 text-accent',
+  brand: 'bg-accent/10 text-accent-text',
   attention: 'bg-warning/10 text-warning',
   risk: 'bg-destructive/10 text-destructive',
 };
 
 function Eyebrow({ children }) {
   return (
-    <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+    <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-accent-text">
       <ScanSearch className="h-3 w-3 shrink-0" />
       <span className="truncate">{children}</span>
     </div>
@@ -52,7 +52,7 @@ function ResumeNudge({ selection, onOpenWebPath }) {
         <button type="button" onClick={dismiss} data-testid="apply-gate-resume-nudge-dismiss" className="text-[11px] font-medium text-muted-foreground transition hover:text-foreground">
           Not now
         </button>
-        <button type="button" onClick={() => onOpenWebPath('/resumes')} data-testid="apply-gate-resume-nudge-add" className="text-[11px] font-semibold text-accent transition hover:text-accent/80">
+        <button type="button" onClick={() => onOpenWebPath('/resumes')} data-testid="apply-gate-resume-nudge-add" className="text-[11px] font-semibold text-accent-text transition hover:text-accent-text/80">
           {needsChoice ? 'Choose →' : 'Add →'}
         </button>
       </span>
@@ -122,7 +122,7 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
       <div data-testid="apply-gate-strip" className={shell} aria-busy="true">
         <Eyebrow>Apply Gate · this page</Eyebrow>
         <div className="mt-1.5 flex items-center gap-2 text-[12px] font-semibold text-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-accent-text" />
           Checking {posting?.title || 'this role'} against your resume…
         </div>
         <div className="mt-1 text-[11px] leading-4 text-muted-foreground">
@@ -222,7 +222,7 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
 
       {recorded ? (
         <div className="mt-2">
-          <div data-testid="apply-gate-recorded" className="text-[11px] font-medium leading-4 text-accent">
+          <div data-testid="apply-gate-recorded" className="text-[11px] font-medium leading-4 text-accent-text">
             {describeRecordedAction(recorded)}
           </div>
           {/* Applying is the moment to track it: no confirmation email may ever arrive, and the
@@ -275,7 +275,7 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
             type="button"
             onClick={() => onOpenWebPath('/apply-gate')}
             data-testid="apply-gate-full-read"
-            className="text-[11px] font-semibold text-accent transition hover:text-accent/80"
+            className="text-[11px] font-semibold text-accent-text transition hover:text-accent-text/80"
           >
             Full read →
           </button>

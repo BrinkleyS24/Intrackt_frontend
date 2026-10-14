@@ -43,7 +43,7 @@ export default function SearchReadStrip({ read, onOpenPremiumPage }) {
   return (
     <div data-testid="search-read" className="mb-2 rounded-xl border border-accent/25 bg-accent/5 px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+        <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-accent-text">
           <Sparkles className="h-3 w-3" />
           From your inbox · {read.timeframe.replace(/^In the /, '')}
         </div>

@@ -63,7 +63,7 @@ export default function Modals({
               </h3>
               <p className="text-sm text-muted-foreground">
                 This email was classified as:{' '}
-                <span className="font-bold text-accent">
+                <span className="font-bold text-accent-text">
                   {selectedEmailForMisclassification?.category || 'N/A'}
                 </span>
               </p>

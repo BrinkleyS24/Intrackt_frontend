@@ -1011,54 +1011,64 @@ function App() {
     return Number.isFinite(total) ? total : null;
   }, [applicationCount, dateRange, normalizedListSearchQuery]);
 
+  // Unfiltered pipeline counts: what the Premium card and the footer's "of N" refer to. The card
+  // and footer used to follow the search box ("0 tracked applications" while searching), so the
+  // total looked like it changed (persona report 2026-10-14).
+  const unfilteredPipelineCounts = useMemo(() => ({
+    applied: activePipelineBuckets.applied.length,
+    interviewed: activePipelineBuckets.interviewed.length,
+    offers: activePipelineBuckets.offers.length,
+    rejected: activePipelineBuckets.rejected.length,
+  }), [activePipelineBuckets]);
+
   const footerSummary = useMemo(() => {
-    if (selectedCategory === 'all' || selectedCategory === 'home') {
-      const activeView = allApplicationsFilter;
-      const count =
-        activeView === 'all'
+    const onAllView = selectedCategory === 'all' || selectedCategory === 'home';
+    const activeView = onAllView ? allApplicationsFilter : selectedCategory;
+    const isFiltered = Boolean(normalizedListSearchQuery) || (onAllView && dateRange !== 'all');
+
+    // Each label names exactly what is counted, matching the tiles.
+    const describe = (count) => {
+      if (activeView === 'applied') return 'awaiting a reply';
+      if (activeView === 'interviewed') return 'in interviews';
+      if (activeView === 'offers') return count === 1 ? 'offer' : 'offers';
+      if (activeView === 'rejected') return 'closed';
+      return count === 1 ? 'tracked application' : 'tracked applications';
+    };
+
+    let shown;
+    let total;
+    if (onAllView) {
+      shown = activeView === 'all'
+        ? allViewLiveSummary.total
+        : allViewLiveSummary.counts?.[activeView] || 0;
+      total = activeView === 'all'
+        ? (Number.isFinite(applicationCount?.total) ? applicationCount.total : allViewConversationGroups.length)
+        : unfilteredPipelineCounts[activeView] || 0;
+      if (!isFiltered) {
+        const count = activeView === 'all'
           ? (canonicalTotal ?? allViewHeadlineSummary.total)
           : allViewHeadlineSummary.counts?.[activeView] || 0;
-
-      if (activeView === 'applied') {
-        return `${count} ${count === 1 ? 'application sent' : 'applications sent'}`;
+        return `${count} ${describe(count)}`;
       }
-      if (activeView === 'interviewed') {
-        return `${count} ${count === 1 ? 'interview scheduled' : 'interviews scheduled'}`;
-      }
-      if (activeView === 'offers') {
-        return `${count} ${count === 1 ? 'offer received' : 'offers received'}`;
-      }
-      if (activeView === 'rejected') {
-        return `${count} ${count === 1 ? 'rejection received' : 'rejections received'}`;
-      }
-
-      return `${count} ${count === 1 ? 'tracked application' : 'tracked applications'}`;
+    } else {
+      shown = countFilteredConversations(activeView, { includeSearch: true, includeDate: false });
+      total = countFilteredConversations(activeView, { includeSearch: false, includeDate: false });
+      if (!isFiltered) return `${shown} ${describe(shown)}`;
     }
-
-    const activeView = (selectedCategory === 'all' || selectedCategory === 'home')
-      ? allApplicationsFilter
-      : selectedCategory;
-
-    const count =
-      selectedCategory === 'all' || selectedCategory === 'home'
-        ? countFilteredConversations(activeView, { includeSearch: true, includeDate: true })
-        : countFilteredConversations(activeView, { includeSearch: true, includeDate: false });
-
-    if (activeView === 'applied') {
-      return `${count} ${count === 1 ? 'application sent' : 'applications sent'}`;
-    }
-    if (activeView === 'interviewed') {
-      return `${count} ${count === 1 ? 'interview scheduled' : 'interviews scheduled'}`;
-    }
-    if (activeView === 'offers') {
-      return `${count} ${count === 1 ? 'offer received' : 'offers received'}`;
-    }
-    if (activeView === 'rejected') {
-      return `${count} ${count === 1 ? 'rejection received' : 'rejections received'}`;
-    }
-
-    return `${count} ${count === 1 ? 'tracked application' : 'tracked applications'}`;
-  }, [allApplicationsFilter, allViewHeadlineSummary, canonicalTotal, countFilteredConversations, selectedCategory]);
+    return `Showing ${shown} of ${total} ${describe(total)}`;
+  }, [
+    allApplicationsFilter,
+    allViewConversationGroups.length,
+    allViewHeadlineSummary,
+    allViewLiveSummary,
+    applicationCount,
+    canonicalTotal,
+    countFilteredConversations,
+    dateRange,
+    normalizedListSearchQuery,
+    selectedCategory,
+    unfilteredPipelineCounts,
+  ]);
 
   // Hidden until the backend says creation is on (MANUAL_APPLICATIONS_ENABLED), so a user
   // never fills in the form only to be told saving is unavailable.
@@ -1069,7 +1079,7 @@ function App() {
       aria-label="Add application"
       title="Add an application you applied to without a confirmation email"
       onClick={() => { setManualPrefill(null); setShowManualForm(true); }}
-      className="shrink-0 rounded-lg border border-accent/30 px-2 py-2 text-[11px] font-semibold text-accent transition hover:bg-accent/10"
+      className="shrink-0 rounded-lg border border-accent/30 px-2 py-2 text-[11px] font-semibold text-accent-text transition hover:bg-accent/10"
     >
       {/* Short label: the full one squeezed the search box to "Search companie". */}
       + Add
@@ -1178,7 +1188,7 @@ function App() {
                       setAllApplicationsFilter('all');
                       setShowClosedChoiceRoles(false);
                     }}
-                    className="shrink-0 font-medium text-accent transition hover:text-accent/80"
+                    className="shrink-0 font-medium text-accent-text transition hover:text-accent-text/80"
                   >
                     Show all
                   </button>
@@ -1201,7 +1211,7 @@ function App() {
                         aria-expanded={showDateFilter}
                         className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors ${
                           dateRange !== 'all'
-                            ? 'bg-accent/15 text-accent'
+                            ? 'bg-accent/15 text-accent-text'
                             : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'
                         }`}
                         type="button"
@@ -1292,7 +1302,7 @@ function App() {
               <div className="px-3 pb-3 pt-2">
                 <PremiumTeaserCard
                   userPlan={userPlan}
-                  stats={allViewHeadlineSummary.counts}
+                  stats={unfilteredPipelineCounts}
                   onOpenPremiumPage={openPremiumStatusPage}
                   searchRead={searchRead}
                 />
@@ -1397,7 +1407,7 @@ function App() {
               className="rounded-xl border border-border bg-muted/40 p-3 text-left"
             >
               <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-                <Shield className="h-3.5 w-3.5 shrink-0 text-accent" />
+                <Shield className="h-3.5 w-3.5 shrink-0 text-accent-text" />
                 Next, Google asks for read-only Gmail access.
               </p>
               <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
@@ -1411,11 +1421,11 @@ function App() {
                 </p>
                 <ol className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
                   <li>
-                    <span className="font-semibold text-accent">1.</span> Click{' '}
+                    <span className="font-semibold text-accent-text">1.</span> Click{' '}
                     <span className="font-medium text-foreground">Advanced</span>
                   </li>
                   <li>
-                    <span className="font-semibold text-accent">2.</span> Click{' '}
+                    <span className="font-semibold text-accent-text">2.</span> Click{' '}
                     <span className="font-medium text-foreground">Go to Applendium™</span>
                   </li>
                 </ol>
@@ -1567,7 +1577,7 @@ function App() {
             <span className="h-1.5 w-1.5 rounded-full bg-warning" />
             <span><span className="font-semibold">{reviewCount}</span> {reviewCount === 1 ? 'email needs' : 'emails need'} a quick review</span>
           </span>
-          <span className="font-medium text-accent">Review -&gt;</span>
+          <span className="font-medium text-accent-text">Review -&gt;</span>
         </button>
       )}
 
@@ -1590,8 +1600,8 @@ function App() {
 
       {selectedCategory !== 'emailPreview' && (
         <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-3 py-2 text-[11px]">
-          <span className="text-muted-foreground">{footerSummary}</span>
-          <button onClick={openPremiumStatusPage} className="font-medium text-accent transition hover:text-accent/80" data-testid="dashboard-link" type="button">
+          <span data-testid="footer-summary" className="text-muted-foreground">{footerSummary}</span>
+          <button onClick={openPremiumStatusPage} className="font-medium text-accent-text transition hover:text-accent-text/80" data-testid="dashboard-link" type="button">
             {userPlan === 'premium' ? 'Premium dashboard →' : 'Upgrade to Premium →'}
           </button>
         </div>

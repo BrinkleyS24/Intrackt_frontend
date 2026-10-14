@@ -394,8 +394,8 @@ export default function EmailPreview({
   const [closePreset, setClosePreset] = useState('no_response');
   const [closeNote, setCloseNote] = useState('');
   // Close taxonomy (mirrors backend utils/applicationCloseOutcome.js):
-  //   - rejection (Rejected verbally / Position filled / Other) -> Rejected tab.
-  //   - silence (No response) -> Rejected tab too ("rejected in silence"), but
+  //   - rejection (Rejected verbally / Position filled / Other) -> Closed tab (the 'rejected' bucket).
+  //   - silence (No response) -> Closed tab too ("rejected in silence"), but
   //     stats and Apply Gate keep treating it as a non-rejection.
   //   - user choice (Withdrew / Accepted elsewhere) -> stays in its stage tab
   //     under the Closed filter; never counted as a rejection.
@@ -814,8 +814,8 @@ export default function EmailPreview({
         setShowClosePanel(false);
         showNotification(
           closeMovesToRejected
-            ? 'Moved to your Rejected tab.'
-            : 'Closed — find it under this tab\'s Closed filter.',
+            ? 'Moved to your Closed tab.'
+            : 'Closed. Find it under "Closed by you" on its tab.',
           'success',
         );
       } else {
@@ -982,7 +982,7 @@ export default function EmailPreview({
                     <button
                       type="button"
                       onClick={() => toggleMessageExpanded(messageKey)}
-                      className="inline-flex items-center gap-1 text-[11px] font-medium text-accent transition-colors hover:text-accent/80"
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-text transition-colors hover:text-accent-text/80"
                     >
                       {isExpanded ? 'Show less' : 'Show full message'}
                       <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', isExpanded && 'rotate-180')} />
@@ -996,7 +996,7 @@ export default function EmailPreview({
 
         {userPlan !== 'premium' && (presentationStatusKey === 'applied' || presentationStatusKey === 'interviewed') && onOpenPremiumPage && (
           <div className="rounded-2xl border border-accent/20 bg-accent/5 p-3 shadow-sm">
-            <div className="flex items-center gap-2 text-[11px] font-semibold text-accent">
+            <div className="flex items-center gap-2 text-[11px] font-semibold text-accent-text">
               <ShieldCheck className="h-3.5 w-3.5" />
               Your next move on this {presentationStatusKey === 'interviewed' ? 'interview' : 'application'}
             </div>
@@ -1030,7 +1030,7 @@ export default function EmailPreview({
             className="flex w-full items-center justify-between gap-2 rounded-2xl border border-accent/20 bg-accent/5 px-3 py-2.5 text-left shadow-sm transition hover:bg-accent/10"
           >
             <span className="flex min-w-0 items-center gap-2">
-              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-accent" />
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-accent-text" />
               <span className="min-w-0">
                 <span className="block text-[11px] font-semibold text-foreground">
                   Your next move on this {presentationStatusKey === 'interviewed' ? 'interview' : 'application'}
@@ -1042,7 +1042,7 @@ export default function EmailPreview({
                 </span>
               </span>
             </span>
-            <span className="shrink-0 text-[11px] font-semibold text-accent">Open →</span>
+            <span className="shrink-0 text-[11px] font-semibold text-accent-text">Open →</span>
           </button>
         )}
 
@@ -1088,11 +1088,12 @@ export default function EmailPreview({
               <div>
                 <div className="text-sm font-semibold text-foreground">Close application</div>
                 <div className="mt-1 text-xs text-muted-foreground">
+                  {/* The popup has no "Rejected" tab; the tile is Closed (persona report 2026-10-14). */}
                   {closeKind === 'rejection'
-                    ? 'Counts as a rejection — moves this role to your Rejected tab. Nothing is deleted; you can reopen it anytime.'
+                    ? 'Counts as a rejection and moves this role to your Closed tab. Nothing is deleted, and you can reopen it anytime.'
                     : closeKind === 'silence'
-                      ? 'No response is a silent rejection — moves this role to your Rejected tab (it won\'t count against your stats). Nothing is deleted; you can reopen it anytime.'
-                      : 'Your call, not a rejection — moves this role to this tab\'s Closed list. Nothing is deleted; you can reopen it anytime.'}
+                      ? 'Moves this role to your Closed tab as no response. It does not count as a rejection in your stats. Nothing is deleted, and you can reopen it anytime.'
+                      : 'Your decision, not a rejection. The role moves to "Closed by you" on its tab and does not count as a rejection. Nothing is deleted, and you can reopen it anytime.'}
                 </div>
               </div>
               <button onClick={() => setShowClosePanel(false)} className="text-muted-foreground transition hover:text-foreground" type="button">
@@ -1169,10 +1170,10 @@ export default function EmailPreview({
         <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
           <div className="flex items-center justify-between gap-3">
             <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <TrendingUp className="h-4 w-4 text-accent" />
+              <TrendingUp className="h-4 w-4 text-accent-text" />
               Application Journey
             </h3>
-            <span className="text-[10px] text-accent">
+            <span className="text-[10px] text-accent-text">
               {loadingLifecycle ? 'Loading...' : `${journeyStages.length} stage${journeyStages.length === 1 ? '' : 's'}`}
             </span>
           </div>

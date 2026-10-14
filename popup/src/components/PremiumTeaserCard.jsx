@@ -44,6 +44,9 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
   const applied = stats?.applied || 0;
   const interviewed = stats?.interviewed || 0;
   const total = applied + interviewed + (stats?.offers || 0) + (stats?.rejected || 0);
+  // "Active" means still in play: Applied plus In interviews. The card said "4 active threads"
+  // (the interview count) when 16 were active (persona report 2026-10-14).
+  const active = applied + interviewed;
 
   // Premium members already paid for these tools but the extension never showed
   // them where they live, so the whole plan stayed invisible. This variant is
@@ -57,8 +60,8 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
     const activeFeatures = [
       {
         label: 'Next Actions',
-        detail: interviewed > 0
-          ? `What to do next on your ${interviewed} active thread${interviewed === 1 ? '' : 's'}, and how this week went`
+        detail: active > 0
+          ? `What to do next on your ${active} active application${active === 1 ? '' : 's'}, and how this week went`
           : 'What to do next on the applications already in flight, and how this week went',
       },
       {
@@ -76,7 +79,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
     return (
       <div data-testid="premium-active-card" className="rounded-2xl border border-accent/25 bg-accent/5 p-3 shadow-sm">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-accent">
+          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-accent-text">
             <Sparkles className="h-3.5 w-3.5" />
             Your premium is active
           </div>
@@ -104,7 +107,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
           {activeFeatures.map(({ label, detail }) => (
             <div key={label} className="flex items-start gap-2">
               <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent/15">
-                <ArrowUpRight className="h-2.5 w-2.5 text-accent" />
+                <ArrowUpRight className="h-2.5 w-2.5 text-accent-text" />
               </span>
               <div className="min-w-0 text-[11px] leading-4">
                 <span className="font-semibold text-foreground">{label}</span>
@@ -162,8 +165,8 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
     {
       // Matches the web app sidebar. The Weekly Summary now lives inside Next Actions (2026-10-04).
       label: 'Next Actions',
-      detail: interviewed > 0
-        ? `What to do next on your ${interviewed} active thread${interviewed === 1 ? '' : 's'}, and how your week went`
+      detail: active > 0
+        ? `What to do next on your ${active} active application${active === 1 ? '' : 's'}, and how your week went`
         : 'What to do next each day, and how your week went',
     },
   ];
@@ -171,7 +174,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
   return (
     <div data-testid="premium-teaser" className="rounded-2xl border border-accent/25 bg-accent/5 p-3 shadow-sm">
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-accent">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-accent-text">
           <Sparkles className="h-3.5 w-3.5" />
           Premium insights ready
         </div>

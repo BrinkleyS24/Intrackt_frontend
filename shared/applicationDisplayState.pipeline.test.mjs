@@ -181,3 +181,21 @@ test('mergeGroupsByApplication: passes a single group through untouched', () => 
   assert.equal(merged.length, 1);
   assert.equal(merged[0].threadId, 't1', 'unmerged group keeps its original threadId');
 });
+
+// 2026-10-14 persona report: Atlas showed a CLOSED badge but was counted under Applied and was
+// missing from the Closed tile. A closed role with no close kind now lands in Closed.
+test('a closed role without a close kind is counted under Closed, matching its badge', () => {
+  const userClosedNoReason = { applicationId: 9002, category: 'applied', applicationStatus: 'applied', isClosed: true, isUserClosed: true };
+  assert.equal(derivePipelineStatus(userClosedNoReason), 'rejected');
+  const systemClosed = { applicationId: 9004, category: 'interviewed', applicationStatus: 'interviewed', isClosed: true, isUserClosed: false };
+  assert.equal(derivePipelineStatus(systemClosed), 'rejected');
+  // Candidate choices (withdrew / accepted elsewhere) are not rejections: they keep their stage.
+  const acceptedElsewhere = { applicationId: 9005, category: 'interviewed', applicationStatus: 'interviewed', isClosed: true, isUserClosed: true, manualCloseKind: classifyManualCloseKind('Accepted elsewhere') };
+  assert.equal(acceptedElsewhere.manualCloseKind, 'user_choice');
+  assert.equal(derivePipelineStatus(acceptedElsewhere), 'interviewed');
+  assert.equal(deriveGroupClosedByChoice([acceptedElsewhere]), true);
+  // An offer stays an offer even though the backend marks it closed.
+  assert.equal(derivePipelineStatus({ applicationId: 1, applicationStatus: 'offers', isClosed: true }), 'offers');
+  // Unlinked mail is never treated as closed.
+  assert.equal(derivePipelineStatus({ category: 'applied', isClosed: true }), 'applied');
+});
