@@ -110,6 +110,7 @@ const ListSearchBar = React.memo(function ListSearchBar({ value, onChange, place
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
+          aria-label="Search applications by company or role"
           data-testid="list-search-input"
           className={`w-full rounded-xl border border-white/10 bg-white/[0.03] py-2.5 pl-10 text-sm text-foreground outline-none transition focus:border-accent/40 focus:ring-2 focus:ring-accent/20 ${trailing ? 'pr-24' : 'pr-10'}`}
         />
@@ -119,6 +120,7 @@ const ListSearchBar = React.memo(function ListSearchBar({ value, onChange, place
             onClick={() => onChange('')}
             className={`absolute top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground ${trailing ? 'right-[4.75rem]' : 'right-3'}`}
             title="Clear search"
+            aria-label="Clear search"
             type="button"
           >
             <X className="h-4 w-4" />
@@ -622,11 +624,20 @@ function App() {
     return () => chrome.runtime.onMessage.removeListener(handleRuntimeStatusMessage);
   }, []);
 
+  // Visible feedback for a Refresh click. The header pill could stay on "synced" for the whole
+  // request, so a click looked like it did nothing (persona report 2026-10-14).
+  const [refreshFeedback, setRefreshFeedback] = useState(null); // null | 'syncing' | 'done'
+  const refreshFeedbackTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(refreshFeedbackTimerRef.current), []);
+
   const handleRefresh = useCallback(async () => {
     if (!userEmail || !userId) return;
+    clearTimeout(refreshFeedbackTimerRef.current);
+    setRefreshFeedback('syncing');
     try {
       const syncResult = await fetchNewEmails(false);
       if (!syncResult?.success) {
+        setRefreshFeedback(null);
         // The backend records the dead connection during this very attempt, so
         // re-read status to bring the reconnect banner up now. Without this the
         // failure toast points at a banner that has not rendered yet.
@@ -635,10 +646,13 @@ function App() {
         }
         return;
       }
-      showNotification('Emails refreshed!', 'success');
       await fetchStoredEmails();
       await fetchQuotaData();
+      setRefreshFeedback('done');
+      showNotification('Up to date.', 'success');
+      refreshFeedbackTimerRef.current = setTimeout(() => setRefreshFeedback(null), 5000);
     } catch (error) {
+      setRefreshFeedback(null);
       showNotification(`Failed to refresh emails: ${error.message}`, 'error');
     }
   }, [userEmail, userId, fetchNewEmails, fetchStoredEmails, fetchQuotaData]);
@@ -1308,17 +1322,15 @@ function App() {
                 />
               </div>
             }
-          />
-
-          {/* Pinned below the list rather than inside it: this states a boundary on the
-              whole dataset, not on the last row, and the case that most needs saying is an
-              EMPTY list — a user whose applications all predate the window. EmailList only
-              renders its footerSlot when it has rows, so a footnote in there would go
-              silent exactly when it matters most. */}
-          <HistoryCoverageNote
-            coverage={historyCoverage}
-            userPlan={userPlan}
-            onUpgrade={openPremiumStatusPage}
+            // States a boundary on the whole dataset, so it must also show on an EMPTY list (a
+            // user whose applications all predate the window); trailingSlot renders in both cases.
+            trailingSlot={
+              <HistoryCoverageNote
+                coverage={historyCoverage}
+                userPlan={userPlan}
+                onUpgrade={openPremiumStatusPage}
+              />
+            }
           />
         </div>
       );
@@ -1494,6 +1506,8 @@ function App() {
             <button
               onClick={headerAction}
               data-testid="popup-header-back"
+              aria-label="Back"
+              title="Back"
               className="inline-flex h-7 w-7 items-center justify-center rounded-full text-foreground/70 transition hover:bg-white/10 hover:text-foreground"
               type="button"
             >
@@ -1521,9 +1535,15 @@ function App() {
         <div className="flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground">
           {selectedCategory === 'all' || selectedCategory === 'home' ? (
             <>
-              <span data-testid="sync-status-label" className="flex items-center gap-1.5" title={syncStatusLabel}>
-                <span className={`h-1.5 w-1.5 rounded-full ${gmailDisconnected || isSyncStuck ? 'bg-destructive' : isSyncActive ? 'bg-warning' : 'bg-success shadow-[0_0_8px_2px_hsl(var(--success)/0.6)]'}`} />
-                {gmailDisconnected ? 'not syncing' : isSyncStuck ? 'Sync may be stuck' : isSyncActive ? 'syncing' : 'synced'}
+              <span data-testid="sync-status-label" aria-live="polite" className="flex items-center gap-1.5 whitespace-nowrap" title={syncStatusLabel}>
+                <span className={`h-1.5 w-1.5 rounded-full ${gmailDisconnected || isSyncStuck ? 'bg-destructive' : (isSyncActive || refreshFeedback === 'syncing') ? 'bg-warning' : 'bg-success shadow-[0_0_8px_2px_hsl(var(--success)/0.6)]'}`} />
+                {gmailDisconnected
+                  ? 'not syncing'
+                  : isSyncStuck
+                    ? 'sync stuck'
+                    : (isSyncActive || refreshFeedback === 'syncing')
+                      ? 'syncing...'
+                      : refreshFeedback === 'done' ? 'up to date' : 'synced'}
               </span>
               <span className="h-3.5 w-px bg-white/10" />
               <button
@@ -1531,26 +1551,31 @@ function App() {
                 data-testid="refresh-button"
                 title="Refresh"
                 aria-label="Refresh"
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
+                disabled={refreshFeedback === 'syncing'}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground disabled:cursor-wait"
                 type="button"
               >
-                <RefreshCw className={`h-3.5 w-3.5 ${isSyncActive ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`h-3.5 w-3.5 ${(isSyncActive || refreshFeedback === 'syncing') ? 'animate-spin' : ''}`} />
               </button>
               <button
                 onClick={() => setIsReportModalOpen(true)}
                 data-testid="report-button"
                 title="Download activity report"
                 aria-label="Download activity report"
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
                 type="button"
               >
                 <FileDown className="h-3.5 w-3.5" />
               </button>
+              {/* Sign out sat flush against Download report; a divider and gap keep a mis-tap
+                  from signing the user out (persona report 2026-10-14). */}
+              <span className="ml-1.5 h-3.5 w-px bg-white/10" aria-hidden="true" />
               <button
                 onClick={logout}
+                data-testid="sign-out-button"
                 title="Sign out"
                 aria-label="Sign out"
-                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
+                className="ml-1.5 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
                 type="button"
               >
                 <LogOut className="h-3.5 w-3.5" />
@@ -1565,6 +1590,26 @@ function App() {
       {/* Ranked above Needs Review: while the connection is dead nothing new is
           arriving at all, so reviewing the existing backlog is the lesser ask. */}
       <GmailReconnectBanner gmailAuth={gmailAuth} onReconnect={handleGmailReconnect} />
+
+      {/* A stuck sync used to show only "Sync may be stuck" in the header, with no reason and
+          no way out (persona report 2026-10-14). */}
+      {isSyncStuck && !gmailDisconnected && selectedCategory !== 'emailPreview' && (
+        <div data-testid="sync-stuck-notice" aria-live="polite" className="flex items-start justify-between gap-3 border-b border-destructive/20 bg-destructive/[0.06] px-4 py-2 text-xs text-foreground">
+          <p className="leading-4">
+            Checking your inbox is taking longer than usual. Everything already tracked is safe.
+            Try again now. If it still says stuck, wait 15 minutes and try once more.
+          </p>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={refreshFeedback === 'syncing'}
+            data-testid="sync-stuck-retry"
+            className="min-h-8 shrink-0 rounded-full border border-destructive/30 px-3 text-[11px] font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-60"
+          >
+            {refreshFeedback === 'syncing' ? 'Trying...' : 'Try again'}
+          </button>
+        </div>
+      )}
 
       {reviewCount > 0 && selectedCategory !== 'review' && selectedCategory !== 'emailPreview' && (
         <button

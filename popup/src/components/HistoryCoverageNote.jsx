@@ -19,7 +19,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { History, X } from 'lucide-react';
-import { parseEmailDate } from '../utils/uiHelpers';
+import { describeImportGap, formatImportStart } from '../utils/historyImportNotice.mjs';
 
 /**
  * Dismissal is remembered per plan and window, so the note comes back only when what it says
@@ -44,43 +44,6 @@ function writeDismissed(value) {
   } catch {
     // Not remembered this time; the note simply reappears next open.
   }
-}
-
-/**
- * Formats an ISO date as "May 2, 2026", or returns null if it isn't a usable date.
- * Returning null (rather than a placeholder) matters: the fallback copy below is written
- * to work with no date at all, because inventing one would be the same class of bug this
- * component exists to fix.
- */
-function formatImportStart(isoDate) {
-  if (!isoDate) return null;
-  // Coverage dates arrive as UTC without a zone marker; parseEmailDate reads them as UTC, so the
-  // day shown is the user's own (2026-10-05: evening times showed the next day).
-  const parsed = parseEmailDate(isoDate);
-  if (!parsed) return null;
-  return parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-/**
- * When older history is not fully in, say that instead of the plan boundary — otherwise the
- * missing months read as "the tracker missed them". The backend decides the state
- * (describeHistoryImport); nothing is shown for an older backend that does not send it.
- */
-function describeImportGap(historyImport) {
-  const state = historyImport?.state;
-  if (state === 'importing') {
-    return 'Still importing your older email. Earlier applications will appear over the next few hours.';
-  }
-  if (state === 'retrying') {
-    const next = formatImportStart(historyImport?.nextRetryAt);
-    return next
-      ? `Importing your older email hit a problem, so earlier applications may be missing. We'll try again automatically on ${next}.`
-      : "Importing your older email hit a problem, so earlier applications may be missing. We'll try again automatically tonight.";
-  }
-  if (state === 'stopped') {
-    return "We couldn't import your older email, so earlier applications may be missing. We've been alerted and are looking into it.";
-  }
-  return null;
 }
 
 function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
@@ -118,20 +81,22 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
   const premiumDays = Number(coverage?.premiumHistoryWindowDays);
   const showUpgrade = userPlan !== 'premium' && Number.isFinite(premiumDays) && premiumDays > windowDays;
 
+  // Compact (2026-10-14): the note took two to three lines under the list and, with pagination,
+  // left room for under two cards. It now scrolls with the list (EmailList trailingSlot) instead
+  // of pinning, and the hide button is a 32px target (it was 14px).
   return (
     <div
       data-testid="history-coverage-note"
-      className="mx-3 mb-3 flex shrink-0 items-start gap-2 rounded-xl border border-border bg-card/60 px-3 py-2.5"
+      className="mx-3 mb-2 flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card/60 py-1 pl-2.5 pr-1"
     >
-      <History className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      <div className="text-[11px] leading-4 text-muted-foreground">
+      <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1 text-[11px] leading-4 text-muted-foreground">
         {importGap ? <span data-testid="history-import-gap">{importGap}</span> : (<>
         <span>
           {importStart
-            ? `Tracking your email from ${importStart} — your plan imports the last ${windowDays} days.`
+            ? `Email since ${importStart}: your plan imports the last ${windowDays} days.`
             : `Your plan imports the last ${windowDays} days of email.`}
-        </span>{' '}
-        <span>Applications older than that aren&apos;t here.</span>
+        </span>
         {showUpgrade && (
           <>
             {' '}
@@ -142,7 +107,6 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
             >
               Premium imports {premiumDays} days
             </button>
-            <span>.</span>
           </>
         )}
         </>)}
@@ -151,11 +115,12 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
         type="button"
         data-testid="history-coverage-dismiss"
         aria-label="Hide this note"
+        title="Hide this note"
         onClick={() => {
           setDismissedFor(noteKey);
           writeDismissed(noteKey);
         }}
-        className="-mr-1 -mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground transition hover:bg-white/[0.06] hover:text-foreground"
+        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-white/[0.06] hover:text-foreground"
       >
         <X className="h-3.5 w-3.5" />
       </button>

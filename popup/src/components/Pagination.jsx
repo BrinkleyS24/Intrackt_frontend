@@ -26,7 +26,9 @@ function Pagination({ currentPage, totalPages, onPageChange, totalEmails, pageSi
   }, [currentPage, totalPages]);
 
   return (
-    <footer className="border-t border-border bg-card px-3 py-3">
+    // Accessible names on every control (persona report 2026-10-14: the arrows had none), and
+    // tighter padding so the list keeps more of the 600px popup.
+    <nav aria-label="Pages" data-testid="pagination" className="border-t border-border bg-card px-3 py-1.5">
       {!compact && (
         <div className="mb-2 text-center text-xs text-muted-foreground">
           {totalEmails === 0
@@ -39,6 +41,8 @@ function Pagination({ currentPage, totalPages, onPageChange, totalEmails, pageSi
         <button
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 1}
+          aria-label="Previous page"
+          title="Previous page"
           className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
           type="button"
         >
@@ -49,6 +53,8 @@ function Pagination({ currentPage, totalPages, onPageChange, totalEmails, pageSi
           <button
             key={page}
             onClick={() => onPageChange(page)}
+            aria-label={`Page ${page}`}
+            aria-current={currentPage === page ? 'page' : undefined}
             className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-2 text-[11px] font-medium transition-colors ${
               currentPage === page
                 ? 'bg-accent text-accent-foreground'
@@ -63,13 +69,15 @@ function Pagination({ currentPage, totalPages, onPageChange, totalEmails, pageSi
         <button
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage === totalPages}
+          aria-label="Next page"
+          title="Next page"
           className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
           type="button"
         >
           <ChevronRight className="h-3.5 w-3.5" />
         </button>
       </div>
-    </footer>
+    </nav>
   );
 }
 

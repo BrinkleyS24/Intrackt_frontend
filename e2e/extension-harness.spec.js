@@ -261,7 +261,7 @@ test('renders the free-plan limit reached state with premium-status guidance', a
 
   await expect(page.getByTestId('state-plan')).toContainText('Free');
   await expect(page.getByTestId('state-quota')).toContainText('Limit reached');
-  await expect(frame.getByTestId('quota-status-notice')).toContainText('Limit reached');
+  await expect(frame.getByTestId('quota-status-notice')).toContainText('Free limit reached');
   await expect(frame.getByTestId('quota-premium-status-button')).toHaveText('Upgrade to remove limit');
   // What happens at the limit is visible text, not a hover tooltip (2026-10-14).
   await expect(frame.getByTestId('quota-limit-explainer')).toBeVisible();
@@ -283,7 +283,10 @@ test('renders the stuck sync warning state', async ({}, testInfo) => {
   const frame = await activateScenario(page, 'sync-stuck');
 
   await expect(page.getByTestId('state-sync')).toContainText('In progress');
-  await expect(frame.getByTestId('sync-status-label')).toContainText('Sync may be stuck');
+  await expect(frame.getByTestId('sync-status-label')).toContainText('sync stuck');
+  // The stuck state explains itself and offers a way out (2026-10-14).
+  await expect(frame.getByTestId('sync-stuck-notice')).toContainText('Everything already tracked is safe');
+  await expect(frame.getByTestId('sync-stuck-retry')).toBeVisible();
   await expect(frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Acme AI' }).first()).toBeVisible();
 
   await page.screenshot({
@@ -555,7 +558,9 @@ test('a stalled history import says older applications may be missing and when t
   const gap = frame.getByTestId('history-import-gap');
   await gap.scrollIntoViewIfNeeded();
   await expect(gap).toContainText('earlier applications may be missing');
-  await expect(gap).toContainText("We'll try again automatically on Oct 10, 2026");
+  const expected = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  await expect(gap).toContainText(`We'll try again automatically on ${expected}`);
   // The plan-window sentence is replaced, not stacked under it.
   await expect(frame.getByTestId('history-coverage-note')).not.toContainText('your plan imports the last');
   await page.close();

@@ -775,7 +775,9 @@ SCENARIOS['history-import-retrying'] = {
   applyGate: undefined,
   dataCompleteness: {
     ...deepClone(SCENARIOS['free-rich'].dataCompleteness),
-    historyImport: { state: 'retrying', nextRetryAt: '2026-10-10T12:00:00.000Z' },
+    // Two days from whenever the lab runs: a fixed date went stale and the popup showed a retry
+    // date in the past (2026-10-14). Past dates are now suppressed by describeImportGap.
+    historyImport: { state: 'retrying', nextRetryAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString() },
   },
 };
 

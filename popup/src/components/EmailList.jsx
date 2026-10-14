@@ -215,6 +215,9 @@ function EmailList({
   compact = false,
   headerSlot = null,
   footerSlot = null,
+  // Scrolls with the rows (and still shows when the list is empty): the history note used to be
+  // pinned below the list, where it ate list height and clipped the Apply Gate card (2026-10-14).
+  trailingSlot = null,
   newSinceTimestamp = null,
 }) {
   const normalizedCategoryKey = (category || '').toString().toLowerCase();
@@ -425,6 +428,7 @@ function EmailList({
           {/* A brand-new user has no rows yet but still needs Apply Gate on the job they are viewing. */}
           {headerSlot ? <div className="px-3 pt-3">{headerSlot}</div> : null}
           {renderEmptyState()}
+          {trailingSlot}
         </>
       ) : (
         <div className="flex-1 overflow-y-auto popup-scrollbar px-3 py-3">
@@ -604,6 +608,7 @@ function EmailList({
             })}
           </div>
           {footerSlot}
+          {trailingSlot ? <div className="-mx-3 mt-2">{trailingSlot}</div> : null}
         </div>
       )}
 
