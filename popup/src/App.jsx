@@ -1603,6 +1603,8 @@ function App() {
         isOpen={isReportModalOpen}
         onClose={() => setIsReportModalOpen(false)}
         categorizedEmails={categorizedEmails}
+        manualApplications={manual.applications}
+        manualApplicationsError={manual.error}
         userName={userName}
         userEmail={userEmail}
       />

@@ -151,9 +151,10 @@ export async function downloadSearchActivityPdf({ rows, start, end, userName, us
       formatShortDate(row.appliedDate),
       row.company,
       row.position,
-      row.latestStatusDate && row.latestCategory !== 'applied'
+      (row.latestStatusDate && row.latestCategory !== 'applied'
         ? `${row.latestStatusLabel} (${formatShortDate(row.latestStatusDate)})`
-        : row.latestStatusLabel,
+        : row.latestStatusLabel)
+        + (row.source === 'manual' ? ', added by applicant' : ''),
     ]),
     theme: 'plain',
     styles: {

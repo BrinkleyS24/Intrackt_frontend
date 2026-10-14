@@ -123,3 +123,59 @@ test('weeklyActivity buckets anchored at the chosen start date', () => {
   assert.equal(weeks[1].count, 1);
   assert.match(weeks[0].label, /Jun 1 - Jun 7/);
 });
+
+// 2026-10-14 persona report: a manual application dated 10/14 was missing from
+// a 9/15-10/14 report ("0 applications").
+const manualApp = (overrides = {}) => ({
+  id: 'm-1',
+  normalized_company_name: 'Cedar Health',
+  position: 'Operations Coordinator',
+  current_status: 'applied',
+  user_closed_at: null,
+  application_source: 'manual',
+  manual_applied_at: '2026-10-14T12:00:00Z',
+  first_email_date: '2026-10-14T12:00:00Z',
+  ...overrides,
+});
+
+test('manual applications are included in the report on the day the user picked', () => {
+  const rows = buildActivityRows({ applied: [], interviewed: [], offers: [], rejected: [] }, [manualApp()]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].company, 'Cedar Health');
+  assert.equal(rows[0].source, 'manual');
+  assert.equal(rows[0].latestStatusLabel, 'Awaiting reply');
+  const inRange = filterRowsByRange(rows, new Date(2026, 8, 15), new Date(2026, 9, 14));
+  assert.equal(summarizeRows(inRange).applications, 1);
+  assert.equal(summarizeRows(inRange).awaitingReply, 1);
+});
+
+test('a manual application linked to emails is counted once, with the earlier applied day', () => {
+  const rows = buildActivityRows({
+    applied: [email({ applicationId: 'm-1', date: '2026-10-16T12:00:00Z' })],
+    interviewed: [], offers: [], rejected: [],
+  }, [manualApp()]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].source, 'email');
+  assert.equal(rows[0].appliedDate.getDate(), 14);
+});
+
+test('manual statuses map to report categories; closed-by-user is not a rejection', () => {
+  const rows = buildActivityRows({}, [
+    manualApp({ id: 'a', current_status: 'offered' }),
+    manualApp({ id: 'b', current_status: 'rejected' }),
+    manualApp({ id: 'c', user_closed_at: '2026-10-15T00:00:00Z' }),
+  ]);
+  const summary = summarizeRows(rows);
+  assert.equal(summary.applications, 3);
+  assert.equal(summary.offers, 1);
+  assert.equal(summary.rejections, 1);
+  assert.equal(rows.find((r) => r.latestCategory === 'closed').latestStatusLabel, 'Closed');
+});
+
+test('naive UTC email dates are read as UTC, not local time', () => {
+  const rows = buildActivityRows({
+    applied: [email({ date: '2026-10-14 23:30:00' })],
+    interviewed: [], offers: [], rejected: [],
+  });
+  assert.equal(rows[0].appliedDate.toISOString(), '2026-10-14T23:30:00.000Z');
+});

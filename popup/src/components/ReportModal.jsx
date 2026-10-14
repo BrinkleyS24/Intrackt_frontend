@@ -14,6 +14,7 @@ import {
   REPORT_PROVENANCE_NOTE,
 } from '../utils/searchActivityReport.mjs';
 import { downloadSearchActivityPdf } from '../utils/searchActivityPdf.js';
+import { showNotification } from './Notification';
 
 function toInputValue(date) {
   const yyyy = date.getFullYear();
@@ -22,7 +23,15 @@ function toInputValue(date) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-export default function ReportModal({ isOpen, onClose, categorizedEmails, userName, userEmail }) {
+export default function ReportModal({
+  isOpen,
+  onClose,
+  categorizedEmails,
+  manualApplications = [],
+  manualApplicationsError = null,
+  userName,
+  userEmail,
+}) {
   const today = useMemo(() => new Date(), []);
   const defaultStart = useMemo(() => {
     const date = new Date();
@@ -34,7 +43,10 @@ export default function ReportModal({ isOpen, onClose, categorizedEmails, userNa
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState(null);
 
-  const rows = useMemo(() => buildActivityRows(categorizedEmails), [categorizedEmails]);
+  const rows = useMemo(
+    () => buildActivityRows(categorizedEmails, manualApplications),
+    [categorizedEmails, manualApplications],
+  );
 
   const start = useMemo(() => new Date(`${startValue}T00:00:00`), [startValue]);
   const end = useMemo(() => new Date(`${endValue}T00:00:00`), [endValue]);
@@ -52,8 +64,11 @@ export default function ReportModal({ isOpen, onClose, categorizedEmails, userNa
     try {
       await downloadSearchActivityPdf({ rows, start, end, userName, userEmail });
       onClose();
+      // The modal used to close with no sign the file was saved (2026-10-14).
+      showNotification('Report downloaded. Check your Downloads folder.', 'success', null, 4000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not build the PDF.');
+      const reason = err instanceof Error && err.message ? ` ${err.message}` : '';
+      setError(`The PDF could not be created.${reason} Try again.`);
     } finally {
       setIsDownloading(false);
     }
@@ -119,7 +134,13 @@ export default function ReportModal({ isOpen, onClose, categorizedEmails, userNa
 
         <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">{REPORT_PROVENANCE_NOTE}</p>
 
-        {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+        {manualApplicationsError && (
+          <p role="status" data-testid="report-manual-warning" className="mt-2 text-xs text-warning">
+            Applications you added yourself could not be loaded, so this report may leave them out. Close this, press Refresh, then try again.
+          </p>
+        )}
+
+        {error && <p role="alert" data-testid="report-error" className="mt-2 text-xs text-destructive">{error}</p>}
 
         <button
           onClick={handleDownload}

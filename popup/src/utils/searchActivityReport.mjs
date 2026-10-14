@@ -8,13 +8,41 @@ const CATEGORY_STATUS_LABELS = {
   interviewed: 'Interview',
   offers: 'Offer',
   rejected: 'Rejected',
+  closed: 'Closed',
+};
+
+// Manual applications use the backend's current_status vocabulary.
+const MANUAL_STATUS_TO_CATEGORY = {
+  applied: 'applied',
+  interviewed: 'interviewed',
+  offered: 'offers',
+  offers: 'offers',
+  rejected: 'rejected',
 };
 
 const TRACKED_CATEGORIES = ['applied', 'interviewed', 'offers', 'rejected'];
 
+// Email dates arrive as UTC with no zone marker ("2026-10-05 21:30:00"). Read
+// them as UTC like popup/src/utils/uiHelpers.js parseEmailDate does (kept as a
+// copy so this file stays importable under `node --test`), or an evening email
+// lands on the next day in the report (2026-10-14).
 function parseEmailDate(value) {
   if (!value) return null;
-  const date = new Date(value);
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  const raw = String(value).trim();
+  const hasZone = /([zZ]|[+-]\d{2}:?\d{2})$/.test(raw);
+  const naiveIso = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw) && !hasZone;
+  const date = new Date(naiveIso ? `${raw.replace(' ', 'T')}Z` : raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+// A manual application's applied date is a calendar day the user picked
+// (stored as noon UTC). Rebuild it as that local day so the date-range filter
+// never shifts it across midnight.
+function parseCalendarDay(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -30,11 +58,12 @@ function groupKeyForEmail(email) {
 }
 
 /**
- * Groups categorized emails into application rows.
+ * Groups categorized emails and manually added applications into application rows.
  * @param {Record<string, Array<object>>} categorizedEmails — { applied, interviewed, offers, rejected }
- * @returns {Array<{company, position, appliedDate, latestCategory, latestStatusLabel, latestStatusDate, everInterviewed, everOffered}>}
+ * @param {Array<object>} manualApplications — rows from LIST_MANUAL_APPLICATIONS
+ * @returns {Array<{company, position, appliedDate, latestCategory, latestStatusLabel, latestStatusDate, everInterviewed, everOffered, source}>}
  */
-export function buildActivityRows(categorizedEmails = {}) {
+export function buildActivityRows(categorizedEmails = {}, manualApplications = []) {
   const groups = new Map();
 
   for (const category of TRACKED_CATEGORIES) {
@@ -51,6 +80,7 @@ export function buildActivityRows(categorizedEmails = {}) {
           latestCategory: null,
           everInterviewed: false,
           everOffered: false,
+          manual: false,
         };
         groups.set(key, group);
       }
@@ -72,6 +102,39 @@ export function buildActivityRows(categorizedEmails = {}) {
     }
   }
 
+  // Applications the user added by hand were missing from the report, so a
+  // 9/15-10/14 report said "0 applications" right after adding one dated 10/14
+  // (persona report 2026-10-14). A manual entry that emails later linked to
+  // shares the email rows' `app:` key and is counted once.
+  for (const application of manualApplications || []) {
+    if (!application || application.id == null) continue;
+    const key = `app:${application.id}`;
+    const appliedDay = parseCalendarDay(application.manual_applied_at)
+      || parseEmailDate(application.first_email_date);
+    const category = application.user_closed_at
+      ? 'closed'
+      : (MANUAL_STATUS_TO_CATEGORY[application.current_status] || 'applied');
+    const existing = groups.get(key);
+    if (existing) {
+      if (appliedDay && (!existing.earliestDate || appliedDay < existing.earliestDate)) {
+        existing.earliestDate = appliedDay;
+      }
+      if (!existing.latestDate && appliedDay) existing.latestDate = appliedDay;
+      continue;
+    }
+    groups.set(key, {
+      company: String(application.normalized_company_name || application.company_name || '').trim() || null,
+      position: String(application.position || '').trim() || null,
+      earliestDate: appliedDay,
+      // Only the applied day is known; no separate status date to print.
+      latestDate: null,
+      latestCategory: category,
+      everInterviewed: category === 'interviewed' || category === 'offers',
+      everOffered: category === 'offers',
+      manual: true,
+    });
+  }
+
   const rows = [];
   for (const group of groups.values()) {
     // A row without a single dated email cannot attest an application date;
@@ -86,6 +149,7 @@ export function buildActivityRows(categorizedEmails = {}) {
       latestStatusDate: group.latestDate,
       everInterviewed: group.everInterviewed || group.everOffered,
       everOffered: group.everOffered,
+      source: group.manual ? 'manual' : 'email',
     });
   }
   rows.sort((a, b) => a.appliedDate - b.appliedDate);
@@ -166,6 +230,6 @@ export function formatLongDate(date) {
 }
 
 export const REPORT_PROVENANCE_NOTE =
-  'Compiled automatically from application-related emails in the user\'s Gmail account. '
-  + 'Applendium records an application when a confirmation or related email is received, '
-  + 'so these counts are a floor, not an estimate.';
+  'Compiled from job application emails in the account holder\'s Gmail and from applications '
+  + 'they added themselves (marked "added by applicant"). Applendium records an emailed '
+  + 'application when a confirmation or related email arrives, so these counts are a floor, not an estimate.';
