@@ -187,7 +187,7 @@ test('renders the free-plan inbox and opens a thread preview', async ({}, testIn
   const frame = await activateScenario(page, 'free-rich');
   const northstarThread = frame.locator('[data-testid="email-thread-card"]').filter({ hasText: 'Northstar Labs' }).first();
 
-  await expect(frame.getByTestId('quota-status-notice')).toContainText('82/100 active in the last 30 days');
+  await expect(frame.getByTestId('quota-status-notice')).toContainText('410/500 active in the last 30 days');
   await expect(northstarThread).toBeVisible();
   await northstarThread.click();
   await expect(frame.getByTestId('email-preview')).toBeVisible();
@@ -262,7 +262,12 @@ test('renders the free-plan limit reached state with premium-status guidance', a
   await expect(page.getByTestId('state-plan')).toContainText('Free');
   await expect(page.getByTestId('state-quota')).toContainText('Limit reached');
   await expect(frame.getByTestId('quota-status-notice')).toContainText('Limit reached');
-  await expect(frame.getByTestId('quota-premium-status-button')).toBeVisible();
+  await expect(frame.getByTestId('quota-premium-status-button')).toHaveText('Upgrade to remove limit');
+  // What happens at the limit is visible text, not a hover tooltip (2026-10-14).
+  await expect(frame.getByTestId('quota-limit-explainer')).toBeVisible();
+  await expect(frame.getByTestId('quota-limit-explainer')).toContainText('New applications are not being added');
+  await expect(frame.getByTestId('quota-limit-explainer')).toContainText('already track keep updating');
+  await expect(frame.getByTestId('quota-status-notice')).toContainText('500/500');
   await expect(frame.getByTestId('dashboard-link')).toContainText('Upgrade to Premium');
 
   await page.screenshot({

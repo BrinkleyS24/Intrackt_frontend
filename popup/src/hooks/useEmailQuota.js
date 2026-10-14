@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 
-const DEFAULT_FREE_TRACKING_LIMIT = 100;
+// Matches backend FREE_TIER_SYNC_QUOTA (500 applications in a rolling 30 days). Only used when
+// a quota payload arrives without a limit.
+const DEFAULT_FREE_TRACKING_LIMIT = 500;
 
 /**
  * @typedef {Object} EmailQuota
@@ -101,9 +103,9 @@ export function useEmailQuota(initialQuotaData, userPlan) {
         switch (quota.warningLevel) {
             case 'exceeded':
                 if (quota.limitBehavior === 'existing_continue_new_paused') {
-                    return "Tracking limit reached. Existing tracked applications still sync, but new ones are paused until your limit resets. Premium has no limit.";
+                    return "Free limit reached. New applications are not being added. Applications you already track keep updating. Premium has no limit.";
                 }
-                return "Tracking limit reached. New tracked applications resume when your limit resets. Premium has no limit.";
+                return "Free limit reached. New applications are not being added until some tracked applications go 30 days without a new email. Premium has no limit.";
             case 'critical':
                 return `Only ${remaining} tracked applications remaining in your limit.`;
             case 'warning':

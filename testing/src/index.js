@@ -91,7 +91,7 @@ function formatQuotaSummary(snapshot) {
     return `${trackedUsage} tracked - Unlimited`;
   }
 
-  const limit = Number(quota.limit || 100);
+  const limit = Number(quota.limit || 500);
   if (quota.limitReached || trackedUsage >= limit) {
     return `${trackedUsage}/${limit} tracked - Limit reached`;
   }

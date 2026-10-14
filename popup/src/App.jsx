@@ -154,15 +154,18 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
     return null;
   }
 
-  // Exceeded: still clear (it's the conversion moment) but slim — one line + a
-  // thin bar + the Premium CTA, instead of the old filled warning block.
+  // Exceeded: still clear (it's the conversion moment) but slim. What happens at the limit used
+  // to live only in a hover tooltip, and the button said "Premium status" (persona report
+  // 2026-10-14). Behavior per backend quotaPayload/syncService: the free limit counts
+  // applications with an email in the last 30 days; at the limit, emails for applications already
+  // tracked still sync, while emails that would start a new application are not imported.
   if (isExceeded) {
     return (
       <div data-testid="quota-status-notice" className="rounded-lg border border-destructive/25 bg-destructive/[0.08] px-3 py-2">
         <div className="flex items-center justify-between gap-2">
           <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${accentTextClassName}`}>
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-            <span className="tabular-nums">Limit reached · {Math.min(quota.used, quota.total)}/{quota.total}</span>
+            <span className="tabular-nums">Free limit reached · {Math.min(quota.used, quota.total)}/{quota.total}</span>
           </span>
           <button
             onClick={() => onOpenPremiumPage('ext_quota')}
@@ -170,9 +173,13 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
             className="shrink-0 rounded-full border border-destructive/25 px-2.5 py-1 text-[11px] font-semibold text-destructive transition hover:bg-destructive/10"
             type="button"
           >
-            Premium status
+            Upgrade to remove limit
           </button>
         </div>
+        <p data-testid="quota-limit-explainer" className="mt-1.5 text-[11px] leading-4 text-foreground/85">
+          New applications are not being added. Applications you already track keep updating.
+          Room opens up as tracked applications go {QUOTA_WINDOW_DAYS} days without a new email.
+        </p>
         <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-background/70">
           <div className={`h-full rounded-full transition-all ${progressClassName}`} style={{ width: `${clampedPercentage}%` }} />
         </div>
@@ -210,7 +217,7 @@ function QuotaHeaderBadge({ quota, label, warningLevel }) {
   // contradiction (founder screenshot, 2026-09-29).
   const summary = `${Math.min(quota.used, quota.total)} of ${quota.total} applications active in the last ${QUOTA_WINDOW_DAYS} days on your free plan.`;
   const detail = quota.isAtLimit
-    ? 'Existing tracked applications still sync, but new applications pause until your limit resets.'
+    ? 'New applications are not being added. Applications you already track keep updating.'
     : 'Older applications stay tracked and do not count toward this limit.';
   const tooltipId = 'quota-header-tooltip';
 
