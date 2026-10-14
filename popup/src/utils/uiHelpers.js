@@ -35,6 +35,17 @@ export function parseEmailDate(dateValue) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * A user-picked calendar day ("2026-10-13", or a manual entry's "2026-10-13T12:00:00Z") as a local
+ * Date, so it shows the day the user chose in every time zone. Null when it is not a dated value.
+ */
+export function parseCalendarDay(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export function formatDate(dateStr) {
   if (!dateStr) return "N/A";
   const date = parseEmailDate(dateStr);
