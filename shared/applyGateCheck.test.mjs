@@ -22,6 +22,7 @@ const {
   describeCheckedResume,
   scopedCachedCheck,
   createCheckCoordinator,
+  shouldOfferApplyGate,
 } = await import(`data:text/javascript,${encodeURIComponent(source)}`);
 
 const displayResult = (action, overrides = {}) => ({
@@ -151,4 +152,18 @@ test('the buttons read as answers to "Are you applying?", never as commands', ()
     assert.equal(labels.filter(Boolean).length, labels.length);
   }
   assert.match(DECISION_QUESTION, /^Are you applying\?/);
+});
+
+// 2026-10-14: the popup offered to check applendium.com's own Apply Gate page as a job.
+test('shouldOfferApplyGate never offers our own site, and needs a job-shaped page elsewhere', () => {
+  const page = (url, extra = {}) => ({ source: 'page', url, title: 'Apply Gate', description: 'x'.repeat(700), looksLikeJob: true, ...extra });
+  assert.equal(shouldOfferApplyGate(page('https://applendium.com/apply-gate')), false);
+  assert.equal(shouldOfferApplyGate(page('https://www.applendium.com/apply-gate', { source: 'structured' })), false);
+  assert.equal(shouldOfferApplyGate(page('http://localhost:5173/apply-gate'), { ownHosts: ['localhost'] }), false);
+  assert.equal(shouldOfferApplyGate(page('https://boards.greenhouse.io/acme/jobs/123')), true);
+  assert.equal(shouldOfferApplyGate(page('https://acme.org/careers/ops-coordinator')), true);
+  assert.equal(shouldOfferApplyGate(page('https://example.com/blog/how-to-interview')), false);
+  assert.equal(shouldOfferApplyGate(page('https://boards.greenhouse.io/acme/jobs/1', { looksLikeJob: false })), false);
+  assert.equal(shouldOfferApplyGate(page('https://school.k12.us/anything', { source: 'structured' })), true);
+  assert.equal(shouldOfferApplyGate(null), false);
 });

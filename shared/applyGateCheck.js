@@ -130,6 +130,31 @@ export function extractJobPostingFromPage() {
   };
 }
 
+// Applicant-tracking systems and job boards whose pages are postings by design.
+const JOB_HOST_PATTERN = /(^|\.)(greenhouse\.io|lever\.co|ashbyhq\.com|myworkdayjobs\.com|workday\.com|icims\.com|smartrecruiters\.com|jobvite\.com|bamboohr\.com|workable\.com|recruitee\.com|breezy\.hr|jazzhr\.com|applytojob\.com|paylocity\.com|ultipro\.com|ukg\.com|adp\.com|taleo\.net|oraclecloud\.com|successfactors\.com|linkedin\.com|indeed\.com|glassdoor\.com|ziprecruiter\.com|monster\.com|dice\.com|wellfound\.com|builtin\.com|simplyhired\.com|usajobs\.gov|governmentjobs\.com|schoolspring\.com|k12jobspot\.com|edjoin\.org|healthecareers\.com|nurse\.com|careerbuilder\.com|snagajob\.com|handshake\.com|joinhandshake\.com)$/i;
+const JOB_PATH_PATTERN = /\/(jobs?|careers?|positions?|openings?|vacanc|postings?|requisitions?|opportunit)/i;
+const OWN_HOST_PATTERN = /(^|\.)applendium\.com$/i;
+
+/**
+ * Whether the popup should offer Apply Gate on the page it read. The popup offered to check
+ * applendium.com's own Apply Gate page as a job, because a pasted description reads like a
+ * posting (persona report, 2026-10-14). Never on our own site (or the configured web app host);
+ * structured JobPosting data or a known ATS/job board host qualifies; any other page needs the
+ * posting-shaped text heuristic AND a job-like URL path.
+ */
+export function shouldOfferApplyGate(posting, { ownHosts = [] } = {}) {
+  if (!posting || !(posting.description || posting.title)) return false;
+  let url;
+  try { url = new URL(posting.url); } catch (_) { return false; }
+  if (!/^https?:$/.test(url.protocol)) return false;
+  const host = url.hostname.toLowerCase();
+  if (OWN_HOST_PATTERN.test(host)) return false;
+  if (ownHosts.some((own) => own && String(own).toLowerCase() === host)) return false;
+  if (posting.source === 'structured') return true;
+  if (!posting.looksLikeJob) return false;
+  return JOB_HOST_PATTERN.test(host) || JOB_PATH_PATTERN.test(url.pathname);
+}
+
 const DECISIONS = {
   APPLY: { key: 'apply', label: 'Apply', tone: 'positive' },
   APPLY_WITH_STRATEGY: { key: 'apply_with_care', label: 'Apply with care', tone: 'brand' },

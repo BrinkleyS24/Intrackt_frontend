@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
 import {
+  shouldOfferApplyGate,
   summarizeApplyGateResult,
 } from '../../../shared/applyGateCheck.js';
+import { getPremiumDashboardUrl } from '../utils/runtimeConfig';
+
+// The configured web app host (localhost in local builds) is our own site too.
+async function readOwnHosts() {
+  try {
+    const raw = await getPremiumDashboardUrl();
+    return raw ? [new URL(raw).hostname] : [];
+  } catch (_) {
+    return [];
+  }
+}
 
 const HIDDEN = { phase: 'hidden', posting: null, summary: null, error: null, recorded: null, recording: false, allowance: null };
 
@@ -46,8 +58,9 @@ export function useApplyGateCheck(enabled, { premium = false, accountId = null }
       } catch (_) {
         posting = null;
       }
+      const ownHosts = await readOwnHosts();
       if (cancelled) return;
-      if (!posting?.looksLikeJob || !(posting.description || posting.title)) {
+      if (!shouldOfferApplyGate(posting, { ownHosts })) {
         // Off a job page the only useful thing to say is that Apply Gate has no resume to
         // check against — otherwise users find out only once they open a posting.
         try {
