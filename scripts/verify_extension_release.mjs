@@ -106,6 +106,13 @@ assertNoLocalhostInCsp(builtManifest.content_security_policy?.extension_pages ||
 assertNoRemoteHostedCodeReferences(distDir);
 assertNoInlineScripts(distDir);
 
+// Firebase config is inlined from the build environment (.env). Without it the bundle builds and
+// passes every check above, but sign-in is disabled ("Firebase auth is not configured for this
+// build"): 2.1.8 shipped that way on 2026-10-15 from a checkout with no .env. Fail the release.
+const backgroundJs = fs.readFileSync(path.join(distDir, 'background.js'), 'utf8');
+assert(/AIza[0-9A-Za-z_-]{35}/.test(backgroundJs), 'background.js has no Firebase apiKey: the build environment (.env) is missing FIREBASE_* values, so sign-in would be disabled.');
+assert(/[a-z0-9-]+\.firebaseapp\.com|[a-z0-9-]+\.web\.app|applendium\.com/.test(backgroundJs), 'background.js has no Firebase authDomain: the build environment (.env) is missing FIREBASE_AUTH_DOMAIN.');
+
 console.log('Production extension bundle verified successfully.');
 console.log(`Version: ${builtManifest.version}`);
 console.log(`Output: ${distDir}`);
