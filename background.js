@@ -2303,6 +2303,12 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
       const updatedApplications = await updateExtensionTestingApplications((current) => {
         const existing = current?.[msg.applicationId] || current?.[String(msg.applicationId)];
         if (!existing) return current;
+        // A manually added application is stored flat, like the backend row; the real close sets
+        // only user_closed_at and user_closed_reason (services/applicationCloseService.js).
+        if (existing.application_source === 'manual') {
+          if (existing.user_closed_at) return current;
+          return { ...current, [existing.id]: { ...existing, user_closed_at: new Date().toISOString(), user_closed_reason: msg.reason || null } };
+        }
         return {
           ...current,
           [msg.applicationId]: {
@@ -2321,6 +2327,10 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
         sendResponse({ success: false, error: 'Application not found.' });
         return true;
       }
+      if (updatedEntry.application_source === 'manual') {
+        sendResponse({ success: true, recorded: true, application: updatedEntry });
+        return true;
+      }
       await patchCachedEmailsForApplication(msg.applicationId, updatedEntry.application);
       sendResponse({ success: true, application: updatedEntry.application });
       return true;
@@ -2330,6 +2340,9 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
       const updatedApplications = await updateExtensionTestingApplications((current) => {
         const existing = current?.[msg.applicationId] || current?.[String(msg.applicationId)];
         if (!existing) return current;
+        if (existing.application_source === 'manual') {
+          return { ...current, [existing.id]: { ...existing, user_closed_at: null, user_closed_reason: null } };
+        }
         return {
           ...current,
           [msg.applicationId]: {
@@ -2346,6 +2359,10 @@ async function maybeHandleExtensionTestingMessage({ msg, sendResponse, testingSt
       const updatedEntry = updatedApplications?.[msg.applicationId] || updatedApplications?.[String(msg.applicationId)];
       if (!updatedEntry) {
         sendResponse({ success: false, error: 'Application not found.' });
+        return true;
+      }
+      if (updatedEntry.application_source === 'manual') {
+        sendResponse({ success: true, application: updatedEntry });
         return true;
       }
       await patchCachedEmailsForApplication(msg.applicationId, updatedEntry.application);

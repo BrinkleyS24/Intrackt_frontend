@@ -226,6 +226,27 @@ export function classifyManualCloseKind(userClosedReason) {
   return 'rejection';
 }
 
+/**
+ * Pipeline tab for an application the user added by hand, under the same close rules as email
+ * cards: a rejection or no-response close lands in Closed, a withdrew / accepted-elsewhere close
+ * keeps its stage under "Closed by you". Manual cards used to treat every close as the user's
+ * choice, so a "Rejected verbally" close never reached the Closed tile (2026-10-15).
+ * @returns {{pipelineStatus: 'applied'|'interviewed'|'offers'|'rejected', closedByChoice: boolean, closeKind: null|'rejection'|'silence'|'user_choice'}}
+ */
+export function deriveManualPipelineState(application) {
+  const status = normalizeApplicationStatusKey(application?.current_status);
+  const stage = ['applied', 'interviewed', 'offers', 'rejected'].includes(status) ? status : 'applied';
+  if (stage === 'offers' || stage === 'rejected') return { pipelineStatus: stage, closedByChoice: false, closeKind: null };
+  if (application?.user_closed_at) {
+    const closeKind = classifyManualCloseKind(application.user_closed_reason);
+    return closeKind === 'user_choice'
+      ? { pipelineStatus: stage, closedByChoice: true, closeKind }
+      : { pipelineStatus: 'rejected', closedByChoice: false, closeKind };
+  }
+  if (application?.is_closed) return { pipelineStatus: 'rejected', closedByChoice: false, closeKind: 'silence' };
+  return { pipelineStatus: stage, closedByChoice: false, closeKind: null };
+}
+
 const toEpoch = (value) => {
   const time = new Date(value || 0).getTime();
   return Number.isFinite(time) ? time : 0;

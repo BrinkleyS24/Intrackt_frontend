@@ -22,6 +22,7 @@ const {
   deriveGroupClosedByChoice,
   mergeGroupsByApplication,
   classifyManualCloseKind,
+  deriveManualPipelineState,
 } = mod;
 
 // Mirror of popup getApplicationKey (app_id > company+position > thread > email).
@@ -198,4 +199,18 @@ test('a closed role without a close kind is counted under Closed, matching its b
   assert.equal(derivePipelineStatus({ applicationId: 1, applicationStatus: 'offers', isClosed: true }), 'offers');
   // Unlinked mail is never treated as closed.
   assert.equal(derivePipelineStatus({ category: 'applied', isClosed: true }), 'applied');
+});
+
+// 2026-10-15 persona report: a manual application could not be moved, and every close counted as
+// the user's own choice. Manual closes now follow the email cards' rules.
+test('a closed manual application lands where an email card with the same close would', () => {
+  const base = { id: 1, current_status: 'applied', is_closed: false, user_closed_at: null, user_closed_reason: null };
+  assert.deepEqual(deriveManualPipelineState(base), { pipelineStatus: 'applied', closedByChoice: false, closeKind: null });
+  const closed = (reason) => deriveManualPipelineState({ ...base, user_closed_at: '2026-10-15T12:00:00Z', user_closed_reason: reason });
+  assert.equal(closed('Rejected verbally').pipelineStatus, 'rejected');
+  assert.equal(closed('No response').pipelineStatus, 'rejected');
+  assert.equal(closed('No response').closeKind, 'silence');
+  assert.deepEqual(closed('Withdrew'), { pipelineStatus: 'applied', closedByChoice: true, closeKind: 'user_choice' });
+  assert.equal(deriveManualPipelineState({ ...base, current_status: 'offered' }).pipelineStatus, 'offers');
+  assert.equal(deriveManualPipelineState({ ...base, current_status: 'interviewed' }).pipelineStatus, 'interviewed');
 });
