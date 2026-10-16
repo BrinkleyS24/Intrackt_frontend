@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Briefcase, Building2, ChevronDown, Clock, ExternalLink, Flag, Lock, ShieldCheck, TrendingUp, X } from 'lucide-react';
 import { cn } from '../utils/cn';
-import { parseEmailDate, getCategoryTitle } from '../utils/uiHelpers';
+import { parseEmailDate, getStageBadgeLabel } from '../utils/uiHelpers';
 import { showNotification } from './Notification';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
 import { collapseJourneyStages } from '../utils/applicationPresentation';
@@ -338,11 +338,10 @@ const formatLongDate = (dateValue) => {
   const date = parseEmailDate(dateValue) || new Date(dateValue);
   if (Number.isNaN(date.getTime())) return 'Invalid date';
   return date.toLocaleDateString('en-US', {
-    weekday: 'short',
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
   });
 };
@@ -909,7 +908,7 @@ export default function EmailPreview({
               ) : null}
             </div>
             <span className={cn(statusClassName, 'mt-1 shrink-0')}>
-              {presentationStatusKey === 'interviewed' ? 'Interview' : getCategoryTitle(presentationStatusKey)}
+              {getStageBadgeLabel(presentationStatusKey)}
             </span>
           </div>
           {/* The subject reads as the email's title, not the page's; the status badge already says
@@ -918,7 +917,7 @@ export default function EmailPreview({
             {displaySubject}
           </p>
           {displayFrom ? (
-            <p className="mt-0.5 truncate text-[11px] text-muted-foreground" title={displayFrom}>
+            <p className="mt-0.5 truncate text-[12px] text-muted-foreground" title={displayFrom}>
               {displayFrom.replace(/\s*<[^>]*>\s*/g, '').replace(/^"|"$/g, '').trim() || displayFrom}
               {formatShortDate(email.date) ? ` · ${formatShortDate(email.date)}` : ''}
             </p>
@@ -951,7 +950,7 @@ export default function EmailPreview({
         )}
 
         <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
-          <div className="mb-3 flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+          <div className="mb-3 flex items-center justify-between gap-3 text-[12px] text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5" />
               <span>{threadArr.length} message{threadArr.length === 1 ? '' : 's'}</span>
@@ -976,7 +975,7 @@ export default function EmailPreview({
                       <div className="h-px flex-1 bg-border" />
                     </div>
                   )}
-                  <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+                  <div className="flex items-center justify-between gap-3 text-[12px] text-muted-foreground">
                     <span className="truncate">{(message.from || 'Unknown sender').replace(/\s*<[^>]*>\s*/g, '').replace(/^"|"$/g, '').trim() || 'Unknown sender'}</span>
                     <span className="shrink-0">{formatLongDate(message.date)}</span>
                   </div>
@@ -985,7 +984,7 @@ export default function EmailPreview({
                     <button
                       type="button"
                       onClick={() => toggleMessageExpanded(messageKey)}
-                      className="inline-flex items-center gap-1 text-[11px] font-medium text-accent-text transition-colors hover:text-accent-text/80"
+                      className="inline-flex items-center gap-1 text-[12px] font-medium text-accent-text transition-colors hover:text-accent-text/80"
                     >
                       {isExpanded ? 'Show less' : 'Show full message'}
                       <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', isExpanded && 'rotate-180')} />
@@ -999,7 +998,7 @@ export default function EmailPreview({
 
         {userPlan !== 'premium' && (presentationStatusKey === 'applied' || presentationStatusKey === 'interviewed') && onOpenPremiumPage && (
           <div className="rounded-2xl border border-accent/20 bg-accent/5 p-3 shadow-sm">
-            <div className="flex items-center gap-2 text-[11px] font-semibold text-accent-text">
+            <div className="flex items-center gap-2 text-[12px] font-semibold text-accent-text">
               <ShieldCheck className="h-3.5 w-3.5" />
               Your next move on this {presentationStatusKey === 'interviewed' ? 'interview' : 'application'}
             </div>
@@ -1010,14 +1009,14 @@ export default function EmailPreview({
                 <div className="mt-1.5 h-2 w-1/2 rounded bg-muted-foreground/15" />
               </div>
             </div>
-            <p className="mt-2 text-[10px] leading-4 text-muted-foreground">
+            <p className="mt-2 text-[12px] leading-4 text-muted-foreground">
               {presentationStatusKey === 'interviewed'
                 ? 'When to follow up, what to send, and how similar interviews have played out. Premium maps your next step.'
                 : 'When to follow up, whether to keep chasing, and how similar applications have played out. Premium maps your next step.'}
             </p>
             <button
               onClick={() => onOpenPremiumPage('ext_email_preview')}
-              className="mt-2.5 w-full rounded-xl bg-accent px-3 py-2 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
+              className="mt-2.5 w-full rounded-xl bg-accent px-3 py-2 text-[12px] font-semibold text-accent-foreground transition hover:bg-accent/90"
               type="button"
             >
               Unlock with Premium →
@@ -1038,17 +1037,17 @@ export default function EmailPreview({
             <span className="flex min-w-0 items-center gap-2">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-accent-text" />
               <span className="min-w-0">
-                <span className="block text-[11px] font-semibold text-foreground">
+                <span className="block text-[12px] font-semibold text-foreground">
                   Your next move on this {presentationStatusKey === 'interviewed' ? 'interview' : 'application'}
                 </span>
-                <span className="block text-[10px] leading-4 text-muted-foreground">
+                <span className="block text-[12px] leading-4 text-muted-foreground">
                   {presentationStatusKey === 'interviewed'
                     ? 'When to follow up and what to send, based on how similar interviews played out'
                     : 'When to follow up and whether to keep chasing, based on how similar applications played out'}
                 </span>
               </span>
             </span>
-            <span className="shrink-0 text-[11px] font-semibold text-accent-text">Open →</span>
+            <span className="shrink-0 text-[12px] font-semibold text-accent-text">Open →</span>
           </button>
         )}
 
@@ -1181,7 +1180,7 @@ export default function EmailPreview({
               <TrendingUp className="h-4 w-4 text-accent-text" />
               Application Journey
             </h3>
-            <span className="text-[10px] text-accent-text">
+            <span className="text-[12px] text-accent-text">
               {loadingLifecycle ? 'Loading...' : `${journeyStages.length} stage${journeyStages.length === 1 ? '' : 's'}`}
             </span>
           </div>
@@ -1199,13 +1198,13 @@ export default function EmailPreview({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <span className={stageClassName}>{getCategoryTitle(stageKey)}</span>
-                          <p className="mt-1 text-[11px] text-muted-foreground">{getJourneyDescription(stage.category)}</p>
+                          <span className={stageClassName}>{getStageBadgeLabel(stageKey)}</span>
+                          <p className="mt-1 text-[12px] text-muted-foreground">{getJourneyDescription(stage.category)}</p>
                         </div>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">{formatShortDate(stage.lastDate || stage.date)}</span>
+                        <span className="shrink-0 text-[12px] text-muted-foreground">{formatShortDate(stage.lastDate || stage.date)}</span>
                       </div>
                       {safeTextValue(stage.subject, '') ? (
-                        <p className="mt-1 break-words text-[11px] text-foreground/80">
+                        <p className="mt-1 break-words text-[12px] text-foreground/80">
                           {safeTextValue(stage.subject, '')}
                         </p>
                       ) : null}
@@ -1216,7 +1215,7 @@ export default function EmailPreview({
 
               {rawJourneyData.source === 'fallback' && (
                 <div className="space-y-2 pt-1">
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="text-[12px] text-muted-foreground">
                     Showing local stages. Full journey appears after this email is linked across categories.
                   </p>
                   <InlineButton variant="outline" onClick={handleLinkAcrossCategories} disabled={loadingLifecycle}>

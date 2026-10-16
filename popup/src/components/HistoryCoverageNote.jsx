@@ -90,7 +90,7 @@ function HistoryCoverageNote({ coverage, userPlan, onUpgrade }) {
       className="mx-3 mb-2 flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card/60 py-1 pl-2.5 pr-1"
     >
       <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-      <div className="min-w-0 flex-1 text-[11px] leading-4 text-muted-foreground">
+      <div className="min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">
         {importGap ? <span data-testid="history-import-gap">{importGap}</span> : (<>
         <span>
           {importStart

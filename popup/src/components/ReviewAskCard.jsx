@@ -83,7 +83,7 @@ export default function ReviewAskCard({ trackedCount, isBusy }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[13px] font-semibold text-foreground">Is Applendium™ earning its keep?</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
             If it&rsquo;s caught something your inbox would have buried, a short review helps other job seekers find it.
           </p>
         </div>
@@ -101,7 +101,7 @@ export default function ReviewAskCard({ trackedCount, isBusy }) {
         <button
           onClick={handleReview}
           data-testid="review-ask-accept"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
+          className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-accent-foreground transition hover:bg-accent/90"
           type="button"
         >
           <Star className="h-3 w-3" />
@@ -110,7 +110,7 @@ export default function ReviewAskCard({ trackedCount, isBusy }) {
         <button
           onClick={() => answer('dismissed')}
           data-testid="review-ask-dismiss"
-          className="rounded-lg px-3 py-1.5 text-[11px] font-medium text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
+          className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
           type="button"
         >
           No thanks

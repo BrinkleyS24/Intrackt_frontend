@@ -67,7 +67,9 @@ export async function fetchNewEmailsService(userEmail, userId, fullRefresh = fal
       return {
         success: true,
         categorizedEmails: response.categorizedEmails, // Updated emails from backend
-        quota: response.quota // Quota data from backend
+        quota: response.quota, // Quota data from backend
+        // inProgress means the inbox check is still running, so "nothing new" is not known yet.
+        sync: response.sync || null
       };
     } else {
       console.error("❌ Applendium™: Failed to retrieve new emails from background:", response.error);

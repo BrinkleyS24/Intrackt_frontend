@@ -290,6 +290,9 @@ export function useEmails(userEmail, userId, CONFIG) {
    */
   // 2. Update `fetchStoredEmails` to control the 'initialLoading' state
   const fetchStoredEmails = useCallback(async () => {
+    // What storage held, returned even when a newer load supersedes this one, so Refresh can
+    // say what it found (2026-10-15).
+    let loaded = null;
     const requestId = storedRequestIdRef.current + 1;
     storedRequestIdRef.current = requestId;
     // Only show the full-page loader on the first load; later refreshes should not
@@ -297,14 +300,15 @@ export function useEmails(userEmail, userId, CONFIG) {
     if (!hasLoadedOnceRef.current && isMountedRef.current) setInitialLoading(true);
     try {
       const stored = await fetchStoredEmailsService();
-      if (!isMountedRef.current || requestId !== storedRequestIdRef.current) return;
+      loaded = stored || null;
+      if (!isMountedRef.current || requestId !== storedRequestIdRef.current) return loaded;
       setCategorizedEmails(stored);
       calculateUnreadCounts(stored);
       hasLoadedOnceRef.current = true;
       
       // NEW: Retrieve category totals from local storage
       const result = await chrome.storage.local.get(['categoryTotals', 'applicationCount', STORED_EMAILS_CACHE_META_KEY]);
-      if (!isMountedRef.current || requestId !== storedRequestIdRef.current) return;
+      if (!isMountedRef.current || requestId !== storedRequestIdRef.current) return loaded;
       if (result.categoryTotals) {
         setCategoryTotals(result.categoryTotals);
       }
@@ -325,7 +329,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         }
       }
     } catch (error) {
-      if (!isMountedRef.current || requestId !== storedRequestIdRef.current) return;
+      if (!isMountedRef.current || requestId !== storedRequestIdRef.current) return loaded;
       console.error("❌ Applendium™: Error fetching stored emails:", error);
       showNotification("Failed to load stored emails.", "error");
     } finally {
@@ -334,6 +338,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         setInitialLoading(false);
       }
     }
+    return loaded;
   }, [calculateUnreadCounts, logEmailWarning, userEmail, userId]);
 
   useEffect(() => {

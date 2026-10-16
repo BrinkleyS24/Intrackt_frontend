@@ -63,7 +63,26 @@ export function formatDate(dateStr) {
   if (diffDays === 1) return "Yesterday";
   if (diffDays > 1 && diffDays <= 7) return `${diffDays} days ago`;
 
-  return date.toLocaleDateString();
+  // "Sep 27" like the web app, with the year only when it is not this year. The numeric
+  // "9/27/2026" sat beside "2 days ago" and the thread's "Apr 4" (persona reports 2026-10-15).
+  return formatMonthDay(date, now);
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "Sep 27", or "Sep 27, 2025" outside the current year. The popup's one absolute date format. */
+export function formatMonthDay(date, now = new Date()) {
+  const day = `${MONTHS[date.getMonth()]} ${date.getDate()}`;
+  return date.getFullYear() === now.getFullYear() ? day : `${day}, ${date.getFullYear()}`;
+}
+
+/**
+ * The status chip on a card, singular and the same on every screen: the thread said "INTERVIEW"
+ * while its card said "INTERVIEWS" (persona report 2026-10-15).
+ */
+export function getStageBadgeLabel(statusKey) {
+  const labels = { applied: 'Applied', interviewed: 'Interview', offers: 'Offer', rejected: 'Rejected', closed: 'Closed', processing: 'Scanning', irrelevant: 'Not a job email' };
+  return labels[(statusKey || '').toString().toLowerCase()] || 'Applied';
 }
 
 /**

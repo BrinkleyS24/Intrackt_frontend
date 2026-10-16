@@ -79,7 +79,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
     return (
       <div data-testid="premium-active-card" className="rounded-2xl border border-accent/25 bg-accent/5 p-3 shadow-sm">
         <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-accent-text">
+          <div className="flex items-center gap-1.5 text-[12px] font-semibold text-accent-text">
             <Sparkles className="h-3.5 w-3.5" />
             Your premium is active
           </div>
@@ -94,10 +94,10 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
         </div>
 
         <div className="mt-2.5 rounded-xl border border-border bg-card/80 px-3 py-2.5">
-          <div className="text-[11px] font-semibold leading-4 text-foreground">
+          <div className="text-[12px] font-semibold leading-4 text-foreground">
             Start with Apply Gate
           </div>
-          <div className="mt-1 text-[11px] leading-4 text-muted-foreground">
+          <div className="mt-1 text-[12px] leading-4 text-muted-foreground">
             Next time you are about to apply, check the role first. It reads the posting against your
             history and tells you to apply, tailor first, or skip.
           </div>
@@ -109,7 +109,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
               <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-accent/15">
                 <ArrowUpRight className="h-2.5 w-2.5 text-accent-text" />
               </span>
-              <div className="min-w-0 text-[11px] leading-4">
+              <div className="min-w-0 text-[12px] leading-4">
                 <span className="font-semibold text-foreground">{label}</span>
                 <span className="ml-1 text-muted-foreground">{detail}</span>
               </div>
@@ -120,7 +120,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
         <button
           onClick={onOpenPremiumPage}
           data-testid="premium-active-cta"
-          className="mt-3 w-full rounded-xl bg-accent px-3 py-2 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
+          className="mt-3 w-full rounded-xl bg-accent px-3 py-2 text-[12px] font-semibold text-accent-foreground transition hover:bg-accent/90"
           type="button"
         >
           Open your dashboard →
@@ -174,7 +174,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
   return (
     <div data-testid="premium-teaser" className="rounded-2xl border border-accent/25 bg-accent/5 p-3 shadow-sm">
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-accent-text">
+        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-accent-text">
           <Sparkles className="h-3.5 w-3.5" />
           Premium insights ready
         </div>
@@ -194,14 +194,14 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
           {progress ? (
             <>
               {/* Honest progress, not a curiosity gap: the headline names what is coming. */}
-              <div className="text-[11px] font-semibold leading-4 text-foreground">Your first search read</div>
-              <div data-testid="search-read-progress" className="mt-1 text-[11px] leading-4 text-muted-foreground">
+              <div className="text-[12px] font-semibold leading-4 text-foreground">Your first search read</div>
+              <div data-testid="search-read-progress" className="mt-1 text-[12px] leading-4 text-muted-foreground">
                 {progress.label}
               </div>
             </>
           ) : (
             <>
-              <div className="text-[11px] font-semibold leading-4 text-foreground">{heroInsight}</div>
+              <div className="text-[12px] font-semibold leading-4 text-foreground">{heroInsight}</div>
               <div className="mt-1.5 h-2.5 w-5/6 rounded bg-muted-foreground/20" />
               <div className="mt-1.5 h-2 w-2/3 rounded bg-muted-foreground/15" />
             </>
@@ -215,7 +215,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
             <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-muted">
               <Lock className="h-2.5 w-2.5 text-muted-foreground" />
             </span>
-            <div className="min-w-0 text-[11px] leading-4">
+            <div className="min-w-0 text-[12px] leading-4">
               <span className="font-semibold text-foreground">{label}</span>
               <span className="ml-1 text-muted-foreground">{detail}</span>
             </div>
@@ -225,7 +225,7 @@ export default function PremiumTeaserCard({ userPlan, stats, onOpenPremiumPage, 
 
       <button
         onClick={() => onOpenPremiumPage('ext_teaser')}
-        className="mt-3 w-full rounded-xl bg-accent px-3 py-2 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
+        className="mt-3 w-full rounded-xl bg-accent px-3 py-2 text-[12px] font-semibold text-accent-foreground transition hover:bg-accent/90"
         type="button"
       >
         Unlock Premium →

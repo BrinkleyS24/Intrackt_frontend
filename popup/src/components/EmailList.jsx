@@ -6,7 +6,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { CheckCheck } from 'lucide-react';
 import { cn } from '../utils/cn';
-import { formatDate, getCategoryTitle } from '../utils/uiHelpers';
+import { formatDate, getCategoryTitle, getStageBadgeLabel } from '../utils/uiHelpers';
 import { countUniqueThreads, getApplicationKey, groupEmailsByThread } from '../utils/grouping';
 import Pagination from './Pagination';
 import ManualApplicationCard from './ManualApplicationCard';
@@ -163,7 +163,7 @@ function LifecycleStepper({ group, currentStatus }) {
   }, [observedStages]);
 
   return (
-    <div className="mt-2 flex items-center gap-1 overflow-hidden">
+    <div className="flex items-center gap-1 overflow-hidden">
       {LIFECYCLE_STAGES.map((stage, index) => {
         const isObserved = observedStages.has(stage.key);
         const isCurrent = currentStatus === stage.key;
@@ -219,6 +219,8 @@ function EmailList({
   // pinned below the list, where it ate list height and clipped the Apply Gate card (2026-10-14).
   trailingSlot = null,
   newSinceTimestamp = null,
+  // { title, lines, action }: the home list's own empty copy (first run, or a search with no matches).
+  emptyState = null,
 }) {
   const normalizedCategoryKey = (category || '').toString().toLowerCase();
   const supportsActiveFilter = !compact && (normalizedCategoryKey === 'applied' || normalizedCategoryKey === 'interviewed');
@@ -335,7 +337,7 @@ function EmailList({
               {displayCount} conversation{displayCount === 1 ? '' : 's'} | {displayTotalMessages} message{displayTotalMessages === 1 ? '' : 's'}
             </p>
           </div>
-          <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+          <span className="rounded-full bg-muted px-2.5 py-1 text-[12px] font-medium text-muted-foreground">
             {displayCount}
           </span>
         </div>
@@ -353,7 +355,7 @@ function EmailList({
                 key={tab.id}
                 onClick={() => setActiveFilter(tab.id)}
                 className={cn(
-                  'rounded-full border px-3 py-1 text-[11px] font-medium transition-colors',
+                  'rounded-full border px-3 py-1 text-[12px] font-medium transition-colors',
                   activeFilter === tab.id
                     ? 'border-transparent bg-accent text-accent-foreground'
                     : 'border-border bg-card text-muted-foreground hover:bg-muted'
@@ -409,7 +411,15 @@ function EmailList({
     );
   };
 
-  const renderEmptyState = () => (
+  const renderEmptyState = () => (emptyState && activeFilter === 'all' ? (
+    <div data-testid="empty-list-state" className="mx-3 my-3 rounded-2xl border border-white/[0.07] bg-white/[0.03] px-4 py-4 text-left">
+      <h2 className="text-sm font-semibold text-foreground">{emptyState.title}</h2>
+      <ul className="mt-2 space-y-1.5 text-[12px] leading-5 text-muted-foreground">
+        {emptyState.lines.map((line) => <li key={line}>{line}</li>)}
+      </ul>
+      {emptyState.action ? <div className="mt-3">{emptyState.action}</div> : null}
+    </div>
+  ) : (
     <div className={cn('px-4 py-10 text-center text-sm text-muted-foreground', compact && 'py-16')}>
       {activeFilter === 'all'
         ? 'No emails found in this category.'
@@ -417,7 +427,7 @@ function EmailList({
           ? 'No active applications in this category.'
           : 'No closed applications in this category.'}
     </div>
-  );
+  ));
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -437,7 +447,7 @@ function EmailList({
           {headerSlot}
           <div key={`${category}-${activeFilter}`} className="space-y-2">
             {paginatedThreadGroups.map((group, index) => {
-              if (group.manualApplication) return <ManualApplicationCard key={group.threadId} application={group.manualApplication} onRemove={group.onRemoveManual} />;
+              if (group.manualApplication) return <ManualApplicationCard key={group.threadId} application={group.manualApplication} pipelineStatus={group.pipelineStatus} closedByChoice={group.closedByChoice} onOpen={group.onOpenManual} />;
               const email = (group.latestEmail || group.earliestEmail) || {};
               const conversationPresentation = compact
                 ? deriveConversationPresentationState(group)
@@ -569,29 +579,30 @@ function EmailList({
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                       {isUnread && <span className="h-2 w-2 rounded-full bg-accent" />}
-                      <span className="text-[11px] text-muted-foreground">{formatDate(displayDate)}</span>
+                      <span className="text-[12px] text-muted-foreground">{formatDate(displayDate)}</span>
                     </div>
                   </div>
 
-                  <div className="mt-2 flex items-center gap-2 overflow-hidden">
-                    <span className={statusStyle.badgeClassName}>
-                      {isPreviewCandidate ? 'Scanning' : getCategoryTitle(effectiveDisplayStatusKey)}
+                  <div className="mt-1.5 flex items-center gap-2 overflow-hidden">
+                    <span className={cn(statusStyle.badgeClassName, 'shrink-0')}>
+                      {isPreviewCandidate ? 'Scanning' : getStageBadgeLabel(effectiveDisplayStatusKey)}
                     </span>
                     {latestEventLine && (
-                      <span className="truncate text-[11px] text-muted-foreground">{latestEventLine}</span>
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">{latestEventLine}</span>
                     )}
                     {!compact && (
-                      <span className="shrink-0 text-[11px] text-muted-foreground">· {group.messageCount} messages</span>
+                      <span className="shrink-0 text-[12px] text-muted-foreground">· {group.messageCount} messages</span>
+                    )}
+                    {/* The stage dots sit at the end of this row instead of on a row of their own,
+                        so about one more card fits above the fold (persona reports 2026-10-15). */}
+                    {compact && !isPreviewCandidate && (
+                      <span className="ml-auto shrink-0"><LifecycleStepper group={group} currentStatus={effectiveDisplayStatusKey} /></span>
                     )}
                   </div>
 
-                  {compact && !isPreviewCandidate && (
-                    <LifecycleStepper group={group} currentStatus={effectiveDisplayStatusKey} />
-                  )}
-
                   {isUnread && !compact && (
                     <div className="mt-2">
-                      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium', statusStyle.pillClassName)}>
+                      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-medium', statusStyle.pillClassName)}>
                         {group.unreadCount} unread
                       </span>
                     </div>

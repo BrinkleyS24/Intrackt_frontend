@@ -76,9 +76,11 @@ test('tracks an application without an email and safely removes a mistaken manua
   await frame.getByRole('button',{name:'Save application',exact:true}).click();
   const card=frame.getByTestId('manual-application-card').filter({hasText:'Cedar Research'});
   await expect(card).toBeVisible();await expect(card).toContainText('Added by you');
-  await expect(card).toContainText('Waiting for a matching email');
   await frame.getByTestId('main-tab-applied').click();await expect(card).toBeVisible();
-  await card.getByRole('button',{name:'Remove entry'}).click();await card.getByRole('button',{name:'Confirm removal'}).click();
+  // Removal lives in the opened application now (the card itself opens it, 2026-10-15).
+  await card.click();await expect(frame.getByTestId('manual-application-detail')).toContainText('No email from this employer yet');
+  await frame.getByTestId('manual-remove-open').click();await frame.getByTestId('manual-remove-confirm').click();
+  await expect(frame.getByTestId('manual-application-detail')).toHaveCount(0);
   await expect(card).toHaveCount(0);await page.close();
 });
 
@@ -272,8 +274,9 @@ test('the activity report counts a manual application added today and confirms t
   await frame.getByTestId('report-download-button').click();
   await downloadPromise;
   await expect(frame.getByText('Report downloaded. Check your Downloads folder.')).toBeVisible();
-  await card.getByRole('button', { name: 'Remove entry' }).click();
-  await card.getByRole('button', { name: 'Confirm removal' }).click();
+  await card.click();
+  await frame.getByTestId('manual-remove-open').click();
+  await frame.getByTestId('manual-remove-confirm').click();
   await page.close();
 });
 
@@ -299,8 +302,10 @@ test('refresh shows visible progress and an up-to-date state', async () => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'free-healthy');
   await frame.getByTestId('refresh-button').click();
-  await expect(frame.getByTestId('sync-status-label')).toContainText(/syncing\.\.\.|up to date/);
-  await expect(frame.getByTestId('sync-status-label')).toContainText('up to date');
+  await expect(frame.getByTestId('sync-status-label')).toContainText(/syncing\.\.\.|0 new/);
+  // It says what the refresh found, not only "synced" (persona report 2026-10-15).
+  await expect(frame.getByTestId('sync-status-label')).toContainText('0 new');
+  await expect(frame.getByText('Up to date. No new job emails.')).toBeVisible();
   await page.close();
 });
 
@@ -536,10 +541,16 @@ test('free users see one real read of their own search the moment the popup open
   await expect(frame.getByTestId('search-read-cta')).toBeInViewport();
   // Free users get one Apply Gate check a week on the job they are looking at (2026-09-26).
   const strip = frame.getByTestId('apply-gate-strip');
-  await expect(strip).toContainText('your free check this week');
+  await expect(strip).toContainText('your free check');
+  // It says plainly which job it checks (persona report 2026-10-15: "can't pick the job").
+  await expect(frame.getByTestId('apply-gate-what-it-checks')).toContainText('Checks the posting open in this tab');
   await frame.getByTestId('apply-gate-check').click();
   await expect(frame.getByTestId('apply-gate-decision')).toHaveText('Apply');
-  await expect(frame.getByTestId('apply-gate-free-used-note')).toContainText("That was this week's free check");
+  // The next check's day and time, never "later today" (persona report 2026-10-15).
+  const usedNote = frame.getByTestId('apply-gate-free-used-note');
+  await expect(usedNote).toContainText('That was your free check for this 7-day period.');
+  await expect(usedNote).toContainText(/Your next free check opens (today|tomorrow|\w{3}, \w{3} \d{1,2}) at \d{1,2}:\d{2}\s?[AP]M\./);
+  await expect(usedNote).not.toContainText('later today');
   // Free results name the resume they were checked against, the same as Premium.
   await expect(frame.getByTestId('apply-gate-checked-resume')).toContainText('Checked against');
   await expect(frame.getByTestId('apply-gate-see-premium')).toBeVisible();
@@ -570,7 +581,8 @@ test('a free user without enough data sees honest progress instead of a blur', a
   await expect(frame.getByTestId('search-read')).toHaveCount(0);
 
   // This week's free Apply Gate check is already used: say when the next opens, offer no check.
-  await expect(frame.getByTestId('apply-gate-used')).toContainText('The next one opens');
+  await expect(frame.getByTestId('apply-gate-used')).toContainText(/Your next free check opens .+ at \d{1,2}:\d{2}/);
+  await expect(frame.getByTestId('apply-gate-used')).not.toContainText('later today');
   await expect(frame.getByTestId('apply-gate-check')).toHaveCount(0);
   await page.close();
 });

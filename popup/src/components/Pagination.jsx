@@ -55,7 +55,7 @@ function Pagination({ currentPage, totalPages, onPageChange, totalEmails, pageSi
             onClick={() => onPageChange(page)}
             aria-label={`Page ${page}`}
             aria-current={currentPage === page ? 'page' : undefined}
-            className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-2 text-[11px] font-medium transition-colors ${
+            className={`inline-flex h-7 min-w-7 items-center justify-center rounded-md px-2 text-[12px] font-medium transition-colors ${
               currentPage === page
                 ? 'bg-accent text-accent-foreground'
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground'

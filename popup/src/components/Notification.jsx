@@ -119,7 +119,7 @@ export const Notification = () => {
         {currentNotification.undoFunc && (
           <button
             onClick={handleUndoClick}
-            className="shrink-0 rounded-md bg-white/15 px-2 py-1 text-[11px] font-semibold transition hover:bg-white/25"
+            className="shrink-0 rounded-md bg-white/15 px-2 py-1 text-[12px] font-semibold transition hover:bg-white/25"
             type="button"
           >
             Undo

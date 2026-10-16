@@ -20,10 +20,11 @@ import { useAuth } from './hooks/useAuth';
 import { useEmails } from './hooks/useEmails';
 import { useEmailQuota } from './hooks/useEmailQuota';
 import { getApplicationKey, groupEmailsByThread } from './utils/grouping';
-import { deriveGroupClosedByChoice, deriveGroupPipelineStatus, mergeGroupsByApplication } from '../../shared/applicationDisplayState.js';
+import { deriveGroupClosedByChoice, deriveGroupPipelineStatus, deriveManualPipelineState, mergeGroupsByApplication } from '../../shared/applicationDisplayState.js';
 import { getCategoryTitle, parseEmailDate } from './utils/uiHelpers';
 import { getPremiumDashboardUrl } from './utils/runtimeConfig';
 import { premiumLinkPath } from './utils/premiumRoutes.mjs';
+import { countNewEmails, describeSyncResult, relevantEmailIds } from './utils/syncResult.mjs';
 import { compactSafeTextValues } from './utils/sensitiveContent';
 
 import { CONFIG } from './utils/constants';
@@ -34,6 +35,8 @@ import ApplyGateStrip from './components/ApplyGateStrip';
 import { useApplyGateCheck } from './hooks/useApplyGateCheck';
 import HistoryCoverageNote from './components/HistoryCoverageNote';
 import ManualApplicationForm from './components/ManualApplicationForm';
+import ManualApplicationDetail from './components/ManualApplicationDetail';
+import { describeEmptyList } from './utils/firstRun.mjs';
 import { useManualApplications } from './hooks/useManualApplications';
 import { AlertTriangle, ArrowLeft, CalendarDays, Check, FileDown, LogOut, RefreshCw, Search, Shield, X } from 'lucide-react';
 
@@ -166,20 +169,20 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
     return (
       <div data-testid="quota-status-notice" className="rounded-lg border border-destructive/25 bg-destructive/[0.08] px-3 py-2">
         <div className="flex items-center justify-between gap-2">
-          <span className={`flex items-center gap-1.5 text-[11px] font-semibold ${accentTextClassName}`}>
+          <span className={`flex items-center gap-1.5 text-[12px] font-semibold ${accentTextClassName}`}>
             <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
             <span className="tabular-nums">Free limit reached · {Math.min(quota.used, quota.total)}/{quota.total}</span>
           </span>
           <button
             onClick={() => onOpenPremiumPage('ext_quota')}
             data-testid="quota-premium-status-button"
-            className="shrink-0 rounded-full border border-destructive/25 px-2.5 py-1 text-[11px] font-semibold text-destructive transition hover:bg-destructive/10"
+            className="shrink-0 rounded-full border border-destructive/25 px-2.5 py-1 text-[12px] font-semibold text-destructive transition hover:bg-destructive/10"
             type="button"
           >
             Upgrade to remove limit
           </button>
         </div>
-        <p data-testid="quota-limit-explainer" className="mt-1.5 text-[11px] leading-4 text-foreground/85">
+        <p data-testid="quota-limit-explainer" className="mt-1.5 text-[12px] leading-4 text-foreground/85">
           New applications are not being added. Applications you already track keep updating.
           Room opens up as tracked applications go {QUOTA_WINDOW_DAYS} days without a new email.
         </p>
@@ -194,7 +197,7 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
   // without breaking the calm of the rest of the popup.
   return (
     <div data-testid="quota-status-notice" className="px-1">
-      <div className="flex items-center justify-between text-[11px] tabular-nums text-muted-foreground">
+      <div className="flex items-center justify-between text-[12px] tabular-nums text-muted-foreground">
         <span>
           <span className={`font-semibold ${accentTextClassName}`}>{Math.min(quota.used, quota.total)}/{quota.total}</span> active in the last {QUOTA_WINDOW_DAYS} days
         </span>
@@ -210,7 +213,7 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
   );
 }
 
-function QuotaHeaderBadge({ quota, label, warningLevel }) {
+function QuotaHeaderBadge({ quota, label, warningLevel, trackedCount = null }) {
   if (!quota || !label) {
     return null;
   }
@@ -222,13 +225,18 @@ function QuotaHeaderBadge({ quota, label, warningLevel }) {
   const detail = quota.isAtLimit
     ? 'New applications are not being added. Applications you already track keep updating.'
     : 'Older applications stay tracked and do not count toward this limit.';
+  // Names the other number on screen, so "6/500 active" beside "5 tracked" is not a mystery.
+  const trackedLine = Number.isFinite(trackedCount)
+    ? `"Tracked" is every application in your list (${trackedCount}), whatever its date.`
+    : null;
   const tooltipId = 'quota-header-tooltip';
 
   return (
     <span className="relative inline-flex shrink-0 items-center group">
       <span
-        className={`cursor-help rounded px-1.5 py-0.5 text-[11px] tabular-nums ${getQuotaPillClassName(warningLevel)}`}
-        title={`${summary} ${detail}`}
+        className={`cursor-help rounded px-1.5 py-0.5 text-[12px] tabular-nums ${getQuotaPillClassName(warningLevel)}`}
+        title={[summary, detail, trackedLine].filter(Boolean).join(' ')}
+        data-testid="quota-badge"
         tabIndex={0}
         aria-describedby={tooltipId}
       >
@@ -238,12 +246,12 @@ function QuotaHeaderBadge({ quota, label, warningLevel }) {
       <span
         id={tooltipId}
         role="tooltip"
-        className="pointer-events-none absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-border bg-card px-3 py-2 text-[11px] leading-4 text-foreground shadow-[0_10px_24px_rgba(15,23,42,0.18)] opacity-0 invisible transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+        className="pointer-events-none absolute bottom-full left-0 z-20 mb-2 w-60 rounded-lg border border-border bg-card px-3 py-2 text-[12px] leading-4 text-foreground shadow-[0_10px_24px_rgba(15,23,42,0.18)] opacity-0 invisible transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
       >
-        <span className="absolute -top-1 left-3 h-2 w-2 rotate-45 border-l border-t border-border bg-card" />
-        <span className="block font-semibold text-foreground">Tracked application quota</span>
+        <span className="block font-semibold text-foreground">Free plan limit</span>
         <span className="mt-1 block text-muted-foreground">{summary}</span>
         <span className="mt-1 block text-muted-foreground">{detail}</span>
+        {trackedLine ? <span className="mt-1 block text-muted-foreground">{trackedLine}</span> : null}
       </span>
     </span>
   );
@@ -281,6 +289,8 @@ function App() {
   // Details handed over by Apply Gate's "Track this application" (company, role, posting link).
   const [manualPrefill, setManualPrefill] = useState(null);
   const [emailToMisclassify, setEmailToMisclassify] = useState(null);
+  // The manually added application open in the detail view (selectedCategory 'manualPreview').
+  const [selectedManualId, setSelectedManualId] = useState(null);
   const [categoryBeforePreview, setCategoryBeforePreview] = useState('all');
   const [allApplicationsFilter, setAllApplicationsFilter] = useState('all');
   // When true, the Applied/Interviews pill shows the roles the user closed by
@@ -421,7 +431,8 @@ function App() {
   const clampedQuotaPercentage = Math.max(0, Math.min(100, percentage));
   const showHeaderQuotaPill = hasQuotaData && userPlan !== 'premium' && quota?.total !== Infinity;
   const showQuotaStatusNotice = showHeaderQuotaPill && ['warning', 'critical', 'exceeded'].includes(quotaWarningLevel);
-  const headerQuotaLabel = showHeaderQuotaPill ? `${Math.min(quota.used, quota.total)}/${quota.total}` : null;
+  // "active", because it counts something other than the tracked total beside it (2026-10-15).
+  const headerQuotaLabel = showHeaderQuotaPill ? `${Math.min(quota.used, quota.total)}/${quota.total} active` : null;
   // A dead connection outranks every other sync state. The last sync really did
   // complete, so the timestamp is not lying — but rendering a green "synced"
   // above a banner saying we cannot see the inbox reproduces the exact
@@ -628,6 +639,9 @@ function App() {
   // Visible feedback for a Refresh click. The header pill could stay on "synced" for the whole
   // request, so a click looked like it did nothing (persona report 2026-10-14).
   const [refreshFeedback, setRefreshFeedback] = useState(null); // null | 'syncing' | 'done'
+  const [refreshResult, setRefreshResult] = useState(null); // describeSyncResult() of the last refresh
+  const categorizedEmailsRef = useRef(categorizedEmails);
+  categorizedEmailsRef.current = categorizedEmails;
   const refreshFeedbackTimerRef = useRef(null);
   useEffect(() => () => clearTimeout(refreshFeedbackTimerRef.current), []);
 
@@ -635,6 +649,8 @@ function App() {
     if (!userEmail || !userId) return;
     clearTimeout(refreshFeedbackTimerRef.current);
     setRefreshFeedback('syncing');
+    // The job emails on hand before the refresh, to say afterwards what it found (2026-10-15).
+    const idsBefore = relevantEmailIds(categorizedEmailsRef.current);
     try {
       const syncResult = await fetchNewEmails(false);
       if (!syncResult?.success) {
@@ -647,11 +663,15 @@ function App() {
         }
         return;
       }
-      await fetchStoredEmails();
+      const snapshot = await fetchStoredEmails();
       await fetchQuotaData();
+      const result = syncResult?.sync?.inProgress
+        ? describeSyncResult(null)
+        : snapshot ? describeSyncResult(countNewEmails(idsBefore, snapshot)) : { short: 'up to date', sentence: 'Up to date.' };
+      setRefreshResult(result);
       setRefreshFeedback('done');
-      showNotification('Up to date.', 'success');
-      refreshFeedbackTimerRef.current = setTimeout(() => setRefreshFeedback(null), 5000);
+      showNotification(result.sentence, 'success');
+      refreshFeedbackTimerRef.current = setTimeout(() => setRefreshFeedback(null), 8000);
     } catch (error) {
       setRefreshFeedback(null);
       showNotification(`Failed to refresh emails: ${error.message}`, 'error');
@@ -757,6 +777,15 @@ function App() {
   // (Offer/Rejection, including a manual "rejected verbally") pull the role out of
   // Applied/Interviewed. Buckets are mutually exclusive, so the counts read as a
   // funnel instead of double-counting one role across several stages.
+  const openManualApplication = useCallback((application) => {
+    if (!application?.id) return;
+    hasUserNavigatedCategoryRef.current = true;
+    setCategoryBeforePreview(selectedCategoryRef.current === 'manualPreview' ? 'all' : selectedCategoryRef.current);
+    setSelectedManualId(String(application.id));
+    setSelectedEmail(null);
+    setSelectedCategory('manualPreview');
+  }, []);
+
   const pipelineRoleGroups = useMemo(
     () => {
       const emailGroups = mergeGroupsByApplication(groupEmailsByThread(finalRelevantEmails), getApplicationKey).map((group) => ({
@@ -774,20 +803,21 @@ function App() {
         .map((application) => ({
           threadId: `manual:${application.id}`,
           manualApplication: application,
-          onRemoveManual: manual.remove,
+          onOpenManual: openManualApplication,
           date: application.latest_email_date,
           emails: [],
           messageCount: 0,
           unreadCount: 0,
-          pipelineStatus: application.current_status === 'offered' ? 'offers' : application.current_status,
-          closedByChoice: Boolean(application.user_closed_at),
+          // Same close rules as email cards: a rejection or no-response close counts under Closed,
+          // a withdrew / accepted-elsewhere close is parked under "Closed by you" (2026-10-15).
+          ...deriveManualPipelineState(application),
         }));
       // Manual entries carry a zone and email dates do not, so both go through parseEmailDate or a
       // manual card sorts hours away from mail sent at the same moment.
       const ms = (value) => parseEmailDate(value)?.getTime() ?? 0;
       return [...emailGroups, ...manualGroups].sort((a, b) => ms(b.date) - ms(a.date));
     },
-    [finalRelevantEmails, manual.applications, manual.remove]
+    [finalRelevantEmails, manual.applications, openManualApplication]
   );
 
   const pipelineBuckets = useMemo(() => {
@@ -1042,7 +1072,7 @@ function App() {
     // Each label names exactly what is counted, matching the tiles.
     const describe = (count) => {
       if (activeView === 'applied') return 'awaiting a reply';
-      if (activeView === 'interviewed') return 'in interviews';
+      if (activeView === 'interviewed') return 'in interviews now';
       if (activeView === 'offers') return count === 1 ? 'offer' : 'offers';
       if (activeView === 'rejected') return 'closed';
       return count === 1 ? 'tracked application' : 'tracked applications';
@@ -1092,7 +1122,7 @@ function App() {
       aria-label="Add application"
       title="Add an application you applied to without a confirmation email"
       onClick={() => { setManualPrefill(null); setShowManualForm(true); }}
-      className="shrink-0 rounded-lg border border-accent/30 px-2 py-2 text-[11px] font-semibold text-accent-text transition hover:bg-accent/10"
+      className="shrink-0 rounded-lg border border-accent/30 px-2 py-2 text-[12px] font-semibold text-accent-text transition hover:bg-accent/10"
     >
       {/* Short label: the full one squeezed the search box to "Search companie". */}
       + Add
@@ -1108,6 +1138,19 @@ function App() {
       fetchStoredEmails();
       fetchQuotaData();
     }} />;
+    if (selectedCategory === 'manualPreview') {
+      return (
+        <div className="popup-view-enter">
+          <ManualApplicationDetail
+            key={selectedManualId}
+            application={manual.applications.find((row) => String(row.id) === selectedManualId) || null}
+            onChanged={async () => { await manual.refresh(); fetchStoredEmails(); fetchQuotaData(); }}
+            onRemove={manual.remove}
+            onBack={handleBackToCategory}
+          />
+        </div>
+      );
+    }
     if (selectedCategory === 'emailPreview') {
       return (
         <div className="popup-view-enter">
@@ -1148,10 +1191,21 @@ function App() {
       const totalConversations = filteredConversations.length;
       const allConversationEmails = filteredConversations.flatMap((conv) => conv.emails);
       const stats = allViewHeadlineSummary.counts;
+      // A real first-run screen, or a plain "no matches" for a search or tile filter, instead of
+      // "No emails found in this category." for both (persona report 2026-10-15).
+      const emptyList = describeEmptyList({
+        syncing: isSyncActive || refreshFeedback === 'syncing',
+        coverage: historyCoverage,
+        filtered: Boolean(normalizedListSearchQuery) || dateRange !== 'all' || allApplicationsFilter !== 'all',
+        hasApplications: allViewConversationGroups.length > 0,
+      });
+      const emptyState = emptyList;
 
       return (
         <div className="flex h-full flex-col">
           <div className="space-y-3 px-3 py-3">
+            {/* Screen-reader outline: Applendium (h1) > Your pipeline > Applications (2026-10-15). */}
+            <h2 className="sr-only">Your pipeline</h2>
             <div className="grid grid-cols-4 gap-2">
               {[
                 { key: 'applied', label: 'Applied', value: stats.applied, cardClass: 'bg-white/[0.05]', textClass: 'text-foreground', ringClass: 'ring-white/10' },
@@ -1159,7 +1213,9 @@ function App() {
                 // role that interviewed and was then rejected has moved on to Closed. The web
                 // app's "Ever interviewed" counts the same role forever, which is why the two
                 // numbers differ — both are right, and the labels now say so.
-                { key: 'interviewed', label: 'In interviews', value: stats.interviewed, cardClass: 'bg-warning/10', textClass: 'text-warning', ringClass: 'ring-warning/20' },
+                // "(now)" as on the web dashboard, whose "Reached an interview (ever)" is the other
+                // number people compared this one with (persona reports 2026-10-15).
+                { key: 'interviewed', label: 'In interviews (now)', value: stats.interviewed, cardClass: 'bg-warning/10', textClass: 'text-warning', ringClass: 'ring-warning/20' },
                 { key: 'offers', label: 'Offers', value: stats.offers, cardClass: 'bg-success/10', textClass: 'text-success', ringClass: 'ring-success/20' },
                 // "Closed" rather than "Rejected": the bucket also holds roles closed for
                 // silence, which nobody actually rejected you for. Calling that a rejection
@@ -1179,10 +1235,11 @@ function App() {
                       setShowClosedChoiceRoles(false);
                       setShowDateFilter(false);
                     }}
-                    className={`${stat.cardClass} rounded-xl px-2 py-2.5 text-center transition hover:brightness-125 ${active ? TILE_ACTIVE_RING[stat.key] : `ring-1 ${stat.ringClass}`}`}
+                    className={`${stat.cardClass} rounded-xl px-1.5 py-2 text-center transition hover:brightness-125 ${active ? TILE_ACTIVE_RING[stat.key] : `ring-1 ${stat.ringClass}`}`}
                   >
                     <div className={`text-[20px] font-bold leading-none tracking-[-0.02em] tabular-nums ${stat.textClass}`}>{stat.value}</div>
-                    <div className="mt-1 font-mono text-[10px] font-bold uppercase leading-tight tracking-[0.1em] text-muted-foreground">{stat.label}</div>
+                    {/* Sentence case like the web's labels (designer report 2026-10-15). */}
+                    <div className="mt-1 text-[11px] font-semibold leading-tight text-muted-foreground">{stat.label}</div>
                   </button>
                 );
               })}
@@ -1193,7 +1250,7 @@ function App() {
                 already counts both. The distinction still lives where it changes a number, e.g.
                 rejection speed, which can only be timed on an actual rejection. */}
             {allApplicationsFilter !== 'all' ? (
-              <div className="flex items-center justify-end gap-2 px-0.5 text-[11px] leading-snug text-muted-foreground">
+              <div className="flex items-center justify-end gap-2 px-0.5 text-[12px] leading-snug text-muted-foreground">
                 {allApplicationsFilter !== 'all' ? (
                   <button
                     type="button"
@@ -1223,7 +1280,7 @@ function App() {
                         title="Filter by date"
                         aria-label="Filter by date"
                         aria-expanded={showDateFilter}
-                        className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                        className={`inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[12px] font-medium transition-colors ${
                           dateRange !== 'all'
                             ? 'bg-accent/15 text-accent-text'
                             : 'text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'
@@ -1253,7 +1310,7 @@ function App() {
                         setDateRange(option.key);
                         setShowDateFilter(false);
                       }}
-                      className={`rounded-md px-2 py-1 text-[11px] font-medium transition-colors ${
+                      className={`rounded-md px-2 py-1 text-[12px] font-medium transition-colors ${
                         dateRange === option.key
                           ? 'bg-accent text-accent-foreground'
                           : 'bg-white/[0.05] text-muted-foreground hover:text-foreground'
@@ -1274,7 +1331,7 @@ function App() {
               <button
                 onClick={() => setShowClosedChoiceRoles((prev) => !prev)}
                 data-testid="closed-choice-toggle"
-                className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                className={`rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors ${
                   showingClosedChoice
                     ? 'border-white/25 bg-white/[0.06] text-foreground'
                     : 'border-white/10 text-muted-foreground hover:border-white/25 hover:text-foreground'
@@ -1289,6 +1346,7 @@ function App() {
 
           </div>
 
+          <h2 className="sr-only">Applications</h2>
           <EmailList
             emails={allConversationEmails}
             category={allApplicationsFilter === 'all' ? 'all' : allApplicationsFilter}
@@ -1301,6 +1359,7 @@ function App() {
             isMarkingAllAsRead={markingAllAsRead}
             compact
             newSinceTimestamp={newSinceTimestamp}
+            emptyState={emptyState}
             headerSlot={
               <>
                 <ApplyGateStrip
@@ -1422,16 +1481,16 @@ function App() {
                 <Shield className="h-3.5 w-3.5 shrink-0 text-accent-text" />
                 Next, Google asks for read-only Gmail access.
               </p>
-              <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted-foreground">
+              <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
                 You may see a &ldquo;Google hasn&rsquo;t verified this app&rdquo; notice. We&rsquo;re
                 mid-way through Google&rsquo;s independent security audit (CASA); it reflects our
                 verification progress, not what the app can access.
               </p>
               <div className="mt-2 rounded-lg border border-accent/25 bg-accent/[0.08] p-2.5">
-                <p className="text-[11px] font-semibold text-foreground">
+                <p className="text-[12px] font-semibold text-foreground">
                   To continue past Google&rsquo;s screen:
                 </p>
-                <ol className="mt-1 space-y-0.5 text-[11px] text-muted-foreground">
+                <ol className="mt-1 space-y-0.5 text-[12px] text-muted-foreground">
                   <li>
                     <span className="font-semibold text-accent-text">1.</span> Click{' '}
                     <span className="font-medium text-foreground">Advanced</span>
@@ -1467,7 +1526,7 @@ function App() {
             </svg>
             <span>{isLoginPending ? 'Signing in...' : 'Continue with Google'}</span>
           </button>
-          <p className="mt-2 text-center text-[11px] leading-relaxed text-muted-foreground">
+          <p className="mt-2 text-center text-[12px] leading-relaxed text-muted-foreground">
             New here? Signing in creates your free account.{' '}
             <a
               href="https://applendium.com/privacy"
@@ -1487,10 +1546,11 @@ function App() {
   }
 
   const showBackButton = selectedCategory !== 'all' && selectedCategory !== 'home';
-  const headerAction = selectedCategory === 'emailPreview'
+  const isDetailView = selectedCategory === 'emailPreview' || selectedCategory === 'manualPreview';
+  const headerAction = isDetailView
     ? handleBackToCategory
     : () => handleCategoryChange('all');
-  const headerMetaLabel = selectedCategory === 'emailPreview'
+  const headerMetaLabel = isDetailView
     ? ''
     : selectedCategory === 'review'
       ? 'Needs review'
@@ -1520,25 +1580,18 @@ function App() {
           <span className="grid h-5 w-5 shrink-0 place-items-center rounded-[6px] bg-background ring-1 ring-white/10">
             <img src={LOGO_URL} alt="" className="h-3.5 w-3.5" />
           </span>
-          <span className="truncate text-sm font-semibold lowercase text-foreground">applendium™</span>
+          {/* Same casing as the web app, and never truncated: it read "applendi…" (persona reports
+              2026-10-15). The quota pill that crowded it moved to the footer, beside the tracked
+              count it is easily confused with. */}
+          <h1 data-testid="popup-wordmark" className="shrink-0 whitespace-nowrap text-sm font-semibold text-foreground">Applendium™</h1>
           <span data-testid="plan-badge" className="rounded bg-white/[0.06] px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
             {userPlan === 'premium' ? 'Premium' : 'Free'}
           </span>
-          {/* Hidden while disconnected: a tracking count cannot move when
-              nothing is arriving, and the row needs the space for the honest
-              sync state rather than a number frozen months ago. */}
-          {showHeaderQuotaPill && headerQuotaLabel && !gmailDisconnected && (
-            <QuotaHeaderBadge
-              quota={quota}
-              label={headerQuotaLabel}
-              warningLevel={quotaWarningLevel}
-            />
-          )}
         </div>
         <div className="flex shrink-0 items-center gap-1 font-mono text-[11px] text-muted-foreground">
           {selectedCategory === 'all' || selectedCategory === 'home' ? (
             <>
-              <span data-testid="sync-status-label" aria-live="polite" className="flex items-center gap-1.5 whitespace-nowrap" title={syncStatusLabel}>
+              <span data-testid="sync-status-label" aria-live="polite" className="flex items-center gap-1.5 whitespace-nowrap" title={refreshFeedback === 'done' && refreshResult ? `${refreshResult.sentence} ${syncStatusLabel}.` : syncStatusLabel}>
                 <span className={`h-1.5 w-1.5 rounded-full ${gmailDisconnected || isSyncStuck ? 'bg-destructive' : (isSyncActive || refreshFeedback === 'syncing') ? 'bg-warning' : 'bg-success shadow-[0_0_8px_2px_hsl(var(--success)/0.6)]'}`} />
                 {gmailDisconnected
                   ? 'not syncing'
@@ -1546,7 +1599,7 @@ function App() {
                     ? 'sync stuck'
                     : (isSyncActive || refreshFeedback === 'syncing')
                       ? 'syncing...'
-                      : refreshFeedback === 'done' ? 'up to date' : 'synced'}
+                      : refreshFeedback === 'done' ? (refreshResult?.short || 'up to date') : 'synced'}
               </span>
               <span className="h-3.5 w-px bg-white/10" />
               <button
@@ -1596,7 +1649,7 @@ function App() {
 
       {/* A stuck sync used to show only "Sync may be stuck" in the header, with no reason and
           no way out (persona report 2026-10-14). */}
-      {isSyncStuck && !gmailDisconnected && selectedCategory !== 'emailPreview' && (
+      {isSyncStuck && !gmailDisconnected && !isDetailView && (
         <div data-testid="sync-stuck-notice" aria-live="polite" className="flex items-start justify-between gap-3 border-b border-destructive/20 bg-destructive/[0.06] px-4 py-2 text-xs text-foreground">
           <p className="leading-4">
             Checking your inbox is taking longer than usual. Everything already tracked is safe.
@@ -1607,14 +1660,14 @@ function App() {
             onClick={handleRefresh}
             disabled={refreshFeedback === 'syncing'}
             data-testid="sync-stuck-retry"
-            className="min-h-8 shrink-0 rounded-full border border-destructive/30 px-3 text-[11px] font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-60"
+            className="min-h-8 shrink-0 rounded-full border border-destructive/30 px-3 text-[12px] font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-60"
           >
             {refreshFeedback === 'syncing' ? 'Trying...' : 'Try again'}
           </button>
         </div>
       )}
 
-      {reviewCount > 0 && selectedCategory !== 'review' && selectedCategory !== 'emailPreview' && (
+      {reviewCount > 0 && selectedCategory !== 'review' && !isDetailView && (
         <button
           type="button"
           onClick={() => handleCategoryChange('review')}
@@ -1630,7 +1683,7 @@ function App() {
       )}
 
       <div className="flex-1 overflow-y-auto overflow-x-hidden popup-scrollbar">
-        {!showManualForm && selectedCategory !== 'emailPreview' && (
+        {!showManualForm && !isDetailView && (
           (manual.creationEnabled && selectedCategory !== 'all' && selectedCategory !== 'home') || manual.error || manual.nextCursor
         ) && (
           <div className="border-b border-white/10 px-3 py-2 text-xs">
@@ -1646,10 +1699,22 @@ function App() {
         <ReviewAskCard trackedCount={quota?.used} isBusy={isSyncActive || isSyncStuck} />
       )}
 
-      {selectedCategory !== 'emailPreview' && (
-        <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-3 py-2 text-[11px]">
-          <span data-testid="footer-summary" className="text-muted-foreground">{footerSummary}</span>
-          <button onClick={openPremiumStatusPage} className="font-medium text-accent-text transition hover:text-accent-text/80" data-testid="dashboard-link" type="button">
+      {!isDetailView && (
+        <div className="flex items-center justify-between gap-2 border-t border-white/10 bg-white/[0.02] px-3 py-2 text-[12px]">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span data-testid="footer-summary" className="truncate text-muted-foreground">{footerSummary}</span>
+            {/* Hidden while disconnected (a count frozen months ago is not news), while the footer
+                counts a filtered view, and while the quota notice above the list already says it. */}
+            {showHeaderQuotaPill && headerQuotaLabel && !gmailDisconnected && !showQuotaStatusNotice && !/^Showing /.test(footerSummary) && (
+              <QuotaHeaderBadge
+                quota={quota}
+                label={headerQuotaLabel}
+                warningLevel={quotaWarningLevel}
+                trackedCount={Number.isFinite(applicationCount?.total) ? applicationCount.total : allViewHeadlineSummary.total}
+              />
+            )}
+          </span>
+          <button onClick={openPremiumStatusPage} className="shrink-0 font-medium text-accent-text transition hover:text-accent-text/80" data-testid="dashboard-link" type="button">
             {userPlan === 'premium' ? 'Premium dashboard →' : 'Upgrade to Premium →'}
           </button>
         </div>

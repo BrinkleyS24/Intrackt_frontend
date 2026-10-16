@@ -141,7 +141,7 @@ const CompanyField = ({ email, userEmail, onUpdate, fieldName = 'company' }) => 
             </button>
             {isCorrected && (
               <span
-                className="inline-flex items-center rounded-full border border-success/25 bg-success/15 px-2 py-0.5 text-[10px] font-medium text-success flex-shrink-0"
+                className="inline-flex items-center rounded-full border border-success/25 bg-success/15 px-2 py-0.5 text-[12px] font-medium text-success flex-shrink-0"
                 title="You corrected this, so Applendium™ keeps your value"
               >
                 You edited

@@ -28,3 +28,15 @@ test('a manual day picked today reads "Today"', () => {
   const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T12:00:00Z`;
   assert.equal(formatDate(parseCalendarDay(iso)), 'Today');
 });
+
+// 2026-10-15 persona reports: card dates read "9/27/2026" beside "2 days ago" and the thread's "Apr 4".
+test('older dates read "Sep 27" like the web, with the year only outside this year', async () => {
+  const mod = await import(`data:text/javascript,${encodeURIComponent(source)}`);
+  const now = new Date();
+  const thisYear = new Date(now.getFullYear(), 0, 1, 12);
+  if (now - thisYear > 8 * 86_400_000) assert.equal(formatDate(thisYear), 'Jan 1');
+  assert.equal(formatDate(new Date(now.getFullYear() - 1, 8, 27, 12)), `Sep 27, ${now.getFullYear() - 1}`);
+  assert.doesNotMatch(formatDate(new Date(now.getFullYear() - 1, 8, 27, 12)), /\//);
+  assert.equal(mod.getStageBadgeLabel('interviewed'), 'Interview');
+  assert.equal(mod.getStageBadgeLabel('offers'), 'Offer');
+});
