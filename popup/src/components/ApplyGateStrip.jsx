@@ -84,15 +84,17 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
   if (phase === 'ready') {
     return (
       <div data-testid="apply-gate-strip" className={shell}>
-        <Eyebrow>{premium ? 'Apply Gate · this page' : 'Apply Gate · your free check this week'}</Eyebrow>
+        <Eyebrow>{premium ? 'Apply Gate · this page' : 'Apply Gate · your free check'}</Eyebrow>
         <div className="popup-line-clamp-2 mt-1 text-[12px] font-semibold leading-4 text-foreground">{roleLine(posting)}</div>
         <p className="mt-1 text-[11px] text-muted-foreground">Resume: {selection?.resumeDocument?.name || 'Your selected default'}</p>
         {error ? <p role="status" className="text-[11px] text-muted-foreground">{error}</p> : null}
         <div className="mt-2 flex items-center justify-between gap-2">
-          <span className="text-[11px] leading-4 text-muted-foreground">
+          {/* Says plainly what gets checked: the posting open in this tab. The free check has no
+              posting input of its own (persona report 2026-10-15: "can't pick the job"). */}
+          <span data-testid="apply-gate-what-it-checks" className="text-[12px] leading-4 text-muted-foreground">
             {premium
-              ? 'Check it against your resume before you spend the time.'
-              : 'One free check a week, against your resume. Premium checks every job.'}
+              ? 'Checks the posting open in this tab against your resume.'
+              : 'Checks the posting open in this tab. For a different job, open its posting first. One free check every 7 days.'}
           </span>
           <button type="button" onClick={check.check} data-testid="apply-gate-check" className={PRIMARY_BUTTON}>
             {premium ? 'Check this job' : 'Use my free check'}
@@ -109,7 +111,7 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
         <div className="popup-line-clamp-2 mt-1 text-[12px] font-semibold leading-4 text-foreground">{roleLine(posting)}</div>
         <div className="mt-2 flex items-center justify-between gap-2">
           <span data-testid="apply-gate-used" className="text-[11px] leading-4 text-muted-foreground">
-            You've used this week's free check. The next one opens {nextFree}. Premium checks every job you look at.
+            You've used your free check for this 7-day period. {nextFree} Premium checks every job you look at.
           </span>
           {seePremium}
         </div>
@@ -284,7 +286,7 @@ export default function ApplyGateStrip({ check, onOpenWebPath, onOpenPremiumPage
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-accent/15 pt-1.5">
           <span className="text-[11px] leading-4 text-muted-foreground">
             <span data-testid="apply-gate-checked-resume" className="block">{describeCheckedResume(summary)}</span>
-            <span data-testid="apply-gate-free-used-note">That was this week's free check. The next one opens {nextFree}.</span>
+            <span data-testid="apply-gate-free-used-note">That was your free check for this 7-day period. {nextFree}</span>
           </span>
           {seePremium}
         </div>

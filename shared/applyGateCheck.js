@@ -312,13 +312,24 @@ export function samePostingUrl(a, b) {
   return Boolean(left) && left === normalize(b);
 }
 
-/** "later today", "tomorrow", or "Tue, Sep 30" — when a free user's next weekly check opens. */
+/**
+ * One sentence saying when a free user's next weekly check opens, with the day AND the time. It used
+ * to say "later today" (or "next week" with no date), which read as vague and, beside "this week's
+ * free check", self-contradicting (persona report 2026-10-15). The allowance is a rolling 7 days, so
+ * the backend's nextAvailableAt is the only honest source; with none, the rule itself is stated.
+ */
 export function describeNextFreeCheck(nextAvailableAt, now = new Date()) {
-  const at = new Date(nextAvailableAt || '');
-  if (Number.isNaN(at.getTime())) return 'next week';
+  const raw = String(nextAvailableAt || '').trim();
+  // Timestamps without a zone are UTC in this product (2026-10-05); read them that way.
+  const naive = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw);
+  const at = new Date(naive ? `${raw.replace(' ', 'T')}Z` : raw);
+  if (!raw || Number.isNaN(at.getTime())) return 'Your next free check opens 7 days after the one you used.';
+  if (at.getTime() <= now.getTime()) return 'Your next free check is ready. Open a job posting, then open Applendium to use it.';
+  const time = at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const days = Math.round((startOfDay(at) - startOfDay(now)) / 86_400_000);
-  if (days <= 0) return 'later today';
-  if (days === 1) return 'tomorrow';
-  return at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  if (days === 0) return `Your next free check opens today at ${time}.`;
+  if (days === 1) return `Your next free check opens tomorrow at ${time}.`;
+  const day = at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  return `Your next free check opens ${day} at ${time}.`;
 }

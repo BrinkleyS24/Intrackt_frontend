@@ -105,12 +105,19 @@ test('the same posting is recognised through tracking parameters, a different jo
   assert.equal(samePostingUrl('', ''), false);
 });
 
-test("says when the next free check opens in words, not a timestamp", () => {
+test("says the day and time the next free check opens, never just 'later today'", () => {
   const now = new Date(2026, 8, 26, 10, 0);
-  assert.equal(describeNextFreeCheck(new Date(2026, 8, 26, 18, 0).toISOString(), now), "later today");
-  assert.equal(describeNextFreeCheck(new Date(2026, 8, 27, 9, 0).toISOString(), now), "tomorrow");
-  assert.match(describeNextFreeCheck(new Date(2026, 9, 1, 9, 0).toISOString(), now), /Oct 1/);
-  assert.equal(describeNextFreeCheck(null, now), "next week");
+  const today = describeNextFreeCheck(new Date(2026, 8, 26, 18, 0).toISOString(), now);
+  assert.match(today, /^Your next free check opens today at 6:00\sPM\.$/);
+  assert.doesNotMatch(today, /later today/);
+  assert.match(describeNextFreeCheck(new Date(2026, 8, 27, 9, 0).toISOString(), now), /tomorrow at 9:00\sAM/);
+  assert.match(describeNextFreeCheck(new Date(2026, 9, 1, 9, 30).toISOString(), now), /Thu, Oct 1 at 9:30\sAM/);
+  // A timestamp with no zone is UTC, like every other timestamp the backend sends.
+  const naive = describeNextFreeCheck('2026-09-27 13:00:00', now);
+  assert.equal(naive, describeNextFreeCheck('2026-09-27T13:00:00Z', now));
+  // No date: state the rule instead of guessing; a past date means the check is ready.
+  assert.match(describeNextFreeCheck(null, now), /7 days after the one you used/);
+  assert.match(describeNextFreeCheck(new Date(2026, 8, 25).toISOString(), now), /is ready/);
 });
 
 test('cached checks are isolated by account and become stale when the document changes', () => {

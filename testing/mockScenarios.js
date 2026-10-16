@@ -57,6 +57,10 @@ function buildEmail({
   };
 }
 
+// Seven days from whenever the lab runs, as the backend computes it: a fixed past date made the
+// popup say the next free check opens "later today" (persona report 2026-10-15).
+const NEXT_FREE_CHECK_AT = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
 const freeRichCategorizedEmails = {
   applied: [
     buildEmail({
@@ -286,14 +290,14 @@ const SCENARIOS = {
           display_decision: { action: 'APPLY', label: 'Apply', headline: 'Worth applying', subtext: 'Your experience covers what they ask for.' },
         },
         resumeDocument: { variantId: null, source: 'legacy', fingerprint: 'def456', characters: 1800 },
-        allowance: { limit: 1, used: 1, remaining: 0, nextAvailableAt: '2026-10-03T12:00:00.000Z' },
+        allowance: { limit: 1, used: 1, remaining: 0, nextAvailableAt: NEXT_FREE_CHECK_AT },
       },
     },
     searchRead: {
       read: {
         kind: 'performance-rejection-velocity-auto_screen',
         title: 'Your rejections are coming back too fast for anyone to have read the resume',
-        description: '6 of 8 timed rejections arrived within 3 days of applying, averaging 1.4 days. Decisions that fast are consistent with the application form filtering you out — work authorisation, location, salary, or a required-experience question — before a recruiter opens anything.',
+        description: '6 of 8 timed rejections arrived within 3 days of applying, averaging 1.4 days. Decisions that fast are consistent with the application form filtering you out — work authorization, location, salary, or a required-experience question — before a recruiter opens anything.',
         stat: '75% of your timed rejections arrived this way',
         timeframe: 'In the last 90 days',
       },
@@ -431,7 +435,7 @@ const SCENARIOS = {
         description: 'Responsibilities: triage tickets. Qualifications: customer support experience.',
         looksLikeJob: true,
       },
-      allowance: { plan: 'free', unlimited: false, limit: 1, used: 1, remaining: 0, nextAvailableAt: '2026-10-03T12:00:00.000Z' },
+      allowance: { plan: 'free', unlimited: false, limit: 1, used: 1, remaining: 0, nextAvailableAt: NEXT_FREE_CHECK_AT },
     },
     searchRead: {
       read: null,

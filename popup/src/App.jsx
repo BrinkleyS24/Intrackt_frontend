@@ -1473,7 +1473,10 @@ function App() {
               href="https://applendium.com/privacy"
               target="_blank"
               rel="noreferrer"
-              className="font-medium text-primary underline underline-offset-2"
+              data-testid="login-privacy-link"
+              // text-primary is the navy brand color: rgb(19,28,48) on the navy popup measured
+              // about 1.2:1 (persona report 2026-10-15). The link color used everywhere else is AA.
+              className="font-medium text-accent-text underline underline-offset-2"
             >
               Privacy policy
             </a>
