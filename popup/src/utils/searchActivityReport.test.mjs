@@ -90,6 +90,7 @@ test('summarizeRows counts interviews ever reached and latest statuses', () => {
     offers: 0,
     rejections: 0,
     awaitingReply: 1,
+    now: { applied: 1, interviewed: 1, offers: 0, closed: 0, closedByYou: 0 },
   });
 });
 
@@ -178,4 +179,47 @@ test('naive UTC email dates are read as UTC, not local time', () => {
     interviewed: [], offers: [], rejected: [],
   });
   assert.equal(rows[0].appliedDate.toISOString(), '2026-10-14T23:30:00.000Z');
+});
+
+// 2026-10-15 persona report: the report said "2 interviews · 1 rejection" while the tiles read
+// 1 in interviews / 2 closed, and nothing said why. With the popup's own stage rules injected, the
+// report's "now" counts are the tiles' counts, and "reached an interview" is labelled as ever.
+test('with the popup stage rules, "now" counts match the tiles and the counting rule is stated', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const src = readFileSync(fileURLToPath(new URL('../../../shared/applicationDisplayState.js', import.meta.url)), 'utf8');
+  const rules = await import(`data:text/javascript,${encodeURIComponent(src)}`);
+  const { REPORT_COUNTING_RULE } = await import('./searchActivityReport.mjs');
+  const rows = buildActivityRows({
+    applied: [
+      email({ thread_id: 'r', applicationId: 1, date: '2026-06-01T12:00:00Z' }),
+      // Closed for no response: a Closed tile entry, not a rejection email.
+      email({ thread_id: 's', applicationId: 2, applicationStatus: 'applied', isClosed: true, isUserClosed: true, manualCloseKind: 'silence', date: '2026-06-02T12:00:00Z' }),
+      email({ thread_id: 'i', applicationId: 3, date: '2026-06-03T12:00:00Z' }),
+    ],
+    interviewed: [
+      email({ thread_id: 'r', applicationId: 1, date: '2026-06-05T12:00:00Z' }),
+      email({ thread_id: 'i', applicationId: 3, applicationStatus: 'interviewed', date: '2026-06-06T12:00:00Z' }),
+    ],
+    offers: [],
+    rejected: [email({ thread_id: 'r', applicationId: 1, applicationStatus: 'rejected', date: '2026-06-09T12:00:00Z' })],
+  }, [], rules);
+  const summary = summarizeRows(rows);
+  assert.equal(summary.applications, 3);
+  assert.equal(summary.interviews, 2, 'reached an interview (ever)');
+  assert.deepEqual(summary.now, { applied: 0, interviewed: 1, offers: 0, closed: 2, closedByYou: 0 });
+  assert.deepEqual(rows.map((row) => row.latestStatusLabel), ['Rejected', 'Closed', 'In interviews']);
+  assert.match(REPORT_COUNTING_RULE, /Reached an interview/);
+  assert.match(REPORT_COUNTING_RULE, /same way as the Applendium extension's tiles/);
+});
+
+test('a range longer than the chart charts its most recent weeks, not its first ones', () => {
+  const rows = buildActivityRows({
+    applied: [email({ thread_id: 'late', date: '2026-08-03T12:00:00Z' })],
+    interviewed: [], offers: [], rejected: [],
+  });
+  const weeks = weeklyActivity(rows, new Date('2025-01-01T00:00:00'), new Date('2026-10-15T00:00:00'));
+  assert.equal(weeks.length, 27);
+  assert.equal(weeks.reduce((sum, week) => sum + week.count, 0), 1);
+  assert.match(weeks[weeks.length - 1].label, /Oct 15$/);
 });

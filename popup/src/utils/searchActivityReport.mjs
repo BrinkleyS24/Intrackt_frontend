@@ -57,13 +57,32 @@ function groupKeyForEmail(email) {
   return `email:${email?.id || Math.random()}`;
 }
 
+// Where an application stands NOW, worded for the report. The same buckets as the popup's tiles.
+const STAGE_LABELS = {
+  applied: 'Awaiting reply',
+  interviewed: 'In interviews',
+  offers: 'Offer',
+};
+
+function fallbackStage(latestCategory) {
+  if (latestCategory === 'closed') return 'rejected';
+  return TRACKED_CATEGORIES.includes(latestCategory) ? latestCategory : 'applied';
+}
+
 /**
  * Groups categorized emails and manually added applications into application rows.
+ *
+ * `stageRules` are the popup's own pipeline rules (shared/applicationDisplayState.js:
+ * deriveGroupPipelineStatus, deriveGroupClosedByChoice, deriveManualPipelineState), injected because
+ * that module cannot be imported under `node --test`. With them, each row's "now" stage is decided
+ * exactly as the tiles decide it, so a report covering the same applications matches the tiles. The
+ * report said "2 interviews · 1 rejection" beside tiles reading 1 in interviews / 2 closed, with
+ * nothing explaining why (persona report 2026-10-15).
  * @param {Record<string, Array<object>>} categorizedEmails — { applied, interviewed, offers, rejected }
  * @param {Array<object>} manualApplications — rows from LIST_MANUAL_APPLICATIONS
- * @returns {Array<{company, position, appliedDate, latestCategory, latestStatusLabel, latestStatusDate, everInterviewed, everOffered, source}>}
+ * @returns {Array<{company, position, appliedDate, latestCategory, latestStatusLabel, latestStatusDate, everInterviewed, everOffered, stage, closedByChoice, source}>}
  */
-export function buildActivityRows(categorizedEmails = {}, manualApplications = []) {
+export function buildActivityRows(categorizedEmails = {}, manualApplications = [], stageRules = null) {
   const groups = new Map();
 
   for (const category of TRACKED_CATEGORIES) {
@@ -81,9 +100,12 @@ export function buildActivityRows(categorizedEmails = {}, manualApplications = [
           everInterviewed: false,
           everOffered: false,
           manual: false,
+          emails: [],
+          application: null,
         };
         groups.set(key, group);
       }
+      group.emails.push(email);
       const company = String(email?.company_name || '').trim();
       const position = String(email?.position || '').trim();
       if (company && !group.company) group.company = company;
@@ -132,6 +154,8 @@ export function buildActivityRows(categorizedEmails = {}, manualApplications = [
       everInterviewed: category === 'interviewed' || category === 'offers',
       everOffered: category === 'offers',
       manual: true,
+      emails: [],
+      application,
     });
   }
 
@@ -140,13 +164,28 @@ export function buildActivityRows(categorizedEmails = {}, manualApplications = [
     // A row without a single dated email cannot attest an application date;
     // exclude it rather than invent one (the report is a floor, not a ceiling).
     if (!group.earliestDate) continue;
+    let stage = fallbackStage(group.latestCategory);
+    let closedByChoice = false;
+    if (stageRules && group.manual && group.application && stageRules.deriveManualPipelineState) {
+      ({ pipelineStatus: stage, closedByChoice } = stageRules.deriveManualPipelineState(group.application));
+    } else if (stageRules && group.emails.length && stageRules.deriveGroupPipelineStatus) {
+      stage = stageRules.deriveGroupPipelineStatus(group.emails);
+      closedByChoice = Boolean(stageRules.deriveGroupClosedByChoice?.(group.emails));
+    }
+    const latestStatusLabel = closedByChoice
+      ? 'Closed by applicant'
+      : stage === 'rejected'
+        ? (group.latestCategory === 'rejected' ? 'Rejected' : 'Closed')
+        : STAGE_LABELS[stage] || CATEGORY_STATUS_LABELS[group.latestCategory] || 'Awaiting reply';
     rows.push({
       company: group.company || 'Unknown company',
       position: group.position || 'Unknown position',
       appliedDate: group.earliestDate,
       latestCategory: group.latestCategory,
-      latestStatusLabel: CATEGORY_STATUS_LABELS[group.latestCategory] || 'Awaiting reply',
+      latestStatusLabel,
       latestStatusDate: group.latestDate,
+      stage,
+      closedByChoice,
       everInterviewed: group.everInterviewed || group.everOffered,
       everOffered: group.everOffered,
       source: group.manual ? 'manual' : 'email',
@@ -166,15 +205,37 @@ export function filterRowsByRange(rows, start, end) {
   });
 }
 
+/**
+ * Totals for a set of rows. `interviews` is "reached an interview (ever)": every application that
+ * got one, whatever happened next. `now` is where each stands today, in the popup tiles' buckets:
+ * awaiting reply, in interviews, offers, closed (rejected or no response), plus the ones the
+ * applicant closed themselves (withdrew, took another job), which the tiles leave out.
+ */
 export function summarizeRows(rows = []) {
+  const stageOf = (row) => row.stage || fallbackStage(row.latestCategory);
+  const active = (row, stage) => !row.closedByChoice && stageOf(row) === stage;
+  const now = {
+    applied: rows.filter((r) => active(r, 'applied')).length,
+    interviewed: rows.filter((r) => active(r, 'interviewed')).length,
+    offers: rows.filter((r) => active(r, 'offers')).length,
+    closed: rows.filter((r) => active(r, 'rejected')).length,
+    closedByYou: rows.filter((r) => r.closedByChoice).length,
+  };
   return {
     applications: rows.length,
     interviews: rows.filter((r) => r.everInterviewed).length,
-    offers: rows.filter((r) => r.everOffered).length,
+    offers: now.offers,
     rejections: rows.filter((r) => r.latestCategory === 'rejected').length,
-    awaitingReply: rows.filter((r) => r.latestCategory === 'applied').length,
+    awaitingReply: now.applied,
+    now,
   };
 }
+
+/** How the report counts, printed in the PDF and shown before download. */
+export const REPORT_COUNTING_RULE =
+  'Counts cover applications sent in this period. "Reached an interview" counts every application '
+  + 'that got an interview, even if it closed later. Awaiting reply, In interviews, Offers and Closed '
+  + "show where each application stands today, counted the same way as the Applendium extension's tiles.";
 
 /**
  * Buckets rows into consecutive 7-day windows anchored at `start` — matching
@@ -187,6 +248,11 @@ export function weeklyActivity(rows, start, end) {
   // ms-based weeks drift an hour and produce overlapping labels (Mar 8 - Mar 15,
   // Mar 15 - Mar 22).
   let cursor = startOfDay(start);
+  // The chart holds 27 weeks. A longer range used to chart its FIRST 27 weeks and drop every later
+  // application from the bars (a Jan 2025 to Oct 2026 report charted only Jan-Jul 2025, 2026-10-15).
+  // It now charts the last 27 weeks, still on the same weekday rhythm as the chosen start.
+  const weeksInRange = Math.ceil((endMs - cursor.getTime() + 1) / (7 * 86_400_000));
+  if (weeksInRange > 27) cursor.setDate(cursor.getDate() + 7 * (weeksInRange - 27));
   while (cursor.getTime() <= endMs && buckets.length < 27) {
     const lastDay = new Date(cursor);
     lastDay.setDate(lastDay.getDate() + 6);

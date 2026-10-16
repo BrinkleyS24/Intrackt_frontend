@@ -11,6 +11,7 @@ import {
   weeklyActivity,
   formatLongDate,
   formatShortDate,
+  REPORT_COUNTING_RULE,
   REPORT_PROVENANCE_NOTE,
 } from './searchActivityReport.mjs';
 
@@ -63,17 +64,22 @@ export async function downloadSearchActivityPdf({ rows, start, end, userName, us
   doc.text(`Generated ${formatLongDate(new Date())}`, pageWidth - margin, identity ? 87 : 74, { align: 'right' });
 
   // ── Stat tiles ───────────────────────────────────────────────────────────
+  // "Reached an interview" is ever; the last four are where each stands today, in the extension
+  // tiles' buckets. The tiles said "INTERVIEWS" and "REJECTIONS" with no rule, so the PDF and the
+  // popup disagreed with nothing to explain why (persona report 2026-10-15). The rule is printed
+  // under the tiles.
   const tiles = [
-    { value: summary.applications, label: 'APPLICATIONS' },
-    { value: summary.interviews, label: 'INTERVIEWS' },
-    { value: summary.offers, label: 'OFFERS' },
-    { value: summary.rejections, label: 'REJECTIONS' },
-    { value: summary.awaitingReply, label: 'AWAITING REPLY' },
+    { value: summary.applications, label: ['APPLICATIONS'] },
+    { value: summary.interviews, label: ['REACHED AN', 'INTERVIEW'] },
+    { value: summary.now.applied, label: ['NOW:', 'AWAITING REPLY'] },
+    { value: summary.now.interviewed, label: ['NOW:', 'IN INTERVIEWS'] },
+    { value: summary.now.offers, label: ['NOW:', 'OFFERS'] },
+    { value: summary.now.closed, label: ['NOW:', 'CLOSED'] },
   ];
   const tileGap = 10;
   const tileWidth = (contentWidth - tileGap * (tiles.length - 1)) / tiles.length;
   const tileTop = bandHeight + 22;
-  const tileHeight = 54;
+  const tileHeight = 60;
   tiles.forEach((tile, index) => {
     const x = margin + index * (tileWidth + tileGap);
     doc.setFillColor(index === 0 ? PAPER_TINT : '#ffffff');
@@ -88,19 +94,30 @@ export async function downloadSearchActivityPdf({ rows, start, end, userName, us
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(21);
     doc.setTextColor(INK);
-    doc.text(String(tile.value), x + 12, tileTop + 30);
+    doc.text(String(tile.value), x + 10, tileTop + 28);
     doc.setFont('courier', 'bold');
-    doc.setFontSize(6.5);
+    doc.setFontSize(6);
     doc.setTextColor(MUTED);
-    doc.text(tile.label, x + 12, tileTop + 43);
+    doc.text(tile.label, x + 10, tileTop + 42);
   });
 
+  // ── Counting rule ────────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(MUTED);
+  const closedByYouNote = summary.now.closedByYou
+    ? ` ${summary.now.closedByYou} more ${summary.now.closedByYou === 1 ? 'was' : 'were'} closed by the applicant (withdrew or accepted another job).`
+    : '';
+  const rule = doc.splitTextToSize(`${REPORT_COUNTING_RULE}${closedByYouNote}`, contentWidth);
+  const ruleTop = tileTop + tileHeight + 14;
+  doc.text(rule, margin, ruleTop);
+
   // ── Weekly activity bar chart ────────────────────────────────────────────
-  const chartTitleY = tileTop + tileHeight + 30;
+  const chartTitleY = ruleTop + rule.length * 10 + 20;
   doc.setFont('courier', 'bold');
   doc.setFontSize(8);
   doc.setTextColor(MUTED);
-  doc.text('WEEKLY ACTIVITY', margin, chartTitleY);
+  doc.text(weeks.length && weeks[0].label.split(' - ')[0] !== formatShortDate(start) ? `WEEKLY ACTIVITY (LAST ${weeks.length} WEEKS)` : 'WEEKLY ACTIVITY', margin, chartTitleY);
 
   const chartTop = chartTitleY + 10;
   const chartHeight = 58;

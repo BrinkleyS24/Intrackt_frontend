@@ -11,8 +11,18 @@ import {
   buildActivityRows,
   filterRowsByRange,
   summarizeRows,
+  REPORT_COUNTING_RULE,
   REPORT_PROVENANCE_NOTE,
 } from '../utils/searchActivityReport.mjs';
+import {
+  deriveGroupClosedByChoice,
+  deriveGroupPipelineStatus,
+  deriveManualPipelineState,
+} from '../../../shared/applicationDisplayState.js';
+
+// The popup tiles' own rules, so the report's "now" counts are the tiles' counts (2026-10-15).
+const STAGE_RULES = { deriveGroupClosedByChoice, deriveGroupPipelineStatus, deriveManualPipelineState };
+const plural = (count, one, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 import { downloadSearchActivityPdf } from '../utils/searchActivityPdf.js';
 import { showNotification } from './Notification';
 
@@ -44,7 +54,7 @@ export default function ReportModal({
   const [error, setError] = useState(null);
 
   const rows = useMemo(
-    () => buildActivityRows(categorizedEmails, manualApplications),
+    () => buildActivityRows(categorizedEmails, manualApplications, STAGE_RULES),
     [categorizedEmails, manualApplications],
   );
 
@@ -89,7 +99,7 @@ export default function ReportModal({
           <X className="h-5 w-5" />
         </button>
 
-        <h3 className="text-lg font-semibold text-foreground">Job search activity report</h3>
+        <h2 className="text-lg font-semibold text-foreground">Job search activity report</h2>
         <p className="mt-1 text-xs text-muted-foreground">
           A PDF record of your applications for a career coach, workforce program, or benefit requirement.
         </p>
@@ -122,17 +132,22 @@ export default function ReportModal({
         <div className="mt-4 rounded-lg border border-border bg-background px-3 py-2.5 text-xs text-muted-foreground" data-testid="report-preview">
           {rangeValid ? (
             <>
-              <span className="font-semibold text-foreground">{preview.applications}</span> application{preview.applications === 1 ? '' : 's'} in this period
-              {' · '}{preview.interviews} interview{preview.interviews === 1 ? '' : 's'}
-              {' · '}{preview.offers} offer{preview.offers === 1 ? '' : 's'}
-              {' · '}{preview.rejections} rejection{preview.rejections === 1 ? '' : 's'}
+              <p>
+                <span className="font-semibold text-foreground">{preview.applications}</span> application{preview.applications === 1 ? '' : 's'} in this period
+                {' · '}{preview.interviews} reached an interview (ever)
+              </p>
+              <p data-testid="report-preview-now" className="mt-1">
+                Now: {preview.now.applied} awaiting reply · {preview.now.interviewed} in interviews · {plural(preview.now.offers, 'offer')} · {preview.now.closed} closed
+                {preview.now.closedByYou ? ` · ${preview.now.closedByYou} closed by you` : ''}
+              </p>
             </>
           ) : (
             'Pick a valid date range.'
           )}
         </div>
 
-        <p className="mt-3 text-[10px] leading-relaxed text-muted-foreground">{REPORT_PROVENANCE_NOTE}</p>
+        <p data-testid="report-counting-rule" className="mt-3 text-[12px] leading-relaxed text-muted-foreground">{REPORT_COUNTING_RULE}</p>
+        <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">{REPORT_PROVENANCE_NOTE}</p>
 
         {manualApplicationsError && (
           <p role="status" data-testid="report-manual-warning" className="mt-2 text-xs text-warning">
@@ -153,7 +168,7 @@ export default function ReportModal({
           {isDownloading ? 'Building PDF...' : 'Download PDF'}
         </button>
         {rangeValid && preview.applications === 0 && (
-          <p className="mt-2 text-center text-[10px] text-muted-foreground">
+          <p className="mt-2 text-center text-[12px] text-muted-foreground">
             No dated applications in this range yet.
           </p>
         )}
