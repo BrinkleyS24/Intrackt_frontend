@@ -292,11 +292,11 @@ body {
 
 /* Undo Toast Specific Styles */
 #undo-toast {
-  display: none; /* Controlled by JS */
+  display: flex; /* React mounts this only while an undo is available. */
   position: fixed;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 80px;
+  left: 12px;
+  right: 12px;
   background-color: #333;
   color: white;
   padding: 10px 15px;
@@ -305,7 +305,7 @@ body {
   z-index: 1000;
   align-items: center;
   gap: 10px;
-  font-size: 0.9rem;
+  font-size: 12px;
 }
 
 #undo-timer-svg {

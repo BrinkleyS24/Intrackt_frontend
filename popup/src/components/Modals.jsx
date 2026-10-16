@@ -17,6 +17,8 @@ export default function Modals({
   onCloseMisclassificationModal,
   selectedEmailForMisclassification,
   onConfirmMisclassification,
+  savingCorrection = false,
+  correctionError = null,
   undoToastVisible,
   setUndoToastVisible,
   undoMisclassification,
@@ -38,7 +40,7 @@ export default function Modals({
 
     setStrokeDashoffset(circumference);
     const startTime = Date.now();
-    const duration = 5000;
+    const duration = 10000;
 
     const interval = setInterval(() => {
       const elapsed = Date.now() - startTime;
@@ -127,14 +129,15 @@ export default function Modals({
                 onClick={() =>
                   onConfirmMisclassification(selectedEmailForMisclassification, selectedMisclassificationCategory)
                 }
-                disabled={!canSubmit}
+                disabled={!canSubmit || savingCorrection}
                 data-testid="misclassify-submit"
                 className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
                 type="button"
               >
-                Save correction
+                {savingCorrection ? 'Saving...' : 'Save correction'}
               </button>
             </div>
+            {correctionError && <p role="alert" className="mt-2 text-xs text-destructive">{correctionError}</p>}
           </div>
         </div>
       )}

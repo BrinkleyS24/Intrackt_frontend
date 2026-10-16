@@ -78,7 +78,7 @@ export const useAuth = (onPaymentStatusChange) => {
         setSyncStatus(response.sync || null);
         setGmailAuth(response.gmailAuth || null);
         setHistoryCoverage(response.dataCompleteness || null);
-        return { success: true, quota: response.quota || null, sync: response.sync || null };
+        return { success: true, quota: response.quota || null, sync: response.sync || null, gmailAuth: response.gmailAuth || null };
       }
 
       // Fallback: if sync status fetch fails, at least keep quota populated from storage.
@@ -156,20 +156,23 @@ export const useAuth = (onPaymentStatusChange) => {
     try {
       authLogger.info('[popup][auth] Starting Google OAuth login...');
       const response = await sendMessageToBackground({ type: 'LOGIN_GOOGLE_OAUTH' });
-      if (response.success) {
+      if (response?.success) {
         // Prefer immediate UI update instead of waiting for storage change events.
         await loadCurrentUserStateFromStorage();
         authLogger.info('[popup][auth] Google OAuth login completed successfully.');
         setLoadingAuth(false);
+        return { success: true };
       } else {
         console.error("❌ Applendium™: Error during Google OAuth login process:", response.error);
         showNotification(`Login failed: ${response.error}`, "error");
         setLoadingAuth(false); // Stop loading on error
+        return { success: false, error: response?.error || 'Authorization was not completed.' };
       }
     } catch (error) {
       console.error("❌ Applendium™: Error during Google OAuth login process:", error);
       showNotification(`Login failed: ${error.message || "Network error during login."}`, "error");
       setLoadingAuth(false); // Stop loading on error
+      return { success: false, error: error.message || 'Authorization was not completed.' };
     }
   }, [loadCurrentUserStateFromStorage]);
 
