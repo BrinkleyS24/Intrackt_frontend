@@ -23,6 +23,7 @@ import { getApplicationKey, groupEmailsByThread } from './utils/grouping';
 import { deriveGroupClosedByChoice, deriveGroupPipelineStatus, mergeGroupsByApplication } from '../../shared/applicationDisplayState.js';
 import { getCategoryTitle, parseEmailDate } from './utils/uiHelpers';
 import { getPremiumDashboardUrl } from './utils/runtimeConfig';
+import { premiumLinkPath } from './utils/premiumRoutes.mjs';
 import { compactSafeTextValues } from './utils/sensitiveContent';
 
 import { CONFIG } from './utils/constants';
@@ -948,18 +949,16 @@ function App() {
       baseUrl = rawUrl.replace(/\/+$/, '');
     }
 
-    // Button handlers also call this with a click event; only a well-formed tag is forwarded.
-    const sourceParam = typeof source === 'string' && /^[a-z0-9_]{1,40}$/.test(source)
-      ? `?source=${source}`
-      : '';
-    const url = `${baseUrl}/upgrade${sourceParam}`;
+    // Members go to their dashboard, free users to pricing (premiumLinkPath). Button handlers also
+    // call this with a click event; only a well-formed source tag is forwarded.
+    const url = `${baseUrl}${premiumLinkPath(userPlan, source)}`;
 
     try {
       chrome.tabs.create({ url });
     } catch (_) {
       window.open(url, '_blank', 'noopener,noreferrer');
     }
-  }, []);
+  }, [userPlan]);
 
   // A premium page by path (/apply-gate, /resumes) on the same site openPremiumStatusPage uses.
   const openWebAppPath = useCallback(async (path) => {
@@ -1119,6 +1118,7 @@ function App() {
             onOpenMisclassificationModal={openMisclassificationModal}
             userPlan={userPlan}
             onOpenPremiumPage={openPremiumStatusPage}
+            onOpenWebPath={openWebAppPath}
             onUpdateCompanyName={handleUpdateCompanyName}
             onUpdatePosition={handleUpdatePosition}
             userEmail={userEmail}

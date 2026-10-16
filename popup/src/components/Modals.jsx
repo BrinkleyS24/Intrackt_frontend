@@ -5,6 +5,12 @@
 
 import React, { useEffect, useState } from 'react';
 import { X, Flag } from 'lucide-react';
+import {
+  MISCLASSIFY_CHOICES,
+  canSubmitMisclassify,
+  currentMisclassifyStage,
+  misclassifyStageLabel,
+} from '../utils/misclassify.mjs';
 
 export default function Modals({
   isMisclassificationModalOpen,
@@ -15,7 +21,14 @@ export default function Modals({
   setUndoToastVisible,
   undoMisclassification,
 }) {
-  const [selectedMisclassificationCategory, setSelectedMisclassificationCategory] = useState('irrelevant');
+  // Starts on the email's current stage and saves nothing until the user picks another one. It used
+  // to preselect "Irrelevant", so one click hid a real interview email (persona report 2026-10-15).
+  const currentStage = currentMisclassifyStage(selectedEmailForMisclassification);
+  const [selectedMisclassificationCategory, setSelectedMisclassificationCategory] = useState(currentStage || '');
+  useEffect(() => {
+    if (isMisclassificationModalOpen) setSelectedMisclassificationCategory(currentStage || '');
+  }, [isMisclassificationModalOpen, currentStage, selectedEmailForMisclassification?.id]);
+  const canSubmit = canSubmitMisclassify(currentStage, selectedMisclassificationCategory);
 
   const circumference = 2 * Math.PI * 14;
   const [strokeDashoffset, setStrokeDashoffset] = useState(circumference);
@@ -45,6 +58,9 @@ export default function Modals({
       {isMisclassificationModalOpen && (
         <div
           id="misclassification-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="misclassify-title"
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm transition-opacity duration-300 opacity-100 visible"
         >
           <div className="relative w-full max-w-md rounded-2xl border border-border bg-card p-6 text-foreground shadow-xl">
@@ -56,44 +72,46 @@ export default function Modals({
               <X className="h-5 w-5" />
             </button>
 
-            <div className="mb-6 text-center">
-              <Flag className="mx-auto mb-3 h-12 w-12 text-destructive" />
-              <h3 className="mb-2 text-xl font-semibold text-foreground">
-                Misclassified Email?
-              </h3>
+            <div className="mb-5 text-center">
+              <Flag className="mx-auto mb-3 h-10 w-10 text-destructive" />
+              <h2 id="misclassify-title" className="mb-2 text-lg font-semibold text-foreground">
+                Wrong stage for this email?
+              </h2>
               <p className="text-sm text-muted-foreground">
-                This email was classified as:{' '}
-                <span className="font-bold text-accent-text">
-                  {selectedEmailForMisclassification?.category || 'N/A'}
+                Filed now as:{' '}
+                <span data-testid="misclassify-current-stage" className="font-bold text-accent-text">
+                  {currentStage ? misclassifyStageLabel(currentStage) : 'Unknown'}
                 </span>
               </p>
               <p className="mt-1 text-sm text-muted-foreground">
                 Subject:{' '}
-                <span className="font-semibold text-foreground">{selectedEmailForMisclassification?.subject || 'N/A'}</span>
+                <span className="font-semibold text-foreground">{selectedEmailForMisclassification?.subject || 'No subject'}</span>
               </p>
             </div>
 
-            <div className="mb-6">
+            <div className="mb-5">
               <label
                 htmlFor="correctCategory"
                 className="mb-2 block text-sm font-medium text-secondary-foreground"
               >
-                What stage does this email describe?
+                What does this email say happened?
               </label>
               <select
                 id="correctCategory"
-                className="mt-1 block w-full rounded-md border border-border bg-popover py-2 pl-3 pr-10 text-base text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 sm:text-sm"
+                data-testid="misclassify-stage-select"
+                className="mt-1 block w-full rounded-md border border-border bg-popover py-2 pl-3 pr-10 text-sm text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30"
                 value={selectedMisclassificationCategory}
                 onChange={(e) => setSelectedMisclassificationCategory(e.target.value)}
               >
-                <option value="irrelevant">Irrelevant</option>
-                <option value="applied">Applied</option>
-                <option value="interviewed">Interviewed</option>
-                <option value="offers">Offers</option>
-                <option value="rejected">Rejected</option>
+                {!currentStage ? <option value="" disabled>Choose a stage</option> : null}
+                {MISCLASSIFY_CHOICES.map((choice) => (
+                  <option key={choice.value} value={choice.value}>
+                    {choice.value === currentStage ? `${choice.label} (current)` : choice.label}
+                  </option>
+                ))}
               </select>
               <p className="mt-2 text-sm text-muted-foreground">
-                Classify what this message says happened. A later outcome belongs to the email that announced it.
+                Pick the stage this one email describes, even if the application has moved on since.
               </p>
             </div>
 
@@ -101,6 +119,7 @@ export default function Modals({
               <button
                 onClick={onCloseMisclassificationModal}
                 className="rounded-md bg-secondary px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+                type="button"
               >
                 Cancel
               </button>
@@ -108,9 +127,12 @@ export default function Modals({
                 onClick={() =>
                   onConfirmMisclassification(selectedEmailForMisclassification, selectedMisclassificationCategory)
                 }
-                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90"
+                disabled={!canSubmit}
+                data-testid="misclassify-submit"
+                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
               >
-                Correct Email
+                Save correction
               </button>
             </div>
           </div>
@@ -123,7 +145,7 @@ export default function Modals({
           className="fixed bottom-4 right-4 z-50 flex items-center space-x-4 rounded-lg border border-border bg-card p-4 text-foreground shadow-lg"
           style={{ minWidth: '250px' }}
         >
-          <span>Email reported as irrelevant.</span>
+          <span>Correction saved.</span>
           <svg id="undo-timer-svg" width="32" height="32" viewBox="0 0 32 32" className="flex-shrink-0">
             <circle r="14" cx="16" cy="16" fill="transparent" stroke="rgba(255,255,255,0.3)" strokeWidth="3" />
             <circle

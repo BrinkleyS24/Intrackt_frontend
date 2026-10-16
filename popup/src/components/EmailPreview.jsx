@@ -6,6 +6,7 @@ import { showNotification } from './Notification';
 import { sendMessageToBackground } from '../utils/chromeMessaging';
 import { collapseJourneyStages } from '../utils/applicationPresentation';
 import { hasBackwardMergedOutcome } from '../utils/applicationJourney.mjs';
+import { nextMovePath } from '../utils/premiumRoutes.mjs';
 import { isEncryptedPayload, safeTextValue } from '../utils/sensitiveContent';
 import CompanyField from './CompanyField';
 import confetti from '../lib/confetti.browser.min.js';
@@ -367,6 +368,7 @@ export default function EmailPreview({
   onUpdateCompanyName,
   onUpdatePosition,
   onOpenPremiumPage,
+  onOpenWebPath,
   userPlan,
   userEmail,
 }) {
@@ -650,6 +652,7 @@ export default function EmailPreview({
     if (ms < 0) return 0;
     return Math.floor(ms / (1000 * 60 * 60 * 24));
   }, [lastActivityDate]);
+  const showStaleNudge = Boolean(email?.applicationId && !isEffectivelyClosed && typeof staleDays === 'number' && staleDays >= 60);
 
   useEffect(() => {
     if (showClosePanel && isEffectivelyClosed) {
@@ -938,11 +941,11 @@ export default function EmailPreview({
           ) : null
         )}
 
-        {email?.applicationId && !isEffectivelyClosed && typeof staleDays === 'number' && staleDays >= 60 && (
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-xs text-foreground">
+        {showStaleNudge && (
+          <div data-testid="stale-close-nudge" className="flex items-center justify-between gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-3 text-[12px] text-foreground">
             <div>No activity for {staleDays} days. If you heard back off-email, you can close this role.</div>
-            <InlineButton variant="outline" className="border-warning/30 bg-card/80" onClick={() => openClosePanel('stale')}>
-              Close
+            <InlineButton variant="outline" className="shrink-0 border-warning/30 bg-card/80" onClick={() => openClosePanel('stale')}>
+              Close application
             </InlineButton>
           </div>
         )}
@@ -1022,9 +1025,12 @@ export default function EmailPreview({
           </div>
         )}
 
-        {userPlan === 'premium' && (presentationStatusKey === 'applied' || presentationStatusKey === 'interviewed') && onOpenPremiumPage && (
+        {userPlan === 'premium' && (presentationStatusKey === 'applied' || presentationStatusKey === 'interviewed') && (onOpenWebPath || onOpenPremiumPage) && (
           <button
-            onClick={onOpenPremiumPage}
+            // Interview Prep for an interview, Next Actions otherwise. It opened /upgrade, the pricing
+            // page, for a paying member (persona report 2026-10-15).
+            onClick={() => (onOpenWebPath ? onOpenWebPath(nextMovePath(presentationStatusKey)) : onOpenPremiumPage())}
+            data-next-move-path={nextMovePath(presentationStatusKey)}
             data-testid="premium-next-move"
             type="button"
             className="flex w-full items-center justify-between gap-2 rounded-2xl border border-accent/20 bg-accent/5 px-3 py-2.5 text-left shadow-sm transition hover:bg-accent/10"
@@ -1054,10 +1060,12 @@ export default function EmailPreview({
             </InlineButton>
           )}
 
-          {email?.applicationId && !isEffectivelyClosed && (
+          {/* One Close per screen: the stale nudge above carries it when shown. Named "Close
+              application" so it is not read as "close this view" (persona reports 2026-10-15). */}
+          {email?.applicationId && !isEffectivelyClosed && !showStaleNudge && (
             <InlineButton variant="outline" onClick={() => openClosePanel('manual')} disabled={closingApplication || showClosePanel}>
               <X className="h-3.5 w-3.5" />
-              {closingApplication ? 'Closing...' : 'Close'}
+              {closingApplication ? 'Closing...' : 'Close application'}
             </InlineButton>
           )}
 
