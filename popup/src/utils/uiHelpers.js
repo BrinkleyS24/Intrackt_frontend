@@ -61,10 +61,10 @@ export function formatDate(dateStr) {
 
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Yesterday";
-  if (diffDays > 1 && diffDays <= 7) return `${diffDays} days ago`;
 
   // "Sep 27" like the web app, with the year only when it is not this year. The numeric
-  // "9/27/2026" sat beside "2 days ago" and the thread's "Apr 4" (persona reports 2026-10-15).
+  // "9/27/2026" sat beside "2 days ago" and the thread's "Apr 4" (persona reports 2026-10-15);
+  // since 2026-10-16 there is no "3 days ago" either, so a list reads Today, Yesterday, then dates.
   return formatMonthDay(date, now);
 }
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { normalizePostingUrl } from '../utils/postingUrl.mjs';
 
 const localToday = () => {
   const date = new Date();
@@ -52,8 +53,10 @@ export default function ManualApplicationForm({ userId, onSaved, onClose, initia
   const submit = async (event) => {
     event.preventDefault();
     if (busy.current || !ready) return;
+    const jobUrl = normalizePostingUrl(draft.jobUrl);
+    if (jobUrl === null) { setError('Enter the posting link as a web address, for example lever.co/acme/123.'); return; }
     busy.current = true; setSaving(true); setError(''); setDuplicate(null);
-    const submitted = { ...draft, uncertain: true };
+    const submitted = { ...draft, jobUrl, uncertain: true };
     try {
       // Freeze and persist before the network request. Closing Chrome's popup can
       // lose the response after commit; reopening replays the same immutable intent.
@@ -88,7 +91,7 @@ export default function ManualApplicationForm({ userId, onSaved, onClose, initia
         <label className="block text-xs">Company<input autoFocus required maxLength={200} value={draft.company} onChange={(e) => update('company', e.target.value)} className={fieldClass} /></label>
         <label className="block text-xs">Role<input required maxLength={200} value={draft.position} onChange={(e) => update('position', e.target.value)} className={fieldClass} /></label>
         <label className="block text-xs">Date applied<input type="date" required max={localToday()} value={draft.appliedDate} onChange={(e) => update('appliedDate', e.target.value)} className={fieldClass} /></label>
-        <label className="block text-xs">Posting link (optional)<input type="url" maxLength={2048} value={draft.jobUrl} onChange={(e) => update('jobUrl', e.target.value)} className={fieldClass} /></label>
+        <label className="block text-xs">Posting link (optional)<input type="text" inputMode="url" autoComplete="url" maxLength={2048} value={draft.jobUrl} onChange={(e) => update('jobUrl', e.target.value)} className={fieldClass} /></label>
       </fieldset>
       {draft.uncertain && !saving && <p className="text-xs text-warning">A previous save has not been confirmed. Retry these same details to avoid adding it twice.</p>}
       {error && <p role="alert" className="text-xs text-destructive">{error}</p>}

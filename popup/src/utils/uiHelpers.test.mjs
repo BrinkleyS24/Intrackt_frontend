@@ -40,3 +40,11 @@ test('older dates read "Sep 27" like the web, with the year only outside this ye
   assert.equal(mod.getStageBadgeLabel('interviewed'), 'Interview');
   assert.equal(mod.getStageBadgeLabel('offers'), 'Offer');
 });
+
+// 2026-10-16 persona review: "Yesterday" and "3 days ago" beside "Sep 27" was two styles on one list.
+test('after yesterday, a card date is a calendar date', async () => {
+  const now = new Date();
+  const threeDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3, 12);
+  assert.doesNotMatch(formatDate(threeDaysAgo), /ago/);
+  assert.match(formatDate(threeDaysAgo), /^[A-Z][a-z]{2} \d{1,2}(, \d{4})?$/);
+});

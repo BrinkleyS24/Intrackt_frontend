@@ -528,7 +528,7 @@ function EmailList({
                     aria-label="Conversations above this line arrived since your last visit"
                   >
                     <span className="h-px flex-1 bg-accent/30" />
-                    <span className="shrink-0 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-accent-text/80">
+                    <span className="shrink-0 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-accent-text/80">
                       new above · since last visit
                     </span>
                     <span className="h-px flex-1 bg-accent/30" />
