@@ -54,3 +54,11 @@ The 2.2.3 ZIP is `applendium-extension-v2.2.3.zip`, SHA-256 `7beda56a7c08e31eb6c
 Workspace evidence: `.codex_tmp/free-release-20261016/`, including `real-revoked-state.json`, `real-reconnected-state.json`, `reconnect-before.json`, `e2e-final-fixed.json`, `current-gmail-grant.json`, `toolbar-real-result.json`, notification diagnostics/control, DST fixtures and cleanup, production build verification and Premium comparisons. No credentials or browser profiles belong in the shareable archive.
 
 Reproduce the local regression suite with `npm run test:e2e`. For production preparation use `npm run release:prod`, then follow `CHROME_RELEASE_SMOKE_CHECKLIST.md` in Chrome stable. Packaging and Git pushes do not publish the extension. Chrome Web Store submission and actual publication are separate states.
+
+## Store submission
+
+The existing publisher authenticated the existing listing. The verified 2.2.3 ZIP was uploaded, and Google accepted the submission on October 16 at approximately 8:55 p.m. Eastern. **Status confirmed: Pending review.** Automatic publication after approval is selected. Published version remains **2.2.0**, not the 2.2.1 source baseline used earlier. No listing text, pricing or distribution changes were made. The submission receipt is `FREE_2.2.3_STORE_SUBMISSION.json`.
+
+Both the published 2.2.0 CRX and processed 2.2.3 draft CRX were recovered. The processed draft matches the tested ZIP's product files exactly except Google's added update URL and verification metadata. Its permissions match published 2.2.0. Premium behavioral preservation is demonstrated relative to the preserved source baseline; the recovered older Store binary was not replayed through every Premium task. Publication and installed Store-update verification remain pending external review.
+
+A concurrent workstream pushed product changes through `23182e8` after the tested release commit `773956d`. Those commits were preserved when this documentation was added to main. They are **not included in the uploaded 2.2.3 ZIP and are not certified by this report**. Reproduce this release from `773956d` in an isolated checkout; do not rebuild current main and assume it is the submitted package. The retained ZIP and store CRX reconciliation identify the actual submitted bytes.

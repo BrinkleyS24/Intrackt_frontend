@@ -1,0 +1,43 @@
+{
+  "observedAt": "2026-10-17T00:56:12.754Z",
+  "itemId": "aaalkagnioipinkfogjlgkdoacebaoji",
+  "submittedVersion": "2.2.3",
+  "publishedVersionAtSubmission": "2.2.0",
+  "status": "Pending review",
+  "automaticPublicationAfterApproval": true,
+  "published": false,
+  "codeCommit": "773956d03e6ec05a09d9ec96bd342b629e79997f",
+  "zipSha256": "7beda56a7c08e31eb6c3e14bb4d7924efb6225a922c6d829029af70ff055ea36",
+  "storePackageReconciliation": {
+    "draftVersion": "2.2.3",
+    "publishedVersion": "2.2.0",
+    "manifestChanges": {
+      "update_url": {
+        "local": null,
+        "store": "https://clients2.google.com/service/update2/crx"
+      }
+    },
+    "differingProductFiles": [],
+    "storeAddedFiles": [
+      "_metadata/verified_contents.json"
+    ],
+    "storeMissingFiles": [],
+    "permissionChanges": {},
+    "publishedCrxSha256": "45411fe8f1c45e187ee3564389c0b27b371bb15a10ad1db4dbe1e6dcb0a4edef",
+    "draftCrxSha256": "eb05f74da3628083b3cd2192b51157958082f34babf51d249fc9a080084a6e39",
+    "note": "Store adds its update URL and verification metadata. Every other packaged product file matches the tested ZIP exactly. This is package equivalence, not an installed Store-update test.",
+    "pass": true
+  },
+  "backendRevision": "applendium-backend-aplus-92b9e2c",
+  "backendRuntimeDeployedByThisTask": false,
+  "listingCopyPricingDistributionChanged": false,
+  "nextGate": "Google approval, followed by installed Store-update verification",
+  "evidence": [
+    "store-after-submit.json",
+    "store-review-status.json",
+    "store-review-status.png",
+    "store-submission-intent.json",
+    "store-package-verified.json",
+    "store-package-reconciliation.json"
+  ]
+}
