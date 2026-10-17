@@ -42,7 +42,8 @@ function closeExplainer(reason) {
  */
 export default function ManualApplicationDetail({ application, onChanged, onRemove, onBack }) {
   const [showClose, setShowClose] = useState(false);
-  const [reason, setReason] = useState('Rejected verbally');
+  // Same default as an email-tracked close (2026-10-16): calling it a rejection is the user's choice.
+  const [reason, setReason] = useState('No response');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);

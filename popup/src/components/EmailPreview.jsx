@@ -392,6 +392,16 @@ export default function EmailPreview({
   const [closingApplication, setClosingApplication] = useState(false);
   const [reopeningApplication, setReopeningApplication] = useState(false);
   const [showClosePanel, setShowClosePanel] = useState(false);
+  // The form renders far below the nudge that opens it; without this the button looked dead
+  // (2026-10-16 persona review: the form opened about 1,070px down a 640px popup).
+  const closePanelRef = React.useRef(null);
+  const closePanelHeadingRef = React.useRef(null);
+  useEffect(() => {
+    if (!showClosePanel) return;
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    closePanelRef.current?.scrollIntoView?.({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+    closePanelHeadingRef.current?.focus?.({ preventScroll: true });
+  }, [showClosePanel]);
   const [closePreset, setClosePreset] = useState('no_response');
   const [closeNote, setCloseNote] = useState('');
   // Close taxonomy (mirrors backend utils/applicationCloseOutcome.js):
@@ -782,7 +792,9 @@ export default function EmailPreview({
       showNotification('This application is already closed.', 'info');
       return;
     }
-    setClosePreset(source === 'stale' ? 'no_response' : 'rejected_verbal');
+    // One default for every close (2026-10-16): a manual close defaulted to "Rejected verbally"
+    // while the stale nudge defaulted to "No response". Saying it was a rejection is a choice.
+    setClosePreset('no_response');
     setCloseNote('');
     setShowClosePanel(true);
   };
@@ -1090,10 +1102,10 @@ export default function EmailPreview({
         </div>
 
         {showClosePanel && (
-          <div className="space-y-3 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
+          <div ref={closePanelRef} data-testid="close-application-panel" className="space-y-3 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-foreground">Close application</div>
+                <div ref={closePanelHeadingRef} tabIndex={-1} className="text-sm font-semibold text-foreground outline-none">Close application</div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {/* The popup has no "Rejected" tab; the tile is Closed (persona report 2026-10-14). */}
                   {closeKind === 'rejection'

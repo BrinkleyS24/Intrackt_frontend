@@ -319,7 +319,7 @@ test('renders the free-plan limit reached state with premium-status guidance', a
   await expect(frame.getByTestId('quota-premium-status-button')).toHaveText('Upgrade to remove limit');
   // What happens at the limit is visible text, not a hover tooltip (2026-10-14).
   await expect(frame.getByTestId('quota-limit-explainer')).toBeVisible();
-  await expect(frame.getByTestId('quota-limit-explainer')).toContainText('New applications are not being added');
+  await expect(frame.getByTestId('quota-limit-explainer')).toContainText('New applications from email are not being added');
   await expect(frame.getByTestId('quota-limit-explainer')).toContainText('already track keep updating');
   await expect(frame.getByTestId('quota-status-notice')).toContainText('500/500');
   await expect(frame.getByTestId('dashboard-link')).toContainText('Upgrade to Premium');
@@ -363,9 +363,16 @@ test('shows a visible refresh error and keeps the inbox usable when refresh fail
   await frame.getByTestId('refresh-button').click();
 
   const failureToast = frame.getByRole('status');
-  await expect(failureToast).toContainText('Failed to sync emails: Mock network timeout while refreshing tracked emails.');
+  await expect(failureToast).toContainText("Couldn't refresh.");
+  // Plain words only: the raw error goes to the console, not the user (2026-10-16).
+  await expect(failureToast).not.toContainText('Mock network timeout');
   await expect(frame.getByTestId('refresh-button')).toBeVisible();
   await expect(northstarThread).toBeVisible();
+  // The failure stays visible after the toast fades; it never reverts to "synced".
+  await expect(frame.getByTestId('sync-status-label')).toContainText("couldn't refresh");
+  await expect(failureToast).toBeHidden({ timeout: 15000 });
+  await expect(frame.getByTestId('sync-status-label')).toContainText("couldn't refresh");
+  await expect(frame.getByTestId('sync-status-label')).not.toContainText('synced');
 
   await page.screenshot({
     path: testInfo.outputPath('lab-refresh-failure.png'),

@@ -428,7 +428,9 @@ export function useEmails(userEmail, userId, CONFIG) {
             10000
           );
         } else {
-          showNotification(`Failed to sync emails: ${response.error}`, 'error');
+          // Plain words for the user; the raw error is for us (2026-10-16 persona review).
+          console.error('Applendium: sync failed', response.error);
+          showNotification("Couldn't refresh. Check your connection, then press Refresh to try again.", 'error');
         }
         setIsSyncing(false);
       }
@@ -438,7 +440,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         return { success: false, error: error?.message || 'Unknown sync error' };
       }
       console.error("❌ Applendium™: Error requesting new email sync:", error);
-      showNotification(`Failed to request email sync: ${error.message}`, "error");
+      showNotification("Couldn't refresh. Check your connection, then press Refresh to try again.", 'error');
       setIsSyncing(false);
       return { success: false, error: error.message };
     }

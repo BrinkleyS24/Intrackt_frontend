@@ -103,9 +103,9 @@ export function useEmailQuota(initialQuotaData, userPlan) {
         switch (quota.warningLevel) {
             case 'exceeded':
                 if (quota.limitBehavior === 'existing_continue_new_paused') {
-                    return "Free limit reached. New applications are not being added. Applications you already track keep updating. Premium has no limit.";
+                    return "Free limit reached. New applications from email are not being added. Applications you already track keep updating, and you can still add one with + Add. Premium has no limit.";
                 }
-                return "Free limit reached. New applications are not being added until some tracked applications go 30 days without a new email. Premium has no limit.";
+                return "Free limit reached. New applications from email are not being added until some tracked applications go 30 days without a new email. You can still add one with + Add. Premium has no limit.";
             case 'critical':
                 return `Only ${remaining} tracked applications remaining in your limit.`;
             case 'warning':

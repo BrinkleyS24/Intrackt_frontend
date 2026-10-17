@@ -183,7 +183,7 @@ function QuotaStatusNotice({ quota, percentage, progressClassName, message, onOp
           </button>
         </div>
         <p data-testid="quota-limit-explainer" className="mt-1.5 text-[12px] leading-4 text-foreground/85">
-          New applications are not being added. Applications you already track keep updating.
+          New applications from email are not being added. Applications you already track keep updating, and you can still add one with + Add.
           Room opens up as tracked applications go {QUOTA_WINDOW_DAYS} days without a new email.
         </p>
         <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-background/70">
@@ -223,7 +223,7 @@ function QuotaHeaderBadge({ quota, label, warningLevel, trackedCount = null }) {
   // contradiction (founder screenshot, 2026-09-29).
   const summary = `${Math.min(quota.used, quota.total)} of ${quota.total} applications active in the last ${QUOTA_WINDOW_DAYS} days on your free plan.`;
   const detail = quota.isAtLimit
-    ? 'New applications are not being added. Applications you already track keep updating.'
+    ? 'New applications from email are not being added. Applications you already track keep updating, and you can still add one with + Add.'
     : 'Older applications stay tracked and do not count toward this limit.';
   // Names the other number on screen, so "6/500 active" beside "5 tracked" is not a mystery.
   const trackedLine = Number.isFinite(trackedCount)
@@ -638,7 +638,9 @@ function App() {
 
   // Visible feedback for a Refresh click. The header pill could stay on "synced" for the whole
   // request, so a click looked like it did nothing (persona report 2026-10-14).
-  const [refreshFeedback, setRefreshFeedback] = useState(null); // null | 'syncing' | 'done'
+  // 'failed' stays up until a later refresh succeeds (2026-10-16: a failed refresh flipped back to a
+  // green "synced" once its toast faded).
+  const [refreshFeedback, setRefreshFeedback] = useState(null); // null | 'syncing' | 'done' | 'failed'
   const [refreshResult, setRefreshResult] = useState(null); // describeSyncResult() of the last refresh
   const categorizedEmailsRef = useRef(categorizedEmails);
   categorizedEmailsRef.current = categorizedEmails;
@@ -654,7 +656,7 @@ function App() {
     try {
       const syncResult = await fetchNewEmails(false);
       if (!syncResult?.success) {
-        setRefreshFeedback(null);
+        setRefreshFeedback(syncResult?.requiresReauth || syncResult?.errorCode === 'INVALID_GRANT' || syncResult?.errorCode === 'INSUFFICIENT_SCOPES' ? null : 'failed');
         // The backend records the dead connection during this very attempt, so
         // re-read status to bring the reconnect banner up now. Without this the
         // failure toast points at a banner that has not rendered yet.
@@ -673,8 +675,9 @@ function App() {
       showNotification(result.sentence, 'success');
       refreshFeedbackTimerRef.current = setTimeout(() => setRefreshFeedback(null), 8000);
     } catch (error) {
-      setRefreshFeedback(null);
-      showNotification(`Failed to refresh emails: ${error.message}`, 'error');
+      setRefreshFeedback('failed');
+      console.error('Applendium: refresh failed', error);
+      showNotification("Couldn't refresh. Check your connection, then press Refresh to try again.", 'error');
     }
   }, [userEmail, userId, fetchNewEmails, fetchStoredEmails, fetchQuotaData]);
 
@@ -1592,11 +1595,13 @@ function App() {
           {selectedCategory === 'all' || selectedCategory === 'home' ? (
             <>
               <span data-testid="sync-status-label" aria-live="polite" className="flex items-center gap-1.5 whitespace-nowrap" title={refreshFeedback === 'done' && refreshResult ? `${refreshResult.sentence} ${syncStatusLabel}.` : syncStatusLabel}>
-                <span className={`h-1.5 w-1.5 rounded-full ${gmailDisconnected || isSyncStuck ? 'bg-destructive' : (isSyncActive || refreshFeedback === 'syncing') ? 'bg-warning' : 'bg-success shadow-[0_0_8px_2px_hsl(var(--success)/0.6)]'}`} />
+                <span className={`h-1.5 w-1.5 rounded-full ${gmailDisconnected || isSyncStuck ? 'bg-destructive' : refreshFeedback === 'failed' && !isSyncActive ? 'bg-destructive' : (isSyncActive || refreshFeedback === 'syncing') ? 'bg-warning' : 'bg-success shadow-[0_0_8px_2px_hsl(var(--success)/0.6)]'}`} />
                 {gmailDisconnected
                   ? 'not syncing'
                   : isSyncStuck
                     ? 'sync stuck'
+                    : refreshFeedback === 'failed' && !isSyncActive
+                      ? "couldn't refresh"
                     : (isSyncActive || refreshFeedback === 'syncing')
                       ? 'syncing...'
                       : refreshFeedback === 'done' ? (refreshResult?.short || 'up to date') : 'synced'}
