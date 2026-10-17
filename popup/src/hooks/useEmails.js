@@ -46,6 +46,16 @@ const countUnreadThreadsByCategory = (emails = {}) => {
   return counts;
 };
 
+/**
+ * What a failed refresh tells the user, in plain words (2026-10-16 persona review: the raw error
+ * text was shown). A refused Gmail grant is not a connection problem, so it says which it is.
+ */
+export function syncFailureMessage(rawError) {
+  return /revoked|invalid_grant|reauth|reconnect/i.test(String(rawError || ''))
+    ? 'Gmail access is still revoked. Use Reconnect at the top to restore tracking.'
+    : "Couldn't refresh. Check your connection, then press Refresh to try again.";
+}
+
 export function useEmails(userEmail, userId, CONFIG) {
   // State to hold emails categorized by their job application status
   const [categorizedEmails, setCategorizedEmails] = useState({
@@ -430,7 +440,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         } else {
           // Plain words for the user; the raw error is for us (2026-10-16 persona review).
           console.error('Applendium: sync failed', response.error);
-          showNotification("Couldn't refresh. Check your connection, then press Refresh to try again.", 'error');
+          showNotification(syncFailureMessage(response.error), 'error');
         }
         setIsSyncing(false);
       }
@@ -440,7 +450,7 @@ export function useEmails(userEmail, userId, CONFIG) {
         return { success: false, error: error?.message || 'Unknown sync error' };
       }
       console.error("❌ Applendium™: Error requesting new email sync:", error);
-      showNotification("Couldn't refresh. Check your connection, then press Refresh to try again.", 'error');
+      showNotification(syncFailureMessage(error?.message), 'error');
       setIsSyncing(false);
       return { success: false, error: error.message };
     }
