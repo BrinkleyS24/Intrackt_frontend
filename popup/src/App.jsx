@@ -1490,7 +1490,13 @@ function App() {
         <Notification />
 
         {/* Scrollable: value first, then the heads-up. The CTA stays pinned below. */}
-        <div className="flex-1 overflow-y-auto popup-scrollbar px-5 pt-6">
+        <div
+          role="region"
+          aria-label="About Applendium and Gmail access"
+          tabIndex={0}
+          data-testid="onboarding-scroll-region"
+          className="min-h-0 flex-1 overflow-y-auto popup-scrollbar px-5 pt-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent"
+        >
           <div className="flex flex-col gap-4">
             {/* Brand + value-first headline */}
             <div className="text-center">
