@@ -1,0 +1,297 @@
+{
+  "at": "2026-10-16T20:46:48.248Z",
+  "version": "2.2.2",
+  "status": "candidate; store publication pending real Chrome smoke",
+  "grade": "B+ provisional under frozen rubric",
+  "checks": {
+    "browser": true,
+    "manifestChangesOnlyVersion": true,
+    "existingBackendWorkPreserved": true,
+    "webUnchanged": true,
+    "pureExtension": true,
+    "backend": true,
+    "productionPackage": true,
+    "productionPreauth": true,
+    "frozenRubric": true,
+    "copiedRubric": true,
+    "priorFocused": true,
+    "priorPremiumPopupIdentical": true,
+    "priorPremiumReportIdentical": true,
+    "liveBoundaryCap": true,
+    "cleanup": true
+  },
+  "counts": {
+    "browserPassed": 44,
+    "pureExtensionPassed": 86,
+    "targetedBackendPassed": 64,
+    "priorFocusedPassed": 27,
+    "cleanedIdentities": 8,
+    "cleanupChecks": 136
+  },
+  "liveResults": [
+    {
+      "name": "Actual SQL inclusive history predicate",
+      "days": 90,
+      "cutoff": "2026-07-18T20:41:39.572Z",
+      "source": [
+        {
+          "email_id": "boundary-90--1",
+          "date": "2026-07-18T20:41:39.571Z"
+        },
+        {
+          "email_id": "boundary-90-0",
+          "date": "2026-07-18T20:41:39.572Z"
+        },
+        {
+          "email_id": "boundary-90-1",
+          "date": "2026-07-18T20:41:39.573Z"
+        }
+      ],
+      "selected": [
+        {
+          "email_id": "boundary-90-0",
+          "date": "2026-07-18T20:41:39.572"
+        },
+        {
+          "email_id": "boundary-90-1",
+          "date": "2026-07-18T20:41:39.573"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "name": "Actual SQL inclusive history predicate",
+      "days": 180,
+      "cutoff": "2026-04-19T20:41:39.889Z",
+      "source": [
+        {
+          "email_id": "boundary-180--1",
+          "date": "2026-04-19T20:41:39.888Z"
+        },
+        {
+          "email_id": "boundary-180-0",
+          "date": "2026-04-19T20:41:39.889Z"
+        },
+        {
+          "email_id": "boundary-180-1",
+          "date": "2026-04-19T20:41:39.890Z"
+        }
+      ],
+      "selected": [
+        {
+          "email_id": "boundary-180-0",
+          "date": "2026-04-19T20:41:39.889"
+        },
+        {
+          "email_id": "boundary-180-1",
+          "date": "2026-04-19T20:41:39.89"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "name": "Actual application service with real SQL at rollover",
+      "zone": "UTC",
+      "instant": "2026-05-01T12:00:00.000Z",
+      "cutoff": "2026-04-01T12:00:00.000Z",
+      "fixtureOffsetsMs": [
+        -1,
+        0,
+        1
+      ],
+      "count": 2,
+      "pass": true
+    },
+    {
+      "name": "Actual application service with real SQL at rollover",
+      "zone": "UTC",
+      "instant": "2026-12-01T12:00:00.000Z",
+      "cutoff": "2026-11-01T12:00:00.000Z",
+      "fixtureOffsetsMs": [
+        -1,
+        0,
+        1
+      ],
+      "count": 2,
+      "pass": true
+    },
+    {
+      "name": "Actual application service with real SQL at rollover",
+      "zone": "America/New_York",
+      "instant": "2026-05-01T12:00:00.000Z",
+      "cutoff": "2026-04-01T12:00:00.000Z",
+      "fixtureOffsetsMs": [
+        -1,
+        0,
+        1
+      ],
+      "count": 2,
+      "pass": true
+    },
+    {
+      "name": "Actual application service with real SQL at rollover",
+      "zone": "America/New_York",
+      "instant": "2026-12-01T12:00:00.000Z",
+      "cutoff": "2026-11-01T12:00:00.000Z",
+      "fixtureOffsetsMs": [
+        -1,
+        0,
+        1
+      ],
+      "count": 2,
+      "pass": true
+    },
+    {
+      "name": "Actual Gmail update at 500 applications",
+      "settled": true,
+      "application": {
+        "id": 6974,
+        "current_status": "rejected",
+        "is_closed": true,
+        "latest_email_date": "2026-10-16T20:41:45.459+00:00"
+      },
+      "applicationCount": 500,
+      "imported": [
+        {
+          "id": 22669,
+          "email_id": "19ff0dca40eed853",
+          "category": "Rejected",
+          "company_name": null,
+          "position": null,
+          "sync_visibility_state": "visible",
+          "resolution_state": "needs_review"
+        },
+        {
+          "id": 22651,
+          "email_id": "1a0158edfcf33a69",
+          "category": "Rejected",
+          "company_name": null,
+          "position": null,
+          "sync_visibility_state": "visible",
+          "resolution_state": "needs_review"
+        },
+        {
+          "id": 22650,
+          "email_id": "1a0447518d0024a7",
+          "category": "Rejected",
+          "company_name": null,
+          "position": null,
+          "sync_visibility_state": "visible",
+          "resolution_state": "needs_review"
+        },
+        {
+          "id": 22639,
+          "email_id": "1a13d2ba0df68015",
+          "category": "Applied",
+          "company_name": "Audit Cedar Testing",
+          "position": "QA Engineer",
+          "sync_visibility_state": "visible",
+          "resolution_state": "final_relevant"
+        },
+        {
+          "id": 22636,
+          "email_id": "1a142563bfa86ddd",
+          "category": "Interviewed",
+          "company_name": "Audit Cedar Testing",
+          "position": "QA Engineer",
+          "sync_visibility_state": "visible",
+          "resolution_state": "final_relevant"
+        },
+        {
+          "id": 22635,
+          "email_id": "1a14256cfbf0fc3e",
+          "category": "Rejected",
+          "company_name": "Audit Cedar Testing",
+          "position": "QA Engineer",
+          "sync_visibility_state": "visible",
+          "resolution_state": "final_relevant"
+        }
+      ],
+      "links": [
+        {
+          "email_id": 22635,
+          "application_id": 6974
+        },
+        {
+          "email_id": 22636,
+          "application_id": 6974
+        },
+        {
+          "email_id": 22639,
+          "application_id": 6974
+        }
+      ],
+      "pass": true
+    },
+    {
+      "name": "Actual application 501 still blocked",
+      "status": 403,
+      "code": "quota",
+      "pass": true
+    },
+    {
+      "name": "Application count after both workers complete",
+      "count": 500,
+      "pass": true
+    }
+  ],
+  "limitations": [
+    "Fresh Chrome-stable consent/reconnect/revocation unavailable after user-reported sign-in rejection; exact error not captured.",
+    "Toolbar-granted posting permissions and desktop notification delivery not signed off.",
+    "Real Chrome-stable degraded-network recovery remains pending.",
+    "SQL boundary fixtures do not freeze the deployed HTTP clock; Gmail search is second-resolution.",
+    "No independent human task reviewer or post-release confirmation.",
+    "Premium failure paths intentionally share the correctness fixes; tested normal layout/report preserved."
+  ],
+  "package": {
+    "path": "applendium-extension-v2.2.2.zip",
+    "sha256": "09e5ae02f34e83a08864945421ba550a62ee5bba36f618a211f2455f21ff7516",
+    "bytes": 531626
+  },
+  "evidence": [
+    {
+      "path": ".codex_tmp/free-release-20261016/e2e.json",
+      "sha256": "92baaf611cef4de6f35f2a0f311b444cd9ac1a7def5d5f529cb509b24a11940c"
+    },
+    {
+      "path": ".codex_tmp/free-release-20261016/unit-tests.log",
+      "sha256": "412292ff7a57c544d415be16e07dd583f90f7e49c019693711dd475b2fb5bbe9"
+    },
+    {
+      "path": ".codex_tmp/free-release-20261016/backend-tests.json",
+      "sha256": "f286f1cdaf76ab884cd1e73701d84bac088b46207bcf53e55efa9119b2cdd6a6"
+    },
+    {
+      "path": ".codex_tmp/free-release-20261016/build-verification.log",
+      "sha256": "08fdbe41bdf8a300e9b015faebe4684d3370dac6b9cff78da4e11d94906ef702"
+    },
+    {
+      "path": ".codex_tmp/free-release-20261016/production-preauth.log",
+      "sha256": "456d4edd594b7e5296b22a567ded9b1d85b5908e216356e66c5116a626d7d423"
+    },
+    {
+      "path": ".codex_tmp/free-release-20261016/boundaries-results.json",
+      "sha256": "06775e28a72ace901bc1537c8137e30af2361e8ce0d6302194689ad850da3156"
+    },
+    {
+      "path": ".codex_tmp/free-release-20261016/boundaries-cleanup.json",
+      "sha256": "f317e035f2d1b91bea693dd904eb4bee9c81fc37b987b0d1f19aeb38128740cd"
+    },
+    {
+      "path": ".codex_tmp/free-release-20261016/cleanup-verification.json",
+      "sha256": "e831112741e1de7b108b0857a3c6bda940906256a6ada99f1b20ab4e1ab00a87"
+    },
+    {
+      "path": ".codex_tmp/free-release-20261016/boundaries.mjs",
+      "sha256": "1cebdf3a7bbf42f65fc094f1685c93ec30ac7182db57f58c84f33be526bf1520"
+    },
+    {
+      "path": ".codex_tmp/free-release-20261016/verify-cleanup.mjs",
+      "sha256": "245f29bbb298248ed5fb683b5af4a86bba9539929bdc648f5d314c030e10550b"
+    },
+    {
+      "path": ".codex_tmp/free-release-20261016/run-live.ps1",
+      "sha256": "e9674cec8d9ff3edefa5995324da8c2b977e5d5e8ff5fa6af101b66e710ab491"
+    }
+  ]
+}

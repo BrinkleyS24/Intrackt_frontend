@@ -547,7 +547,7 @@ export function useEmails(userEmail, userId, CONFIG) {
     if (!reportPayload.emailId || !reportPayload.threadId || !reportPayload.originalCategory || !reportPayload.correctedCategory) {
       showNotification("Missing critical email data for misclassification report.", "error");
       console.error("❌ Applendium™: Missing critical email data for misclassification report:", reportPayload);
-      return;
+      return { success: false, error: 'Missing critical email data for correction.' };
     }
 
   setLoadingEmails(true);
@@ -563,6 +563,7 @@ export function useEmails(userEmail, userId, CONFIG) {
           gmailMessageId: result.gmailMessageId || null, // Present when Irrelevant deletes the email row
         });
         setUndoToastVisible(true);
+        clearTimeout(misclassificationTimerRef.current);
         misclassificationTimerRef.current = setTimeout(() => {
           setUndoToastVisible(false);
           setLastMisclassifiedEmail(null);
@@ -571,12 +572,15 @@ export function useEmails(userEmail, userId, CONFIG) {
         // Ensure the UI reflects the latest background cache. This is especially
         // important for "Irrelevant" where the backend deletes the email row.
         await fetchStoredEmails();
+        return { success: true };
       } else {
         showNotification(`Failed to report misclassification: ${result.error}`, "error");
+        return { success: false, error: result.error || 'Correction could not be saved. Try again.' };
       }
     } catch (error) {
       console.error("❌ Applendium™: Error reporting misclassification:", error);
       showNotification("Error reporting misclassification.", "error");
+      return { success: false, error: error.message || 'Correction could not be saved. Try again.' };
     } finally {
   setLoadingEmails(false);
     }
@@ -594,20 +598,16 @@ export function useEmails(userEmail, userId, CONFIG) {
 
   setLoadingEmails(true);
     try {
-      // Clear any existing undo timer and hide toast immediately
-      if (misclassificationTimerRef.current) {
-        clearTimeout(misclassificationTimerRef.current);
-        misclassificationTimerRef.current = null;
-      }
-      setUndoToastVisible(false);
-
       const result = await undoMisclassificationService(lastMisclassifiedEmail);
       if (result.success) {
+        clearTimeout(misclassificationTimerRef.current);
+        misclassificationTimerRef.current = null;
+        setUndoToastVisible(false);
         showNotification("Misclassification undone!", "success");
         setLastMisclassifiedEmail(null);
         await fetchStoredEmails();
       } else {
-        showNotification(`Failed to undo misclassification: ${result.error}`, "error");
+        showNotification(`Failed to undo misclassification: ${result.error}. You can retry Undo while it is shown.`, "error");
       }
     } catch (error) {
       console.error("❌ Applendium™: Error undoing misclassification:", error);

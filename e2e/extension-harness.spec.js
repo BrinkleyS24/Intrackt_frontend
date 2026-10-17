@@ -49,6 +49,7 @@ test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
   context = await chromium.launchPersistentContext('', getLaunchOptions());
+  await context.route(/https?:\/\//, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Captured destination</title>' }));
   let serviceWorker = context.serviceWorkers()[0];
   if (!serviceWorker) {
     serviceWorker = await context.waitForEvent('serviceworker');
@@ -534,18 +535,21 @@ test('the page reader takes structured postings first and ignores pages that are
   expect(search.looksLikeJob).toBe(false);
 });
 
-test('free users see one real read of their own search the moment the popup opens', async ({}, testInfo) => {
+test('free users can open their job check and search insight without displacing applications', async ({}, testInfo) => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'free-rich');
 
-  // Measured 2026-09-25: in the list footer the read started ~1,100px below a 236px viewport for a
-  // full page of applications. It must be visible without any scrolling.
+  // The 2026-10-16 acceptance audit reproduced zero visible applications with both strips open.
+  // Tools remain one keyboard-accessible disclosure away, ahead of the application list.
+  const tools = frame.getByTestId('free-tools');
+  await expect(tools).not.toHaveAttribute('open', '');
+  await tools.locator('summary').click();
   const read = frame.getByTestId('search-read');
   await expect(read).toBeInViewport();
   await expect(read).toContainText('Your rejections are coming back too fast');
   await expect(read).toContainText('last 90 days');
   await expect(frame.getByTestId('search-read-cta')).toContainText('See what to do about it');
-  await expect(frame.getByTestId('search-read-cta')).toBeInViewport();
+  await expect(frame.getByTestId('search-read-cta')).toBeVisible();
   // Free users get one Apply Gate check a week on the job they are looking at (2026-09-26).
   const strip = frame.getByTestId('apply-gate-strip');
   await expect(strip).toContainText('your free check');
@@ -597,6 +601,8 @@ test('a free user without enough data sees honest progress instead of a blur', a
 test('off a job page, a user with no resume is told Apply Gate needs one, and can wave it off', async () => {
   const page = await openLabPage();
   const frame = await activateScenario(page, 'empty-inbox');
+
+  await frame.getByTestId('free-tools').locator('summary').click();
 
   const nudge = frame.getByTestId('apply-gate-resume-nudge');
   await expect(nudge).toContainText('Add your resume so Apply Gate can check jobs.');

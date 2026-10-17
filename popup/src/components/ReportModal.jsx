@@ -5,7 +5,7 @@
  * activity for career coaches, workforce programs, and benefit requirements.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { FileDown, X } from 'lucide-react';
 import {
   buildActivityRows,
@@ -39,6 +39,9 @@ export default function ReportModal({
   categorizedEmails,
   manualApplications = [],
   manualApplicationsError = null,
+  manualApplicationsLoading = false,
+  manualApplicationsIncomplete = false,
+  onRetryManualApplications,
   userName,
   userEmail,
 }) {
@@ -52,6 +55,14 @@ export default function ReportModal({
   const [endValue, setEndValue] = useState(toInputValue(today));
   const [isDownloading, setIsDownloading] = useState(false);
   const [error, setError] = useState(null);
+  const dialogRef = useRef(null);
+  const sourceUnavailable = Boolean(manualApplicationsError || manualApplicationsLoading || manualApplicationsIncomplete);
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousFocus = document.activeElement;
+    dialogRef.current?.querySelector('button')?.focus();
+    return () => previousFocus?.focus?.();
+  }, [isOpen]);
 
   const rows = useMemo(
     () => buildActivityRows(categorizedEmails, manualApplications, STAGE_RULES),
@@ -69,6 +80,7 @@ export default function ReportModal({
   if (!isOpen) return null;
 
   const handleDownload = async () => {
+    if (sourceUnavailable || !rangeValid || isDownloading) return;
     setIsDownloading(true);
     setError(null);
     try {
@@ -87,9 +99,21 @@ export default function ReportModal({
   return (
     <div
       data-testid="report-modal"
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="report-title"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
+        if (event.key !== 'Tab') return;
+        const controls = [...dialogRef.current.querySelectorAll('button:not(:disabled), input:not(:disabled)')];
+        const first = controls[0]; const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm"
     >
-      <div className="relative w-full max-w-md rounded-2xl border border-border bg-card p-5 text-foreground shadow-xl">
+      <div className="relative max-h-full w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-card p-5 text-foreground shadow-xl">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 z-10 p-1 text-muted-foreground transition-colors hover:text-foreground"
@@ -99,7 +123,7 @@ export default function ReportModal({
           <X className="h-5 w-5" />
         </button>
 
-        <h2 className="text-lg font-semibold text-foreground">Job search activity report</h2>
+        <h2 id="report-title" className="text-lg font-semibold text-foreground">Job search activity report</h2>
         <p className="mt-1 text-xs text-muted-foreground">
           A PDF record of your applications for a career coach, workforce program, or benefit requirement.
         </p>
@@ -130,6 +154,7 @@ export default function ReportModal({
         </div>
 
         <div className="mt-4 rounded-lg border border-border bg-background px-3 py-2.5 text-xs text-muted-foreground" data-testid="report-preview">
+          {sourceUnavailable && <p className="mb-1 font-semibold text-warning">Incomplete preview — still missing added applications.</p>}
           {rangeValid ? (
             <>
               <p>
@@ -149,9 +174,14 @@ export default function ReportModal({
         <p data-testid="report-counting-rule" className="mt-3 text-[12px] leading-relaxed text-muted-foreground">{REPORT_COUNTING_RULE}</p>
         <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">{REPORT_PROVENANCE_NOTE}</p>
 
-        {manualApplicationsError && (
+        {sourceUnavailable && (
           <p role="status" data-testid="report-manual-warning" className="mt-2 text-xs text-warning">
-            Applications you added yourself could not be loaded, so this report may leave them out. Close this, press Refresh, then try again.
+            {manualApplicationsLoading
+              ? 'Loading all applications you added. Download will be available when the complete record is ready.'
+              : 'The complete record of applications you added is unavailable. Download is paused to avoid leaving applications out.'}
+            {!manualApplicationsLoading && onRetryManualApplications && (
+              <button type="button" onClick={onRetryManualApplications} className="ml-1 font-semibold underline underline-offset-2">Retry loading applications</button>
+            )}
           </p>
         )}
 
@@ -159,7 +189,7 @@ export default function ReportModal({
 
         <button
           onClick={handleDownload}
-          disabled={!rangeValid || isDownloading || preview.applications === 0}
+          disabled={!rangeValid || isDownloading || preview.applications === 0 || sourceUnavailable}
           data-testid="report-download-button"
           className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
           type="button"

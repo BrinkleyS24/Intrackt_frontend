@@ -18,6 +18,8 @@ test.beforeAll(async () => {
     args,
     viewport: { width: 1480, height: 1120 },
   });
+  // Assert the destination the extension opens; external site redirects/auth are a separate integration.
+  await context.route(/https?:\/\//, route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Captured destination</title>' }));
   const serviceWorker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
   extensionId = new URL(serviceWorker.url()).host;
 });
@@ -41,26 +43,34 @@ const tileValue = async (frame, key) => (await frame.getByTestId(`main-tab-${key
 
 test('a Premium member\'s "next move" opens Interview Prep or Next Actions, not the pricing page', async () => {
   const { page, frame } = await openLab('premium-rich');
+  const popup = page.frames().find(frame => frame.url().includes('/popup/public/'));
+  await popup.evaluate(() => {
+    window.requestedTabs = [];
+    const create = chrome.tabs.create.bind(chrome.tabs);
+    chrome.tabs.create = options => { window.requestedTabs.push(options); return create(options); };
+  });
   const openNextMove = async (company) => {
     await frame.locator('[data-testid="email-thread-card"]').filter({ hasText: company }).first().dispatchEvent('click');
     const nextMove = frame.getByTestId('premium-next-move');
     await expect(nextMove).toBeVisible();
-    const tab = context.waitForEvent('page');
+    const before = await popup.evaluate(() => window.requestedTabs.length);
     await nextMove.click();
-    const opened = await tab;
-    const { pathname } = new URL(opened.url());
-    await opened.close();
+    // A Chrome tab can report its initial root document before the requested navigation.
+    // Check the actual chrome.tabs.create command; remote auth/redirects are out of this fixture's scope.
+    await expect.poll(() => popup.evaluate(() => window.requestedTabs.length)).toBe(before + 1);
+    const url = await popup.evaluate(() => window.requestedTabs.at(-1).url);
+    const { pathname } = new URL(url);
     await frame.getByTestId('popup-header-back').click();
     return pathname;
   };
   expect(await openNextMove('Signal Labs')).toBe('/interview-prep');
   expect(await openNextMove('Lattice')).toBe('/next-actions');
   // The footer link takes a member to the dashboard, not to pricing either.
-  const tab = context.waitForEvent('page');
+  const before = await popup.evaluate(() => window.requestedTabs.length);
   await frame.getByTestId('dashboard-link').click();
-  const dashboard = await tab;
-  expect(new URL(dashboard.url()).pathname).toBe('/dashboard');
-  await dashboard.close();
+  await expect.poll(() => popup.evaluate(() => window.requestedTabs.length)).toBe(before + 1);
+  expect(new URL(await popup.evaluate(() => window.requestedTabs.at(-1).url)).pathname).toBe('/dashboard');
+  for (const tab of context.pages()) if (tab !== page) await tab.close();
   await page.close();
 });
 

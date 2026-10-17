@@ -1,0 +1,64 @@
+{
+  "version": "2.2.3",
+  "candidateBaselineCommit": "206555fc090e61a35248dd6152167eecf0cd5250",
+  "status": "verified release candidate; Chrome Web Store submission/publication recorded separately",
+  "grade": "A for tested existing Free promises on candidate; not a deployed-product grade or full accessibility certification",
+  "checks": {
+    "47BrowserTestsNoSkippedFailuresOrFlaky": true,
+    "realFixedReconnect": true,
+    "realLogoutReopen": true,
+    "realReadOnlyGrant": true,
+    "nineIdentitiesCleaned": true,
+    "premiumJourneys": true,
+    "premiumFreshScreenshot": true,
+    "targetedAccessibility": true,
+    "manifestsVersionOnly": true,
+    "frozenRubric": true,
+    "packageMatchesVerifiedBundle": true
+  },
+  "browserStats": {
+    "startTime": "2026-10-16T23:45:20.675Z",
+    "duration": 29031.506,
+    "expected": 47,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "realReconnectObservedAt": "2026-10-17T00:17:06.493Z",
+  "package": {
+    "sha256": "7beda56a7c08e31eb6c3e14bb4d7924efb6225a922c6d829029af70ff055ea36",
+    "bytes": 531680,
+    "files": 17
+  },
+  "premiumScope": "Normal tested behavior, paid features, pricing, permissions, entitlements and limits preserved. Shared failure handling intentionally improved.",
+  "unknowns": [
+    "Independent human task review unavailable",
+    "Post-publication installed-package confirmation pending",
+    "Natural new-arrival notification timing not established by controlled cache replay",
+    "Broad screen-reader/WCAG evaluation unavailable",
+    "Google app verification not established; unverified-app warning remains",
+    "Legacy Cloud Monitoring preflight fails; existing external GitHub uptime check passes",
+    "Very large Premium report performance unverified"
+  ],
+  "sourceHashes": {
+    "popup/src/App.jsx": "c716c890304a8191b997735f94dbcfca17b33afe40b249a98101945888b77a8b",
+    "e2e/free-acceptance.spec.js": "4f165cf9edc60f36b67b6902702552f686d69c4a634cb591bdaa30b072193635",
+    "package.json": "6ea2bdb63894dcf12166b44e85c1eaa27e6091aa02df1004517d7c963aa0090f",
+    "package-lock.json": "d368bf26c4117488e1a7501e72ec64d39297c57f8fdf1d1bcbca0d995744616f",
+    "manifest.json": "c360436c4ea2f51d484525bad4c2dc49d255773c27bb5e4c810c5e5e7e1b2512",
+    "manifest.prod.json": "d45e1a2eb853476146cee39bb2991b844644da715937391f6195f6314da7eaa3"
+  },
+  "evidenceHashes": {
+    "fixed-reconnected-state.json": "6c77e2221b1468cc2c3048f419863bd7e269eb1243c43ae3af24d1d4b77548a7",
+    "logout-reopen.json": "68a2e652097bdcde87b683544d7f13266ab9e93bb83ddc032977f93b200e95aa",
+    "fixed-reconnected-gmail-grant.json": "cdb1f331c8505dec6d971c9314855d8c917c5b349c1e8ef0523c167f3fe3e666",
+    "e2e-final-fixed.json": "f173cd459a5fb557eafed78463aeecbbf116c51841bf735f905a2d928b8c3730",
+    "reconnect-before.json": "69780399fb4b92d54aa06671264944caebced55fd2a2c0ce9796d0770e1bcf19",
+    "premium-fresh-comparison.json": "6febae71f8cfdfc0aea94f151cf1e4214cfcb7d45472efed3b1d2d4d51bba48f",
+    "cleanup-verification-final.json": "fd3e3e05db478a9dab9e6c5a3f8f5c187862d050eab65f1bb554e513b980f060",
+    "dst-rollover-results.json": "f3ee6f45f138bbe84e54407e990f3ab1183dd034fd86d92bf0071828348fec61",
+    "boundaries-results.json": "06775e28a72ace901bc1537c8137e30af2361e8ce0d6302194689ad850da3156",
+    "toolbar-real-result.json": "d49c388f9fe26d473e28a5f86a344b92b5896d02ed474dd45190c414c5304f0e",
+    "notification-delivery-control.json": "490dfbbf0d6771e2d512e8ad98d83399135b0e3e370178aca8c4507b2da5a82d"
+  }
+}

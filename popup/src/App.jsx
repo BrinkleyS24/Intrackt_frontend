@@ -284,6 +284,8 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [isMisclassificationModalOpen, setIsMisclassificationModalOpen] = useState(false);
+  const [savingCorrection, setSavingCorrection] = useState(false);
+  const [correctionError, setCorrectionError] = useState(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
   // Details handed over by Apply Gate's "Track this application" (company, role, posting link).
@@ -385,7 +387,9 @@ function App() {
     resolveReviewEmail,
     applicationCount,
   } = useEmails(userEmail, userId, CONFIG);
-  const manual = useManualApplications(userId);
+  // Free's bounded ledger loads completely. Premium keeps its existing lazy list;
+  // opening a report requests a complete snapshot for either plan.
+  const manual = useManualApplications(userId, { complete: userPlan === 'free' || isReportModalOpen });
   useEffect(() => { setShowManualForm(false); setManualPrefill(null); }, [userId]);
   const closeManualForm = useCallback(() => { setShowManualForm(false); setManualPrefill(null); }, []);
 
@@ -396,8 +400,8 @@ function App() {
     const id = String(email.id);
     setReviewBusyIds((prev) => new Set(prev).add(id));
     try {
-      await handleReportMisclassification(email, category);
-      resolveReviewEmail(email.id);
+      const saved = await handleReportMisclassification(email, category);
+      if (saved?.success) resolveReviewEmail(email.id);
     } finally {
       setReviewBusyIds((prev) => {
         const next = new Set(prev);
@@ -688,12 +692,34 @@ function App() {
   // necessary, just the only path that happened to exist.
   const handleGmailReconnect = useCallback(async () => {
     try {
-      await loginGoogleOAuth();
-      const refreshed = await fetchQuotaData();
-      if (refreshed?.success) {
-        showNotification('Gmail reconnected. Catching up on what we missed...', 'success');
-        await fetchNewEmails(false);
+      const authorization = await loginGoogleOAuth();
+      if (!authorization?.success) return;
+      // /sync-status reports the saved health flag; it does not validate the new
+      // Google grant. The sync preflight clears that flag only after Gmail accepts
+      // the credentials. Checking it first races post-login work and rejects a
+      // successful reconnect (reproduced with real revoked consent on 2026-10-16).
+      const catchUp = await fetchNewEmails(false);
+      if (!catchUp?.success) {
+        await fetchQuotaData();
+        return;
       }
+      let refreshed = await fetchQuotaData();
+      for (let attempt = 0; attempt < 10
+        && refreshed?.success && refreshed.gmailAuth?.requiresReconnect === true
+        && (catchUp.sync?.inProgress || refreshed.sync?.inProgress)
+        && !refreshed.sync?.lastError; attempt += 1) {
+        // An existing post-login sync can coalesce this request before its Google
+        // validation finishes. Keep the button pending while that work settles.
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        refreshed = await fetchQuotaData();
+      }
+      if (!refreshed?.success || refreshed.gmailAuth?.requiresReconnect !== false) {
+        showNotification('Google sign-in finished, but Gmail access could not yet be confirmed. Your tracked applications are safe. Try Refresh shortly.', 'warning');
+        return;
+      }
+      showNotification((refreshed.sync?.inProgress ?? catchUp.sync?.inProgress)
+        ? 'Gmail reconnected. Catching up on what we missed...'
+        : 'Gmail reconnected. Refresh to see the latest applications.', 'success');
     } catch (error) {
       showNotification(`Reconnect failed: ${error.message}`, 'error');
     }
@@ -942,6 +968,7 @@ function App() {
   }, [categoryBeforePreview]);
 
   const openMisclassificationModal = useCallback((email) => {
+    setCorrectionError(null);
     setEmailToMisclassify(email);
     setIsMisclassificationModalOpen(true);
   }, []);
@@ -952,14 +979,24 @@ function App() {
   }, []);
 
   const handleMisclassificationSubmit = useCallback(async (emailData, newCategory) => {
-    closeMisclassificationModal();
-    await handleReportMisclassification(emailData, newCategory);
-
-    if ((newCategory || '').toString().trim().toLowerCase() === 'irrelevant') {
-      setSelectedEmail(null);
-      setSelectedCategory(categoryBeforePreview || 'all');
+    if (savingCorrection) return;
+    setSavingCorrection(true);
+    setCorrectionError(null);
+    try {
+      const saved = await handleReportMisclassification(emailData, newCategory);
+      if (!saved?.success) {
+        setCorrectionError(saved?.error || 'Correction could not be saved. Try again.');
+        return;
+      }
+      closeMisclassificationModal();
+      if ((newCategory || '').toString().trim().toLowerCase() === 'irrelevant') {
+        setSelectedEmail(null);
+        setSelectedCategory(categoryBeforePreview || 'all');
+      }
+    } finally {
+      setSavingCorrection(false);
     }
-  }, [categoryBeforePreview, closeMisclassificationModal, handleReportMisclassification]);
+  }, [savingCorrection, categoryBeforePreview, closeMisclassificationModal, handleReportMisclassification]);
 
   const handleArchive = useCallback(async (threadId) => {
     await handleArchiveEmail(threadId);
@@ -1205,7 +1242,7 @@ function App() {
       const emptyState = emptyList;
 
       return (
-        <div className="flex h-full flex-col">
+        <div className="flex h-full min-h-0 flex-col">
           <div className="space-y-3 px-3 py-3">
             {/* Screen-reader outline: Applendium (h1) > Your pipeline > Applications (2026-10-15). */}
             <h2 className="sr-only">Your pipeline</h2>
@@ -1364,7 +1401,22 @@ function App() {
             newSinceTimestamp={newSinceTimestamp}
             emptyState={emptyState}
             headerSlot={
-              <>
+              userPlan === 'free' ? (applyGateCheck.phase !== 'hidden' || searchRead.read ? (
+                <details data-testid="free-tools" className="mb-2 rounded-lg border border-border bg-card/60">
+                  <summary className="cursor-pointer rounded-lg px-3 py-2 text-[12px] font-semibold text-accent-text focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent">
+                    Job check &amp; search insight
+                  </summary>
+                  <div className="px-2 pb-1">
+                    <ApplyGateStrip
+                      check={applyGateCheck}
+                      onOpenWebPath={openWebAppPath}
+                      onOpenPremiumPage={openPremiumStatusPage}
+                      onTrackApplication={manual.creationEnabled ? (prefill) => { setManualPrefill(prefill); setShowManualForm(true); } : undefined}
+                    />
+                    <SearchReadStrip read={searchRead.read} onOpenPremiumPage={openPremiumStatusPage} />
+                  </div>
+                </details>
+              ) : null) : <>
                 <ApplyGateStrip
                   check={applyGateCheck}
                   onOpenWebPath={openWebAppPath}
@@ -1730,6 +1782,8 @@ function App() {
         onCloseMisclassificationModal={closeMisclassificationModal}
         selectedEmailForMisclassification={emailToMisclassify}
         onConfirmMisclassification={handleMisclassificationSubmit}
+        savingCorrection={savingCorrection}
+        correctionError={correctionError}
         undoMisclassification={undoMisclassification}
         undoToastVisible={undoToastVisible}
         setUndoToastVisible={setUndoToastVisible}
@@ -1740,6 +1794,9 @@ function App() {
         categorizedEmails={categorizedEmails}
         manualApplications={manual.applications}
         manualApplicationsError={manual.error}
+        manualApplicationsLoading={manual.loading}
+        manualApplicationsIncomplete={Boolean(manual.nextCursor)}
+        onRetryManualApplications={() => manual.refresh()}
         userName={userName}
         userEmail={userEmail}
       />
