@@ -72,6 +72,54 @@ test('denied authorization never requests catch-up or announces success', async 
   await page.close();
 });
 
+for (const coalesced of [false, true]) {
+  test(`reconnect validates Gmail before trusting the old broken flag (coalesced=${coalesced})`, async () => {
+    const { page, frame } = await open('gmail-disconnected');
+    const popup = page.frames().find(frame => frame.url().includes('/popup/public/'));
+    await popup.evaluate((coalesced) => {
+      const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+      let validationStarted = false;
+      let healthReads = 0;
+      window.reconnectSyncRequests = 0;
+      chrome.runtime.sendMessage = message => {
+        if (message.type === 'LOGIN_GOOGLE_OAUTH') return Promise.resolve({ success: true });
+        if (message.type === 'FETCH_NEW_EMAILS') {
+          validationStarted = true;
+          window.reconnectSyncRequests++;
+          return Promise.resolve({ success: true, sync: { inProgress: coalesced } });
+        }
+        if (message.type === 'FETCH_QUOTA_DATA') {
+          const pending = !validationStarted || (coalesced && ++healthReads === 1);
+          return Promise.resolve({ success: true, quota: { usage: 5, limit: 500 }, gmailAuth: { requiresReconnect: pending }, sync: { inProgress: pending && validationStarted } });
+        }
+        return send(message);
+      };
+    }, coalesced);
+    await frame.getByTestId('gmail-reconnect-button').click();
+    await expect(frame.getByTestId('gmail-reconnect-banner')).toHaveCount(0);
+    await expect(frame.getByRole('status')).toContainText('Gmail reconnected.');
+    expect(await popup.evaluate(() => window.reconnectSyncRequests)).toBe(1);
+    await page.close();
+  });
+}
+
+test('a genuinely rejected Gmail validation keeps the reconnect warning and tracked data', async () => {
+  const { page, frame } = await open('gmail-disconnected', {
+    LOGIN_GOOGLE_OAUTH: { success: true },
+    FETCH_NEW_EMAILS: { success: false, requiresReauth: true, errorCode: 'INVALID_GRANT', error: 'Grant is still revoked' },
+    FETCH_QUOTA_DATA: { success: true, quota: { usage: 5, limit: 500 }, gmailAuth: { requiresReconnect: true }, sync: { inProgress: false } },
+  });
+  const before = await frame.getByTestId('email-thread-card').allTextContents();
+  await frame.getByTestId('gmail-reconnect-button').click();
+  await expect(frame.getByTestId('gmail-reconnect-banner')).toBeVisible();
+  await expect(frame.getByRole('status')).toContainText('revoked');
+  expect(await frame.getByTestId('email-thread-card').allTextContents()).toEqual(before);
+  const popup = page.frames().find(frame => frame.url().includes('/popup/public/'));
+  expect(await popup.evaluate(() => window.acceptanceRequests.filter(message => message.type === 'FETCH_NEW_EMAILS').length)).toBe(1);
+  await expect(frame.getByRole('status')).not.toContainText('Gmail reconnected.');
+  await page.close();
+});
+
 test('a failed manual source cannot produce a complete-looking download', async () => {
   const { page, frame } = await open('free-rich', { LIST_MANUAL_APPLICATIONS: { success: false, error: 'Manual records unavailable' } });
   await frame.getByTestId('report-button').click();

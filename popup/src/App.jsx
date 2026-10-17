@@ -691,17 +691,30 @@ function App() {
     try {
       const authorization = await loginGoogleOAuth();
       if (!authorization?.success) return;
-      const refreshed = await fetchQuotaData();
-      if (!refreshed?.success || refreshed.gmailAuth?.requiresReconnect !== false) {
-        showNotification('Gmail access could not be confirmed. Your tracked applications are safe. Try Reconnect again.', 'warning');
-        return;
-      }
+      // /sync-status reports the saved health flag; it does not validate the new
+      // Google grant. The sync preflight clears that flag only after Gmail accepts
+      // the credentials. Checking it first races post-login work and rejects a
+      // successful reconnect (reproduced with real revoked consent on 2026-10-16).
       const catchUp = await fetchNewEmails(false);
       if (!catchUp?.success) {
         await fetchQuotaData();
         return;
       }
-      showNotification(catchUp.sync?.inProgress
+      let refreshed = await fetchQuotaData();
+      for (let attempt = 0; attempt < 10
+        && refreshed?.success && refreshed.gmailAuth?.requiresReconnect === true
+        && (catchUp.sync?.inProgress || refreshed.sync?.inProgress)
+        && !refreshed.sync?.lastError; attempt += 1) {
+        // An existing post-login sync can coalesce this request before its Google
+        // validation finishes. Keep the button pending while that work settles.
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        refreshed = await fetchQuotaData();
+      }
+      if (!refreshed?.success || refreshed.gmailAuth?.requiresReconnect !== false) {
+        showNotification('Google sign-in finished, but Gmail access could not yet be confirmed. Your tracked applications are safe. Try Refresh shortly.', 'warning');
+        return;
+      }
+      showNotification((refreshed.sync?.inProgress ?? catchUp.sync?.inProgress)
         ? 'Gmail reconnected. Catching up on what we missed...'
         : 'Gmail reconnected. Refresh to see the latest applications.', 'success');
     } catch (error) {
